@@ -15,6 +15,12 @@ pub fn render(
     frame.clear(palette.background);
 
     let aspect = frame.width as f32 / frame.height.max(1) as f32;
+    let pulse_energy = pulses
+        .iter()
+        .map(|pulse| pulse.envelope(time) * pulse.strength)
+        .sum::<f32>()
+        .clamp(0.0, 1.0);
+    let source_energy = (0.08 + pulse_energy).clamp(0.0, 1.0);
 
     for y in 0..frame.height {
         for x in 0..frame.width {
@@ -29,9 +35,21 @@ pub fn render(
                 shade_pulse(&mut color, uv, time, pulse, palette);
             }
 
+            shade_source(&mut color, uv, source_energy, palette);
             frame.set(x, y, color);
         }
     }
+}
+
+fn shade_source(color: &mut [f32; 3], uv: [f32; 2], energy: f32, palette: Palette) {
+    if energy <= 0.0 {
+        return;
+    }
+
+    let distance = (uv[0] * uv[0] + uv[1] * uv[1]).sqrt();
+    let core = 1.0 - smoothstep(0.0, 0.055, distance);
+    let halo = 1.0 - smoothstep(0.03, 0.18, distance);
+    add_scaled(color, palette.hot, energy * (core * 0.95 + halo * 0.16));
 }
 
 fn shade_pulse(color: &mut [f32; 3], uv: [f32; 2], time: f32, pulse: &Pulse, palette: Palette) {
@@ -108,4 +126,22 @@ fn fbm(mut p: [f32; 2]) -> f32 {
     }
 
     value
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::palette::Palette;
+
+    #[test]
+    fn persistent_source_marks_frame_center() {
+        let palette = Palette::from_name(crate::cli::PaletteName::Mono);
+        let mut frame = FrameBuffer::new(41, 21);
+
+        render(&mut frame, 0.0, AudioFeatures::default(), &[], palette);
+
+        let center = frame.get(frame.width / 2, frame.height / 2);
+        let corner = frame.get(0, 0);
+        assert!(center.iter().sum::<f32>() > corner.iter().sum::<f32>());
+    }
 }

@@ -1,5 +1,6 @@
 pub mod ansi;
 pub mod cymatic;
+pub mod kitty;
 
 #[derive(Debug, Clone)]
 pub struct FrameBuffer {

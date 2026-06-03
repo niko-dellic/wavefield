@@ -26,6 +26,12 @@ pub struct Cli {
     pub sensitivity: f32,
 
     #[arg(long)]
+    pub fps: Option<f32>,
+
+    #[arg(long, value_enum, default_value_t = Quality::Low)]
+    pub quality: Quality,
+
+    #[arg(long)]
     pub frames: Option<u32>,
 }
 
@@ -37,6 +43,15 @@ pub enum Mode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum Backend {
     Ansi,
+    Kitty,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum Quality {
+    Low,
+    Medium,
+    High,
+    Ultra,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]

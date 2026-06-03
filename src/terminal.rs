@@ -14,13 +14,17 @@ use crossterm::{
 
 use crate::{
     analysis::{AudioFeatures, feature_at},
+    cli::{Backend, Quality},
     palette::Palette,
     pulse::PulseField,
-    render::{FrameBuffer, ansi, cymatic},
+    render::{FrameBuffer, ansi, cymatic, kitty},
 };
 
 pub struct RuntimeSettings {
+    pub backend: Backend,
+    pub fps: Option<f32>,
     pub gain: f32,
+    pub quality: Quality,
     pub sensitivity: f32,
     pub frame_limit: Option<u32>,
 }
@@ -34,7 +38,14 @@ pub fn run(
 ) -> Result<()> {
     if !io::stdout().is_terminal() {
         if let Some(frames) = settings.frame_limit {
-            return render_headless(features, palette, settings.gain, frames);
+            return render_headless(
+                features,
+                palette,
+                settings.backend,
+                settings.gain,
+                settings.quality,
+                frames,
+            );
         }
 
         bail!("wavefield needs a TTY unless --frames is provided");
@@ -49,7 +60,11 @@ pub fn run(
     let mut rendered_frames = 0u32;
     let mut paused = false;
     let mut last_tick = Instant::now();
-    let frame_time = Duration::from_secs_f32(1.0 / 30.0);
+    let fps = settings
+        .fps
+        .unwrap_or_else(|| default_fps(settings.backend))
+        .clamp(1.0, 60.0);
+    let frame_time = Duration::from_secs_f32(1.0 / fps);
 
     loop {
         let tick_started = Instant::now();
@@ -77,7 +92,9 @@ pub fn run(
             last_features,
             &pulses,
             palette,
+            settings.backend,
             settings.gain,
+            settings.quality,
         )?;
         rendered_frames += 1;
 
@@ -145,16 +162,31 @@ fn draw_frame(
     features: AudioFeatures,
     pulses: &PulseField,
     palette: Palette,
+    backend: Backend,
     gain: f32,
+    quality: Quality,
 ) -> Result<()> {
     let (cols, rows) = terminal::size().unwrap_or((80, 24));
-    let width = cols.max(20) as usize;
-    let height = rows.saturating_sub(1).max(10) as usize * 2;
-    let mut frame = FrameBuffer::new(width, height);
-    cymatic::render(&mut frame, time, features, pulses.pulses(), palette);
-    let ansi = ansi::render_half_blocks(&frame, gain);
+    let output_rows = rows.saturating_sub(1).max(10);
+    let rendered = match backend {
+        Backend::Ansi => {
+            let width = (cols / 2).max(20) as usize;
+            let height = output_rows as usize;
+            let mut frame = FrameBuffer::new(width, height);
+            cymatic::render(&mut frame, time, features, pulses.pulses(), palette);
+            ansi::render_blocks(&frame, gain)
+        }
+        Backend::Kitty => {
+            let (cell_width, cell_height, max_width, max_height) = kitty_quality(quality);
+            let width = ((cols as usize) * cell_width).clamp(96, max_width);
+            let height = ((output_rows as usize) * cell_height).clamp(54, max_height);
+            let mut frame = FrameBuffer::new(width, height);
+            cymatic::render(&mut frame, time, features, pulses.pulses(), palette);
+            kitty::render_image(&frame, cols, output_rows, gain)
+        }
+    };
 
-    queue!(stdout, cursor::MoveTo(0, 0), Print(ansi)).context("failed to queue frame")?;
+    queue!(stdout, cursor::MoveTo(0, 0), Print(rendered)).context("failed to queue frame")?;
     stdout.flush().context("failed to flush frame")?;
     Ok(())
 }
@@ -162,7 +194,9 @@ fn draw_frame(
 fn render_headless(
     features: &[AudioFeatures],
     palette: Palette,
+    backend: Backend,
     gain: f32,
+    quality: Quality,
     frames: u32,
 ) -> Result<()> {
     let mut stdout = io::stdout();
@@ -179,20 +213,46 @@ fn render_headless(
         }
 
         pulses.update(time);
-        let mut frame = FrameBuffer::new(80, 48);
+        let mut frame = match backend {
+            Backend::Ansi => FrameBuffer::new(40, 24),
+            Backend::Kitty => {
+                let (_, _, max_width, max_height) = kitty_quality(quality);
+                FrameBuffer::new(max_width, max_height)
+            }
+        };
         let render_features = if last_features.time > 0.0 {
             last_features
         } else {
             feature_at(features, time)
         };
         cymatic::render(&mut frame, time, render_features, pulses.pulses(), palette);
+        let rendered = match backend {
+            Backend::Ansi => ansi::render_blocks(&frame, gain),
+            Backend::Kitty => kitty::render_image(&frame, 80, 24, gain),
+        };
         stdout
-            .write_all(ansi::render_half_blocks(&frame, gain).as_bytes())
+            .write_all(rendered.as_bytes())
             .context("failed to write headless frame")?;
         time += 1.0 / 30.0;
     }
 
     Ok(())
+}
+
+fn default_fps(backend: Backend) -> f32 {
+    match backend {
+        Backend::Ansi => 30.0,
+        Backend::Kitty => 18.0,
+    }
+}
+
+fn kitty_quality(quality: Quality) -> (usize, usize, usize, usize) {
+    match quality {
+        Quality::Low => (3, 6, 480, 270),
+        Quality::Medium => (6, 12, 960, 540),
+        Quality::High => (9, 18, 1440, 810),
+        Quality::Ultra => (12, 24, 1920, 1080),
+    }
 }
 
 struct TerminalSession {

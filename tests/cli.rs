@@ -25,7 +25,9 @@ fn renders_three_silent_frames() {
         "stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert!(String::from_utf8_lossy(&output.stdout).contains('▄'));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("\x1b[48;2;"));
+    assert!(stdout.contains("  "));
 }
 
 fn write_test_wav(path: &Path) -> io::Result<()> {

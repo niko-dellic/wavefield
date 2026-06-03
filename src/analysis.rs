@@ -2,7 +2,7 @@ use rustfft::{FftPlanner, num_complex::Complex};
 
 use crate::audio::DecodedAudio;
 
-pub const ANALYSIS_FPS: f32 = 60.0;
+pub const ANALYSIS_FPS: f32 = 30.0;
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct AudioFeatures {
@@ -26,7 +26,7 @@ pub fn analyze_mono(mono: &[f32], sample_rate: u32) -> Vec<AudioFeatures> {
     }
 
     let hop = ((sample_rate as f32 / ANALYSIS_FPS).round() as usize).max(1);
-    let fft_size = (hop * 4).next_power_of_two().clamp(1024, 8192);
+    let fft_size = if sample_rate <= 16_000 { 1024 } else { 2048 };
     let mut planner = FftPlanner::<f32>::new();
     let fft = planner.plan_fft_forward(fft_size);
     let window = hann_window(fft_size);
