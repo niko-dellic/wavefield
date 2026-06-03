@@ -210,6 +210,66 @@ select {
   overflow: auto;
 }
 
+.post-stack-control {
+  margin-top: 8px;
+  padding: 8px;
+  border-radius: 6px;
+  background: rgb(32 34 40 / 78%);
+  color: rgb(245 251 255 / 78%);
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.post-stack-heading,
+.post-stack-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.post-stack-heading {
+  margin-bottom: 6px;
+  color: rgb(245 251 255 / 62%);
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.post-stack-hint,
+.post-stack-state {
+  color: rgb(245 251 255 / 42%);
+  font-size: 10px;
+}
+
+.post-stack-row {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  min-height: 28px;
+  padding: 0 8px;
+  border: 1px solid rgb(255 255 255 / 8%);
+  border-radius: 4px;
+  background: rgb(0 0 0 / 24%);
+  cursor: grab;
+  user-select: none;
+}
+
+.post-stack-row + .post-stack-row {
+  margin-top: 4px;
+}
+
+.post-stack-row:hover {
+  border-color: rgb(217 247 255 / 26%);
+  background: rgb(20 38 44 / 38%);
+}
+
+.post-stack-row.is-dragging {
+  opacity: 0.46;
+}
+
+.post-stack-grip {
+  color: rgb(245 251 255 / 36%);
+  letter-spacing: 1px;
+}
+
 .transport {
   position: absolute;
   left: 16px;

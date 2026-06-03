@@ -13,6 +13,7 @@ import type {
   BoundaryMode,
   ColorMode,
   CymaticSettings,
+  PostEffectId,
   ProjectionMode,
   SphereProjectionType,
 } from "../types";
@@ -487,6 +488,7 @@ export class ModalFieldRenderer {
   private pixelationPass: EffectPass | null = null;
   private bloomPass: EffectPass | null = null;
   private terminalPass: EffectPass | null = null;
+  private postPipelineKey = "";
   private readonly pixelationEffect = new PixelationEffect(6);
   private readonly bloomEffect = new BloomEffect({
     intensity: 0.72,
@@ -543,7 +545,11 @@ export class ModalFieldRenderer {
         this.controls.update();
       }
     }
-    this.updatePostProcessing(renderer, settings, isSphere ? this.sphereCamera : this.screenCamera);
+    const camera = isSphere ? this.sphereCamera : this.screenCamera;
+    const enabledPostEffects = this.getEnabledPostEffects(settings);
+    if (enabledPostEffects.length > 0) {
+      this.updatePostProcessing(renderer, settings, camera, enabledPostEffects);
+    }
 
     const previousTarget = renderer.getRenderTarget();
     const previousClearColor = new THREE.Color();
@@ -558,10 +564,10 @@ export class ModalFieldRenderer {
       isSphere && settings.sphereBackgroundTransparent ? 0 : 1,
     );
     renderer.clear(true, true, true);
-    if (this.hasActivePostProcessing(settings)) {
+    if (enabledPostEffects.length > 0) {
       this.composer?.render(deltaSeconds);
     } else {
-      renderer.render(this.scene, isSphere ? this.sphereCamera : this.screenCamera);
+      renderer.render(this.scene, camera);
     }
 
     renderer.setRenderTarget(previousTarget);
@@ -602,17 +608,13 @@ export class ModalFieldRenderer {
     this.pixelationPass = new EffectPass(camera, this.pixelationEffect);
     this.bloomPass = new EffectPass(camera, this.bloomEffect);
     this.terminalPass = new EffectPass(camera, this.terminalContourEffect);
-
-    this.composer.addPass(this.renderPass);
-    this.composer.addPass(this.pixelationPass);
-    this.composer.addPass(this.bloomPass);
-    this.composer.addPass(this.terminalPass);
   }
 
   private updatePostProcessing(
     renderer: THREE.WebGLRenderer,
     settings: CymaticSettings,
     camera: THREE.Camera,
+    enabledPostEffects: PostEffectId[],
   ) {
     this.ensureComposer(renderer, camera);
 
@@ -626,28 +628,66 @@ export class ModalFieldRenderer {
     }
     if (this.pixelationPass) {
       this.pixelationPass.mainCamera = camera;
-      this.pixelationPass.enabled = settings.postPixelationEnabled;
+      this.pixelationPass.enabled = true;
     }
     if (this.bloomPass) {
       this.bloomPass.mainCamera = camera;
-      this.bloomPass.enabled = settings.postBloomEnabled;
+      this.bloomPass.enabled = true;
     }
     if (this.terminalPass) {
       this.terminalPass.mainCamera = camera;
-      this.terminalPass.enabled = settings.terminalContourEnabled;
+      this.terminalPass.enabled = true;
     }
 
     this.pixelationEffect.granularity = settings.postPixelSize;
     this.bloomEffect.intensity = settings.postBloomIntensity;
     this.terminalContourEffect.updateSettings(settings);
+    this.rebuildPostPipeline(enabledPostEffects);
   }
 
-  private hasActivePostProcessing(settings: CymaticSettings) {
-    return (
-      settings.postBloomEnabled ||
-      settings.postPixelationEnabled ||
-      settings.terminalContourEnabled
-    );
+  private rebuildPostPipeline(enabledPostEffects: PostEffectId[]) {
+    if (!this.composer || !this.renderPass) {
+      return;
+    }
+
+    const pipelineKey = enabledPostEffects.join(">");
+    if (pipelineKey === this.postPipelineKey) {
+      return;
+    }
+
+    this.composer.removeAllPasses();
+    this.composer.addPass(this.renderPass);
+    for (const effectId of enabledPostEffects) {
+      const pass = this.getPostPass(effectId);
+      if (pass) {
+        this.composer.addPass(pass);
+      }
+    }
+    this.postPipelineKey = pipelineKey;
+  }
+
+  private getPostPass(effectId: PostEffectId) {
+    switch (effectId) {
+      case "bloom":
+        return this.bloomPass;
+      case "pixelation":
+        return this.pixelationPass;
+      case "terminal":
+        return this.terminalPass;
+    }
+  }
+
+  private getEnabledPostEffects(settings: CymaticSettings): PostEffectId[] {
+    return settings.postEffectOrder.filter((effectId) => {
+      switch (effectId) {
+        case "bloom":
+          return settings.postBloomEnabled;
+        case "pixelation":
+          return settings.postPixelationEnabled;
+        case "terminal":
+          return settings.terminalContourEnabled;
+      }
+    });
   }
 
   private updateUniforms(

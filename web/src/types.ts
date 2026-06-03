@@ -3,8 +3,9 @@ export type ProjectionMode = "screen" | "sphere";
 export type BoundaryMode = "dirichlet" | "neumann";
 export type ColorMode = "chromesthesia" | "mono" | "bandSplit" | "thermalPhase";
 export type SphereProjectionType = "uv" | "triplanar";
-export type ScreenAspectMode = "circle" | "viewport";
+export type ScreenAspectMode = "circle" | "fit";
 export type IdleMode = "ambient";
+export type PostEffectId = "bloom" | "pixelation" | "terminal";
 
 export type AudioFeatureFrame = {
   index: number;
@@ -53,6 +54,7 @@ export type CymaticSettings = {
   sphereRadius: number;
   sphereSurfaceOpacity: number;
   sphereBackgroundTransparent: boolean;
+  postEffectOrder: PostEffectId[];
   postBloomEnabled: boolean;
   postBloomIntensity: number;
   postPixelationEnabled: boolean;
@@ -96,7 +98,8 @@ export const DEFAULT_SETTINGS: CymaticSettings = {
   sphereRadius: 1.35,
   sphereSurfaceOpacity: 0.64,
   sphereBackgroundTransparent: false,
-  postBloomEnabled: true,
+  postEffectOrder: ["bloom", "pixelation", "terminal"],
+  postBloomEnabled: false,
   postBloomIntensity: 0.72,
   postPixelationEnabled: false,
   postPixelSize: 6,

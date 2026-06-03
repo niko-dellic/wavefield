@@ -1,6 +1,6 @@
 import { Pane } from "tweakpane";
 
-import type { CymaticSettings } from "../types";
+import type { CymaticSettings, PostEffectId } from "../types";
 
 export type ControlsManager = {
   dispose(): void;
@@ -16,6 +16,7 @@ export function createControls(
   let layoutKey = "";
 
   const build = () => {
+    removePostStack(container);
     pane?.dispose();
     pane = new Pane({
       container,
@@ -215,52 +216,56 @@ export function createControls(
       step: 0.01,
     });
 
-    const post = pane.addFolder({ title: "Post", expanded: true });
-    post.addBinding(settings, "postBloomEnabled", {
-      label: "bloom",
+    const bloom = pane.addFolder({ title: "Bloom", expanded: false });
+    bloom.addBinding(settings, "postBloomEnabled", {
+      label: "enabled",
     });
     if (settings.postBloomEnabled) {
-      post.addBinding(settings, "postBloomIntensity", {
-        label: "bloom power",
+      bloom.addBinding(settings, "postBloomIntensity", {
+        label: "power",
         min: 0,
         max: 3,
         step: 0.01,
       });
     }
-    post.addBinding(settings, "postPixelationEnabled", {
-      label: "pixelate",
+
+    const pixelation = pane.addFolder({ title: "Pixelation", expanded: false });
+    pixelation.addBinding(settings, "postPixelationEnabled", {
+      label: "enabled",
     });
     if (settings.postPixelationEnabled) {
-      post.addBinding(settings, "postPixelSize", {
+      pixelation.addBinding(settings, "postPixelSize", {
         label: "pixel size",
         min: 2,
         max: 40,
         step: 1,
       });
     }
-    post.addBinding(settings, "terminalContourEnabled", {
-      label: "terminal",
+
+    const terminal = pane.addFolder({ title: "Terminal contours", expanded: false });
+    terminal.addBinding(settings, "terminalContourEnabled", {
+      label: "enabled",
     });
     if (settings.terminalContourEnabled) {
-      post.addBinding(settings, "terminalCellSize", {
+      terminal.addBinding(settings, "terminalCellSize", {
         label: "cell size",
         min: 4,
         max: 24,
         step: 1,
       });
-      post.addBinding(settings, "terminalContourLevels", {
+      terminal.addBinding(settings, "terminalContourLevels", {
         label: "contours",
         min: 3,
         max: 18,
         step: 1,
       });
-      post.addBinding(settings, "terminalContourStrength", {
+      terminal.addBinding(settings, "terminalContourStrength", {
         label: "line power",
         min: 0.2,
         max: 3,
         step: 0.01,
       });
-      post.addBinding(settings, "terminalContourThreshold", {
+      terminal.addBinding(settings, "terminalContourThreshold", {
         label: "threshold",
         min: 0.01,
         max: 0.35,
@@ -269,6 +274,7 @@ export function createControls(
     }
 
     pane.on("change", onChange);
+    mountPostStack(container, settings, onChange);
   };
 
   const refresh = () => {
@@ -286,6 +292,7 @@ export function createControls(
 
   return {
     dispose() {
+      removePostStack(container);
       pane?.dispose();
       pane = null;
     },
@@ -301,5 +308,86 @@ function getLayoutKey(settings: CymaticSettings) {
     settings.postBloomEnabled,
     settings.postPixelationEnabled,
     settings.terminalContourEnabled,
+    settings.postEffectOrder.join(","),
   ].join(":");
+}
+
+const POST_EFFECT_LABELS: Record<PostEffectId, string> = {
+  bloom: "Bloom",
+  pixelation: "Pixelation",
+  terminal: "Terminal contours",
+};
+
+function mountPostStack(
+  container: HTMLElement,
+  settings: CymaticSettings,
+  onChange: () => void,
+) {
+  removePostStack(container);
+
+  const root = document.createElement("section");
+  root.className = "post-stack-control";
+  root.setAttribute("aria-label", "Post processing order");
+  root.innerHTML = `
+    <div class="post-stack-heading">
+      <span>Post order</span>
+      <span class="post-stack-hint">drag</span>
+    </div>
+  `;
+
+  let draggedId: PostEffectId | null = null;
+  for (const effectId of settings.postEffectOrder) {
+    const row = document.createElement("div");
+    row.className = "post-stack-row";
+    row.draggable = true;
+    row.dataset.effectId = effectId;
+    row.innerHTML = `
+      <span class="post-stack-grip" aria-hidden="true">::</span>
+      <span>${POST_EFFECT_LABELS[effectId]}</span>
+      <span class="post-stack-state">${getEffectStateLabel(settings, effectId)}</span>
+    `;
+
+    row.addEventListener("dragstart", () => {
+      draggedId = effectId;
+      row.classList.add("is-dragging");
+    });
+    row.addEventListener("dragend", () => {
+      draggedId = null;
+      row.classList.remove("is-dragging");
+    });
+    row.addEventListener("dragover", (event) => {
+      event.preventDefault();
+    });
+    row.addEventListener("drop", (event) => {
+      event.preventDefault();
+      if (!draggedId || draggedId === effectId) {
+        return;
+      }
+
+      const nextOrder = settings.postEffectOrder.filter((id) => id !== draggedId);
+      const targetIndex = nextOrder.indexOf(effectId);
+      nextOrder.splice(Math.max(0, targetIndex), 0, draggedId);
+      settings.postEffectOrder = nextOrder;
+      onChange();
+    });
+
+    root.append(row);
+  }
+
+  container.append(root);
+}
+
+function removePostStack(container: HTMLElement) {
+  container.querySelector(".post-stack-control")?.remove();
+}
+
+function getEffectStateLabel(settings: CymaticSettings, effectId: PostEffectId) {
+  switch (effectId) {
+    case "bloom":
+      return settings.postBloomEnabled ? "on" : "off";
+    case "pixelation":
+      return settings.postPixelationEnabled ? "on" : "off";
+    case "terminal":
+      return settings.terminalContourEnabled ? "on" : "off";
+  }
 }
