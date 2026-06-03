@@ -681,7 +681,12 @@ export class WavefieldApp {
     }
 
     this.updateScreenViewDamping(deltaSeconds);
-    this.updateMonitorState(fieldFrame);
+    // The Status monitors live inside the settings panel, which is hidden by
+    // default (Tab to open). Skip the per-frame string/number formatting when
+    // nothing is displaying it; readouts resume as soon as the panel opens.
+    if (this.isSettingsOpen) {
+      this.updateMonitorState(fieldFrame);
+    }
     this.modalRenderer.render(
       this.renderer,
       fieldFrame,

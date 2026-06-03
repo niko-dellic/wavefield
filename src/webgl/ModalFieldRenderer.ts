@@ -335,7 +335,7 @@ const FRAGMENT_SHADER = `
 
     for (int index = 0; index < MAX_MODAL_MODES; index++) {
       if (index >= uModeCount) {
-        continue;
+        break;
       }
 
       vec4 slot = uModeSlots[index];
@@ -430,19 +430,22 @@ const FRAGMENT_SHADER = `
       3.0
     );
     vec2 p = uProjectionMode == 0 ? screenFieldUv(uv) : plateUvFromScreen(uv);
-    vec2 drift = vec2(
-      uTime * (0.013 + uDrift * 0.034 + spectrumShape * 0.012),
-      -uTime * (0.011 + uDrift * 0.026 + spectrumShape * 0.009)
-    );
-    vec2 warp = vec2(
-      fbm(p * (1.8 + uWarpScale * 3.4) + drift),
-      fbm(p.yx * (1.5 + uWarpScale * 3.1) - drift.yx)
-    );
-    p = p + (warp - 0.5) * uWarp * (0.012 + spectrumShape * 0.008);
+    // Domain warp is opt-in: skip the (expensive) fbm pair entirely when uWarp is 0.
+    if (uWarp > 0.0) {
+      vec2 drift = vec2(
+        uTime * (0.013 + uDrift * 0.034 + spectrumShape * 0.012),
+        -uTime * (0.011 + uDrift * 0.026 + spectrumShape * 0.009)
+      );
+      vec2 warp = vec2(
+        fbm(p * (1.8 + uWarpScale * 3.4) + drift),
+        fbm(p.yx * (1.5 + uWarpScale * 3.1) - drift.yx)
+      );
+      p = p + (warp - 0.5) * uWarp * (0.012 + spectrumShape * 0.008);
+    }
 
     for (int index = 0; index < MAX_MODAL_MODES; index++) {
       if (index >= uModeCount) {
-        continue;
+        break;
       }
 
       vec4 slot = uModeSlots[index];
@@ -473,12 +476,18 @@ const FRAGMENT_SHADER = `
       float baseField = chladniValue(m, n, p);
       // Transposed, detuned partner figure — overlapping it with the base mode
       // produces moiré nodal lines, the classic "interference" lattice.
-      float interferenceField = chladniValue(n, m + 1.0, p);
-      float harmonicField = chladniValue(
-        max(1.0, floor(m * (1.0 + uHarmonicMix * 0.42))),
-        max(1.0, floor(n * (1.0 + uHarmonicMix * 0.34))),
-        p
-      );
+      // Both interference and harmonic terms are opt-in: skip their extra
+      // chladni evaluations when the corresponding control is at 0.
+      float interferenceField =
+        uInterference > 0.0 ? chladniValue(n, m + 1.0, p) : 0.0;
+      float harmonicField =
+        uHarmonicMix > 0.0
+          ? chladniValue(
+              max(1.0, floor(m * (1.0 + uHarmonicMix * 0.42))),
+              max(1.0, floor(n * (1.0 + uHarmonicMix * 0.34))),
+              p
+            )
+          : 0.0;
       vec2 gradient = chladniGradient(m, n, p);
       // Audio feeds motion (phase travel + transient ring), not a flat glow.
       float phaseMotion = cos(
@@ -791,7 +800,9 @@ export class ModalFieldRenderer {
   private readonly sphereCamera = new THREE.PerspectiveCamera(42, 1, 0.1, 100);
   private readonly screenMesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2));
   private readonly sphereMesh = new THREE.Mesh(
-    new THREE.SphereGeometry(1, 160, 96),
+    // The mesh is only a proxy surface; all shape/shading happens in the
+    // fragment shader (triplanar + raymarch), so a coarse sphere is plenty.
+    new THREE.SphereGeometry(1, 96, 64),
   );
   private readonly modeSlotUniforms = Array.from(
     { length: MAX_MODAL_MODES },
@@ -887,6 +898,7 @@ export class ModalFieldRenderer {
   private readonly fisheyeEffect = new FisheyeEffect();
   private readonly terminalContourEffect = new TerminalContourEffect();
   private readonly cameraLocal = new THREE.Vector3();
+  private readonly previousClearColor = new THREE.Color();
   private elapsedSeconds = 0;
 
   constructor() {
@@ -961,7 +973,7 @@ export class ModalFieldRenderer {
     }
 
     const previousTarget = renderer.getRenderTarget();
-    const previousClearColor = new THREE.Color();
+    const previousClearColor = this.previousClearColor;
     const previousClearAlpha = renderer.getClearAlpha();
     const previousAutoClear = renderer.autoClear;
     renderer.getClearColor(previousClearColor);
@@ -1148,7 +1160,9 @@ export class ModalFieldRenderer {
     screenView: ScreenViewTransform,
     isIdlePreview: boolean,
   ) {
-    const modes = fieldFrame.modes.slice(0, MAX_MODAL_MODES);
+    // ModeBank.selectSlots already caps length at min(MAX_MODAL_MODES, modalCount),
+    // so the frame's modes can be read directly without an extra slice/allocation.
+    const modes = fieldFrame.modes;
     for (let index = 0; index < MAX_MODAL_MODES; index += 1) {
       const mode = modes[index];
       if (mode) {

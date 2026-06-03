@@ -381,13 +381,13 @@ export function createControls(
       label: "graph",
       min: 0,
       max: 1,
-      interval: 50,
+      interval: 100,
     });
     // Real value (e.g. "440 Hz" or "0.42") of the selected signal.
     status.addBinding(monitorState, "reading", {
       readonly: true,
       label: "value",
-      interval: 50,
+      interval: 100,
     });
     const formatSignal = (value: number) => value.toFixed(2);
     status.addBinding(monitorState, "topology", {
