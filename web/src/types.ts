@@ -1,5 +1,9 @@
 export type FrequencyBand = "low" | "mid" | "high";
 export type OriginMode = "mono" | "split";
+export type SimulationMode = "modal" | "bursts" | "wave";
+export type ProjectionMode = "screen" | "sphere";
+export type BoundaryMode = "dirichlet" | "neumann";
+export type ColorMode = "chromesthesia" | "mono" | "bandSplit" | "thermalPhase";
 export type PulseBlendMode =
   | "mix"
   | "lighten"
@@ -27,6 +31,10 @@ export type AudioAnalysis = {
 };
 
 export type CymaticSettings = {
+  simulationMode: SimulationMode;
+  projectionMode: ProjectionMode;
+  boundaryMode: BoundaryMode;
+  colorMode: ColorMode;
   blendMode: PulseBlendMode;
   decaySeconds: number;
   pulseOpacity: number;
@@ -49,6 +57,14 @@ export type CymaticSettings = {
   midScale: number;
   highScale: number;
   sourceSpread: number;
+  modalCount: number;
+  modalDecay: number;
+  modalDrive: number;
+  sourceX: number;
+  sourceY: number;
+  chromesthesiaMix: number;
+  sphereRadius: number;
+  sphereRotation: number;
 };
 
 export type PulseBurst = {
@@ -61,6 +77,10 @@ export type PulseBurst = {
 };
 
 export const DEFAULT_SETTINGS: CymaticSettings = {
+  simulationMode: "modal",
+  projectionMode: "screen",
+  boundaryMode: "neumann",
+  colorMode: "chromesthesia",
   blendMode: "screen",
   decaySeconds: 1.8,
   pulseOpacity: 0.88,
@@ -83,6 +103,14 @@ export const DEFAULT_SETTINGS: CymaticSettings = {
   midScale: 1,
   highScale: 1,
   sourceSpread: 0.14,
+  modalCount: 28,
+  modalDecay: 1.45,
+  modalDrive: 1,
+  sourceX: 0.5,
+  sourceY: 0.5,
+  chromesthesiaMix: 0.82,
+  sphereRadius: 1.35,
+  sphereRotation: 0.08,
 };
 
 export const BAND_COLORS: Record<FrequencyBand, [number, number, number]> = {

@@ -12,6 +12,86 @@ export function createControls(
     title: "Wavefield",
   });
 
+  const engine = pane.addFolder({ title: "Engine", expanded: true });
+  engine.addBinding(settings, "simulationMode", {
+    label: "simulation",
+    options: {
+      Modal: "modal",
+      Bursts: "bursts",
+    },
+  });
+  engine.addBinding(settings, "projectionMode", {
+    label: "projection",
+    options: {
+      Screen: "screen",
+      Sphere: "sphere",
+    },
+  });
+  engine.addBinding(settings, "boundaryMode", {
+    label: "boundary",
+    options: {
+      Neumann: "neumann",
+      Dirichlet: "dirichlet",
+    },
+  });
+  engine.addBinding(settings, "colorMode", {
+    label: "color",
+    options: {
+      Chromesthesia: "chromesthesia",
+      Mono: "mono",
+      "Band split": "bandSplit",
+      "Thermal phase": "thermalPhase",
+    },
+  });
+  engine.addBinding(settings, "modalCount", {
+    label: "modes",
+    min: 4,
+    max: 32,
+    step: 1,
+  });
+  engine.addBinding(settings, "modalDecay", {
+    label: "modal decay",
+    min: 0.12,
+    max: 5,
+    step: 0.01,
+  });
+  engine.addBinding(settings, "modalDrive", {
+    label: "drive",
+    min: 0,
+    max: 3,
+    step: 0.01,
+  });
+  engine.addBinding(settings, "sourceX", {
+    label: "source x",
+    min: 0.05,
+    max: 0.95,
+    step: 0.001,
+  });
+  engine.addBinding(settings, "sourceY", {
+    label: "source y",
+    min: 0.05,
+    max: 0.95,
+    step: 0.001,
+  });
+  engine.addBinding(settings, "chromesthesiaMix", {
+    label: "chroma mix",
+    min: 0,
+    max: 1,
+    step: 0.01,
+  });
+  engine.addBinding(settings, "sphereRadius", {
+    label: "sphere size",
+    min: 0.4,
+    max: 2.4,
+    step: 0.01,
+  });
+  engine.addBinding(settings, "sphereRotation", {
+    label: "sphere spin",
+    min: -0.8,
+    max: 0.8,
+    step: 0.01,
+  });
+
   const shader = pane.addFolder({ title: "Shader", expanded: true });
   shader.addBinding(settings, "blendMode", {
     label: "blend",
