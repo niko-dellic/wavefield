@@ -16,7 +16,7 @@ import {
 } from "./webgl/ModalFieldRenderer";
 import type { AudioAnalysis, CymaticSettings } from "./types";
 
-const SCREEN_VIEW_MIN_SCALE = 0.25;
+const SCREEN_VIEW_MIN_SCALE = 0.05;
 const SCREEN_VIEW_MAX_SCALE = 16;
 const SCREEN_WHEEL_ZOOM_SPEED = 0.0015;
 const SCREEN_PAN_DAMPING = 10;
