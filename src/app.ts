@@ -18,6 +18,14 @@ import {
   type MonitorState,
 } from "./ui/controls";
 import {
+  cloneCymaticSettings,
+  coerceCymaticSettings,
+  coerceWavefieldTemplate,
+  loadWavefieldTemplates,
+  sortWavefieldTemplates,
+  type WavefieldTemplate,
+} from "./templateSettings";
+import {
   ModalFieldRenderer,
   type ScreenViewTransform,
 } from "./webgl/ModalFieldRenderer";
@@ -46,6 +54,11 @@ const FIXTURES = Object.entries(
   url,
 }));
 const DEFAULT_FIXTURE = FIXTURES[0];
+const TEMPLATE_MODULES = import.meta.glob<unknown>("./templates/*.json", {
+  eager: true,
+  import: "default",
+});
+const INITIAL_TEMPLATES = loadWavefieldTemplates(TEMPLATE_MODULES);
 const BOUNDARY_OPTIONS = [
   { label: "Free", value: "freePlate" },
   { label: "Dir", value: "dirichlet" },
@@ -54,6 +67,8 @@ const BOUNDARY_OPTIONS = [
 
 export class WavefieldApp {
   private readonly settings: CymaticSettings = { ...DEFAULT_SETTINGS };
+  private readonly templates: WavefieldTemplate[] = [...INITIAL_TEMPLATES];
+  private readonly templateSaveState = { name: "" };
   private readonly modalEngine = new ModalFieldEngine();
   private readonly liveAnalyzer = new LiveAudioAnalyzer();
   private readonly renderer: THREE.WebGLRenderer;
@@ -180,6 +195,14 @@ export class WavefieldApp {
       this.settings,
       () => this.handleSettingsChange(),
       this.monitorState,
+      {
+        isDev: import.meta.env.DEV,
+        saveState: this.templateSaveState,
+        templates: this.templates,
+        onApplyTemplate: (template) => this.applyTemplate(template),
+        onDeleteTemplate: (template) => this.deleteTemplate(template),
+        onSaveTemplate: (name) => this.saveTemplate(name),
+      },
     );
 
     this.bindUi();
@@ -1217,6 +1240,85 @@ export class WavefieldApp {
     this.volumeButton.title = label;
   }
 
+  private applyTemplate(template: WavefieldTemplate) {
+    const nextSettings = coerceCymaticSettings(template.settings);
+    const nextDriveMode = nextSettings.driveMode;
+    const currentDriveMode = this.settings.driveMode;
+
+    Object.assign(this.settings, nextSettings);
+    this.settings.driveMode = currentDriveMode;
+    this.handleSettingsChange();
+    void this.setDriveMode(nextDriveMode, false);
+    this.setStatus(`Template: ${template.name}`);
+  }
+
+  private async saveTemplate(name: string) {
+    if (!import.meta.env.DEV) {
+      return;
+    }
+
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      return;
+    }
+
+    const response = await fetch("/api/templates", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        name: trimmedName,
+        settings: cloneCymaticSettings(this.settings),
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(await readTemplateApiError(response));
+    }
+
+    const body = (await response.json()) as { template?: unknown };
+    const template = coerceWavefieldTemplate(body.template, "template");
+    this.templateSaveState.name = "";
+    this.upsertTemplate(template);
+    this.setStatus(`Saved template: ${template.name}`);
+  }
+
+  private async deleteTemplate(template: WavefieldTemplate) {
+    if (!import.meta.env.DEV) {
+      return;
+    }
+
+    const response = await fetch(
+      `/api/templates/${encodeURIComponent(template.slug)}`,
+      { method: "DELETE" },
+    );
+    if (!response.ok) {
+      throw new Error(await readTemplateApiError(response));
+    }
+
+    this.setTemplates(
+      this.templates.filter((candidate) => candidate.slug !== template.slug),
+    );
+    this.setStatus(`Deleted template: ${template.name}`);
+  }
+
+  private upsertTemplate(template: WavefieldTemplate) {
+    this.setTemplates([
+      ...this.templates.filter((candidate) => candidate.slug !== template.slug),
+      template,
+    ]);
+  }
+
+  private setTemplates(templates: WavefieldTemplate[]) {
+    this.templates.splice(
+      0,
+      this.templates.length,
+      ...sortWavefieldTemplates(templates),
+    );
+    this.controls.refresh();
+  }
+
   private handleSettingsChange() {
     const nextFieldSettingsKey = getFieldSettingsKey(this.settings);
     if (nextFieldSettingsKey !== this.fieldSettingsKey) {
@@ -1451,6 +1553,21 @@ function isEditableKeyboardTarget(target: EventTarget | null) {
 
 function normalizeHexColor(color: string) {
   return /^#[0-9a-f]{6}$/i.test(color) ? color : DEFAULT_SETTINGS.backgroundColor;
+}
+
+async function readTemplateApiError(response: Response) {
+  const fallback = `Template request failed (${response.status})`;
+  const text = await response.text();
+  if (!text.trim()) {
+    return fallback;
+  }
+
+  try {
+    const body = JSON.parse(text) as { error?: unknown };
+    return typeof body.error === "string" ? body.error : fallback;
+  } catch {
+    return text;
+  }
 }
 
 type PlatePoint = {

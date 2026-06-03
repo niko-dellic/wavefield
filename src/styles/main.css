@@ -619,6 +619,116 @@ select {
   opacity: 0.46;
 }
 
+.template-panel-folder > .tp-fldv_c {
+  padding: 0 8px 8px;
+}
+
+.template-panel {
+  display: grid;
+  gap: 8px;
+  color: rgb(245 251 255 / 78%);
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.template-save-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 30px;
+  align-items: center;
+  gap: 6px;
+}
+
+.template-name-input {
+  min-width: 0;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid rgb(255 255 255 / 10%);
+  border-radius: 4px;
+  outline: 0;
+  background: rgb(255 255 255 / 6%);
+  color: #eefaff;
+}
+
+.template-name-input::placeholder {
+  color: rgb(245 251 255 / 36%);
+}
+
+.template-name-input:focus {
+  border-color: rgb(217 247 255 / 42%);
+  background: rgb(255 255 255 / 10%);
+}
+
+.template-list {
+  display: grid;
+  gap: 6px;
+}
+
+.template-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 30px;
+  align-items: center;
+  gap: 6px;
+}
+
+.template-row:has(.template-apply-button:only-child) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.template-save-button,
+.template-apply-button,
+.template-delete-button {
+  min-width: 0;
+  height: 30px;
+  border: 1px solid rgb(255 255 255 / 10%);
+  border-radius: 4px;
+  background: rgb(0 0 0 / 24%);
+  color: #eefaff;
+  cursor: pointer;
+}
+
+.template-save-button,
+.template-delete-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.template-apply-button {
+  overflow: hidden;
+  padding: 0 9px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.template-save-button:hover,
+.template-apply-button:hover,
+.template-delete-button:hover {
+  border-color: rgb(217 247 255 / 30%);
+  background: rgb(20 38 44 / 42%);
+}
+
+.template-save-button:focus-visible,
+.template-apply-button:focus-visible,
+.template-delete-button:focus-visible {
+  outline: 2px solid rgb(217 247 255 / 42%);
+  outline-offset: 2px;
+}
+
+.template-save-button:disabled,
+.template-apply-button:disabled,
+.template-delete-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.template-empty {
+  margin: 0;
+  padding: 6px 2px;
+  color: rgb(245 251 255 / 42%);
+}
+
 .post-effect-card.is-drop-before::before,
 .post-effect-card.is-drop-after::after {
   content: "";

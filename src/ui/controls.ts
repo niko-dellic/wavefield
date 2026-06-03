@@ -12,6 +12,7 @@ import {
   type NumericControlConfig,
   type PostEffectControlConfig,
 } from "../config/settings";
+import type { WavefieldTemplate } from "../templateSettings";
 import type { CymaticSettings, PostEffectId } from "../types";
 
 /** Live, read-only state surfaced by the Status monitor folder. */
@@ -164,11 +165,23 @@ export type ControlsManager = {
   refresh(): void;
 };
 
+export type TemplateControlsOptions = {
+  isDev: boolean;
+  saveState: {
+    name: string;
+  };
+  templates: WavefieldTemplate[];
+  onApplyTemplate: (template: WavefieldTemplate) => void;
+  onDeleteTemplate: (template: WavefieldTemplate) => void | Promise<void>;
+  onSaveTemplate: (name: string) => void | Promise<void>;
+};
+
 export function createControls(
   container: HTMLElement,
   settings: CymaticSettings,
   onChange: () => void,
   monitorState: MonitorState,
+  templateControls?: TemplateControlsOptions,
 ): ControlsManager {
   let pane: Pane | null = null;
   let monitorPane: Pane | null = null;
@@ -335,6 +348,15 @@ export function createControls(
       addNumericBinding(shader, settings, ENGINE_CONTROLS.chromesthesiaMix);
     }
 
+    if (templateControls) {
+      mountTemplatePanel(
+        pane,
+        templateControls,
+        folderExpansionState,
+        persistFolderExpansion,
+      );
+    }
+
     pane.on("change", onChange);
 
     // Live monitors live in their own pane: their 50ms ticks emit change events
@@ -399,7 +421,7 @@ export function createControls(
   };
 
   const refresh = () => {
-    const nextLayoutKey = getLayoutKey(settings);
+    const nextLayoutKey = getLayoutKey(settings, templateControls);
     if (!pane || nextLayoutKey !== layoutKey) {
       layoutKey = nextLayoutKey;
       build();
@@ -423,7 +445,10 @@ export function createControls(
   };
 }
 
-function getLayoutKey(settings: CymaticSettings) {
+function getLayoutKey(
+  settings: CymaticSettings,
+  templateControls?: TemplateControlsOptions,
+) {
   return [
     settings.projectionMode,
     settings.sphereFieldMode,
@@ -436,7 +461,21 @@ function getLayoutKey(settings: CymaticSettings) {
     settings.postAlphaDecayEnabled,
     settings.terminalContourEnabled,
     settings.postEffectOrder.join(","),
+    getTemplateLayoutKey(templateControls),
   ].join(":");
+}
+
+function getTemplateLayoutKey(templateControls?: TemplateControlsOptions) {
+  if (!templateControls) {
+    return "templates:none";
+  }
+
+  return [
+    templateControls.isDev ? "dev" : "prod",
+    ...templateControls.templates.map(
+      (template) => `${template.slug}/${template.name}/${template.createdAt}`,
+    ),
+  ].join(",");
 }
 
 function addNumericBinding(
@@ -450,6 +489,147 @@ function addNumericBinding(
     max: control.max,
     step: control.step,
   });
+}
+
+function mountTemplatePanel(
+  pane: Pane,
+  templateControls: TemplateControlsOptions,
+  folderExpansionState: FolderExpansionState,
+  persistFolderExpansion: (id: string, expanded: boolean) => void,
+) {
+  const folder = trackFolderExpansion(
+    pane.addFolder({
+      title: "Templates",
+      expanded: getStoredFolderExpansion(
+        folderExpansionState,
+        "folder:Templates",
+        true,
+      ),
+    }),
+    "folder:Templates",
+    persistFolderExpansion,
+  );
+  folder.element.classList.add("template-panel-folder");
+
+  const root = document.createElement("div");
+  root.className = "template-panel";
+  root.setAttribute("aria-label", "Templates");
+
+  if (templateControls.isDev) {
+    root.append(createTemplateSavePanel(templateControls));
+  }
+
+  const list = document.createElement("div");
+  list.className = "template-list";
+  if (templateControls.templates.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "template-empty";
+    empty.textContent = "No templates";
+    list.append(empty);
+  } else {
+    for (const template of templateControls.templates) {
+      list.append(createTemplateRow(template, templateControls));
+    }
+  }
+  root.append(list);
+
+  const folderContent =
+    folder.element.querySelector<HTMLElement>(":scope > .tp-fldv_c") ??
+    folder.element;
+  folderContent.append(root);
+}
+
+function createTemplateSavePanel(templateControls: TemplateControlsOptions) {
+  const savePanel = document.createElement("div");
+  savePanel.className = "template-save-panel";
+
+  const input = document.createElement("input");
+  input.className = "template-name-input";
+  input.type = "text";
+  input.placeholder = "Name";
+  input.value = templateControls.saveState.name;
+  input.setAttribute("aria-label", "Template name");
+
+  const saveButton = document.createElement("button");
+  saveButton.className = "template-save-button";
+  saveButton.type = "button";
+  saveButton.title = "Save template";
+  saveButton.setAttribute("aria-label", "Save template");
+  saveButton.innerHTML = `<i class="ph ph-floppy-disk" aria-hidden="true"></i>`;
+
+  const syncSaveState = () => {
+    templateControls.saveState.name = input.value;
+    saveButton.disabled = input.value.trim().length === 0;
+  };
+  input.addEventListener("input", syncSaveState);
+  input.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" || saveButton.disabled) {
+      return;
+    }
+
+    event.preventDefault();
+    runTemplateAction(saveButton, () =>
+      templateControls.onSaveTemplate(input.value),
+    );
+  });
+  saveButton.addEventListener("click", () => {
+    runTemplateAction(saveButton, () =>
+      templateControls.onSaveTemplate(input.value),
+    );
+  });
+  syncSaveState();
+
+  savePanel.append(input, saveButton);
+  return savePanel;
+}
+
+function createTemplateRow(
+  template: WavefieldTemplate,
+  templateControls: TemplateControlsOptions,
+) {
+  const row = document.createElement("div");
+  row.className = "template-row";
+
+  const applyButton = document.createElement("button");
+  applyButton.className = "template-apply-button";
+  applyButton.type = "button";
+  applyButton.textContent = template.name;
+  applyButton.title = `Apply ${template.name}`;
+  applyButton.addEventListener("click", () => {
+    templateControls.onApplyTemplate(template);
+  });
+  row.append(applyButton);
+
+  if (templateControls.isDev) {
+    const deleteButton = document.createElement("button");
+    deleteButton.className = "template-delete-button";
+    deleteButton.type = "button";
+    deleteButton.title = `Delete ${template.name}`;
+    deleteButton.setAttribute("aria-label", `Delete ${template.name}`);
+    deleteButton.innerHTML = `<i class="ph ph-trash" aria-hidden="true"></i>`;
+    deleteButton.addEventListener("click", () => {
+      runTemplateAction(deleteButton, () =>
+        templateControls.onDeleteTemplate(template),
+      );
+    });
+    row.append(deleteButton);
+  }
+
+  return row;
+}
+
+function runTemplateAction(
+  button: HTMLButtonElement,
+  action: () => void | Promise<void>,
+) {
+  button.disabled = true;
+  Promise.resolve(action())
+    .catch((error: unknown) => {
+      console.error(error);
+    })
+    .finally(() => {
+      button.disabled = false;
+    });
 }
 
 function getStoredFolderExpansion(
