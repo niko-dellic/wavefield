@@ -23,7 +23,7 @@ export const DEFAULT_SETTINGS: CymaticSettings = {
   cymaticBrightness: 1.35,
   cymaticOpacity: 1.1,
   cymaticHarmonicMix: 0.42,
-  cymaticNodeWidth: 0.058,
+  cymaticNodeWidth: 0.25,
   cymaticSoftness: 0.42,
   cymaticInterference: 0.5,
   cymaticEdgeFade: 0.12,
@@ -242,7 +242,7 @@ export const SHADER_CONTROLS = {
     key: "cymaticNodeWidth",
     label: "node width",
     min: 0.005,
-    max: 0.18,
+    max: 0.5,
     step: 0.001,
   },
   cymaticSoftness: {
@@ -456,8 +456,11 @@ export const POST_EFFECT_CONTROLS: Record<
 
 // Hover tooltips for GUI controls, keyed by settings field. Surfaced via the
 // `title` attribute on each Tweakpane row.
-export const SETTING_DESCRIPTIONS: Partial<Record<keyof CymaticSettings, string>> = {
-  projectionMode: "Render the field on a flat screen plate or wrapped onto a sphere.",
+export const SETTING_DESCRIPTIONS: Partial<
+  Record<keyof CymaticSettings, string>
+> = {
+  projectionMode:
+    "Render the field on a flat screen plate or wrapped onto a sphere.",
   colorMode:
     "How the field is colored: chromesthesia (pitch-mapped hue), mono, frequency-band split, thermal phase, or heatmap.",
   heatmapPalette:
@@ -497,7 +500,8 @@ export const SETTING_DESCRIPTIONS: Partial<Record<keyof CymaticSettings, string>
   highScale: "Weighting of high-frequency (treble) content in the pattern.",
   cymaticDensity:
     "How much of the field lights up — raises overall coverage and intensity of the nodal pattern.",
-  cymaticBrightness: "Master exposure on the rendered color. Push up for bolder, brighter lines.",
+  cymaticBrightness:
+    "Master exposure on the rendered color. Push up for bolder, brighter lines.",
   cymaticOpacity:
     "How solid vs. transparent the field renders. Higher makes the pattern more opaque.",
   cymaticNodeWidth:
@@ -505,30 +509,37 @@ export const SETTING_DESCRIPTIONS: Partial<Record<keyof CymaticSettings, string>
   cymaticSoftness: "Soft glow/bleed around the nodal lines.",
   cymaticInterference:
     "Overlays a transposed partner figure to create moiré cross-lattice detail.",
-  cymaticEdgeFade: "Controls how contour edges taper off based on the field gradient.",
-  cymaticWarp: "Amount of organic domain warping applied to the field for a more fluid look.",
+  cymaticEdgeFade:
+    "Controls how contour edges taper off based on the field gradient.",
+  cymaticWarp:
+    "Amount of organic domain warping applied to the field for a more fluid look.",
   cymaticWarpScale:
     "Scale of the warp noise — larger = broad swirls; smaller = finer turbulence.",
   cymaticDrift: "Slow continuous drift of the field over time.",
   chromesthesiaMix:
     "Blend between neutral coloring and pitch-class color mapping (chromesthesia).",
-  testFrequency: "Manual drive: the frequency (Hz) fed to the engine to pick the figure.",
+  testFrequency:
+    "Manual drive: the frequency (Hz) fed to the engine to pick the figure.",
   frequencySweep:
     "Manual drive: continuously oscillate the frequency around the test Hz.",
   frequencySweepRate: "Manual drive: how fast the sweep oscillates.",
   frequencySweepRange:
     "Manual drive: how far the sweep roams around the test Hz, in octaves (the intensity of the morph).",
-  sphereFieldMode: "Render the figure on the sphere surface, or as a volumetric interior.",
+  sphereFieldMode:
+    "Render the figure on the sphere surface, or as a volumetric interior.",
   sphereProjectionType:
     "How the 2D figure maps onto the sphere: triplanar (seamless) or UV.",
   sphereRaymarchSteps:
     "Volume quality — more steps give a smoother volume at higher GPU cost.",
-  sphereAbsorption: "How quickly the volume accumulates opacity along each ray.",
-  sphereShellBias: "Biases density toward the outer shell vs. throughout the volume.",
+  sphereAbsorption:
+    "How quickly the volume accumulates opacity along each ray.",
+  sphereShellBias:
+    "Biases density toward the outer shell vs. throughout the volume.",
   sphereInteriorGlow: "Brightness of the volume's interior body fill.",
   sphereSurfaceOpacity: "Opacity of the sphere surface / transparent volume.",
   sphereRadius: "Size of the sphere in the view.",
-  sphereBackgroundTransparent: "Render the sphere over a transparent background.",
+  sphereBackgroundTransparent:
+    "Render the sphere over a transparent background.",
   postBloomIntensity: "Strength of the bloom glow.",
   postPixelSize: "Size of the pixelation blocks.",
   postFisheyeK1: "Primary fisheye lens distortion coefficient.",
