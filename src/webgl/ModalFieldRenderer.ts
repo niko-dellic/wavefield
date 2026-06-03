@@ -118,6 +118,9 @@ const FRAGMENT_SHADER = `
   uniform vec4 uFeatureSignals;
   uniform vec4 uChromaProfile;
   uniform float uChromesthesiaMix;
+  uniform vec3 uMonoColor;
+  uniform vec3 uThermalColdColor;
+  uniform vec3 uThermalHotColor;
   uniform int uHeatmapPalette;
   uniform float uIdlePreview;
   uniform float uSurfaceOpacity;
@@ -620,10 +623,8 @@ const FRAGMENT_SHADER = `
 
       vec3 modalColor =
         field.colorWeight > 0.0001 ? field.color / field.colorWeight : vec3(0.86, 0.96, 1.0);
-      vec3 monoColor = mix(vec3(0.24, 0.62, 0.84), vec3(0.94, 0.98, 1.0), nodeBand);
-      vec3 thermalCold = vec3(0.08, 0.36, 0.9);
-      vec3 thermalHot = vec3(1.0, 0.48, 0.18);
-      vec3 thermalColor = mix(thermalCold, thermalHot, smoothstep(-0.35, 0.35, normalizedField));
+      vec3 monoColor = mix(uMonoColor * 0.44, mix(uMonoColor, vec3(1.0), 0.22), nodeBand);
+      vec3 thermalColor = mix(uThermalColdColor, uThermalHotColor, smoothstep(-0.35, 0.35, normalizedField));
       float heat = lineFeatherHeat(
         abs(normalizedField),
         nodeWidth,
@@ -731,14 +732,12 @@ const FRAGMENT_SHADER = `
     float alpha = clamp((density + halo) * (0.96 + uRms * 0.22) * uOpacity, 0.0, 1.0);
     vec3 modalColor =
       field.colorWeight > 0.0001 ? field.color / field.colorWeight : vec3(0.86, 0.96, 1.0);
-    vec3 monoColor = mix(vec3(0.38, 0.72, 0.86), vec3(0.94, 0.98, 1.0), density);
+    vec3 monoColor = mix(uMonoColor * 0.5, mix(uMonoColor, vec3(1.0), 0.24), density);
     vec3 bandColor = normalize(uBandEnergies + vec3(0.02)) *
       vec3(0.38, 0.74, 0.96) +
       vec3(uBandEnergies.z * 0.9, uBandEnergies.y * 0.42, uBandEnergies.x * 0.32) +
       uChromaProfile.rgb * uChromaProfile.a * 0.22;
-    vec3 thermalCold = vec3(0.08, 0.36, 0.9);
-    vec3 thermalHot = vec3(1.0, 0.48, 0.18);
-    vec3 thermalColor = mix(thermalCold, thermalHot, smoothstep(-0.35, 0.35, normalizedField));
+    vec3 thermalColor = mix(uThermalColdColor, uThermalHotColor, smoothstep(-0.35, 0.35, normalizedField));
     float haloHeat = clamp(halo * (3.0 + uSoftness * 3.0), 0.0, 0.2);
     float heat = lineFeatherHeat(
       abs(normalizedField),
@@ -838,6 +837,9 @@ export class ModalFieldRenderer {
       uFeatureSignals: { value: new THREE.Vector4() },
       uChromaProfile: { value: new THREE.Vector4(0.86, 0.96, 1, 0) },
       uChromesthesiaMix: { value: 0.82 },
+      uMonoColor: { value: new THREE.Color(0x60b8db) },
+      uThermalColdColor: { value: new THREE.Color(0x145ce6) },
+      uThermalHotColor: { value: new THREE.Color(0xff7a2e) },
       uHeatmapPalette: { value: HEATMAP_PALETTE_INDEX.scientificHeat },
       uIdlePreview: { value: 0 },
       uSurfaceOpacity: { value: 0.64 },
@@ -1225,6 +1227,21 @@ export class ModalFieldRenderer {
       fieldFrame.chroma.confidence,
     );
     this.material.uniforms.uChromesthesiaMix.value = settings.chromesthesiaMix;
+    setColorUniform(
+      this.material.uniforms.uMonoColor.value,
+      settings.monoColor,
+      0x60b8db,
+    );
+    setColorUniform(
+      this.material.uniforms.uThermalColdColor.value,
+      settings.thermalColdColor,
+      0x145ce6,
+    );
+    setColorUniform(
+      this.material.uniforms.uThermalHotColor.value,
+      settings.thermalHotColor,
+      0xff7a2e,
+    );
     this.material.uniforms.uHeatmapPalette.value =
       HEATMAP_PALETTE_INDEX[settings.heatmapPalette];
     this.material.uniforms.uIdlePreview.value = isIdlePreview ? 1 : 0;
@@ -1256,6 +1273,14 @@ function getBandIndex(band: string) {
   }
 
   return 2;
+}
+
+function setColorUniform(target: THREE.Color, color: string, fallback: number) {
+  if (/^#[\da-f]{6}$/i.test(color)) {
+    target.set(color);
+  } else {
+    target.set(fallback);
+  }
 }
 
 function useImmediateZoomDamping(controls: TrackballControls) {

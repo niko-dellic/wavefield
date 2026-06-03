@@ -101,6 +101,9 @@ export type CymaticSettings = {
   idleMode: IdleMode;
   monitorSignal: MonitorSignal;
   heatmapPalette: HeatmapPalette;
+  monoColor: string;
+  thermalColdColor: string;
+  thermalHotColor: string;
   cymaticDensity: number;
   cymaticBrightness: number;
   cymaticOpacity: number;

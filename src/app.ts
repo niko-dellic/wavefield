@@ -54,9 +54,11 @@ export class WavefieldApp {
   private readonly volumeSlider: HTMLInputElement;
   private readonly sourceTrigger: HTMLButtonElement;
   private readonly sourceMenu: HTMLElement;
+  private readonly sourcePicker: HTMLElement;
   private readonly selectedSource: HTMLElement;
   private readonly fullscreenButton: HTMLButtonElement;
-  private readonly projectionSelect: HTMLSelectElement;
+  private readonly drivePane: HTMLDetailsElement;
+  private readonly driveSummaryValue: HTMLElement;
   private readonly driveModeSelect: HTMLSelectElement;
   private readonly modeSettingsHost: HTMLElement;
   private readonly transport: HTMLElement;
@@ -108,9 +110,11 @@ export class WavefieldApp {
     this.volumeSlider = this.query<HTMLInputElement>(".volume-slider");
     this.sourceTrigger = this.query<HTMLButtonElement>(".source-trigger");
     this.sourceMenu = this.query<HTMLElement>(".source-menu");
+    this.sourcePicker = this.query<HTMLElement>(".source-picker");
     this.selectedSource = this.query<HTMLElement>(".selected-source");
     this.fullscreenButton = this.query<HTMLButtonElement>(".fullscreen-toggle");
-    this.projectionSelect = this.query<HTMLSelectElement>(".projection-mode-select");
+    this.drivePane = this.query<HTMLDetailsElement>(".drive-pane");
+    this.driveSummaryValue = this.query<HTMLElement>(".drive-summary-value");
     this.driveModeSelect = this.query<HTMLSelectElement>(".drive-mode-select");
     this.modeSettingsHost = this.query<HTMLElement>(".mode-settings-host");
     this.transport = this.query<HTMLElement>(".transport");
@@ -194,42 +198,45 @@ export class WavefieldApp {
             <span class="brand-mark"></span>
             <span>Wavefield</span>
           </div>
-          <div class="source-picker">
-            <button class="source-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">
-              <i class="ph ph-music-notes" aria-hidden="true"></i>
-              <span class="selected-source">Choose audio</span>
-              <i class="ph ph-caret-down" aria-hidden="true"></i>
-            </button>
-            <div class="source-menu" role="listbox" hidden>
-              ${fixtureOptions}
-              <button class="source-option upload-option" type="button" role="option">
-                <i class="ph ph-upload-simple" aria-hidden="true"></i>
-                <span>Upload audio...</span>
-              </button>
-            </div>
-            <input class="audio-file" type="file" accept="audio/*" />
-          </div>
-          <label class="mode-picker">
-            <i class="ph ph-sphere" aria-hidden="true"></i>
-            <span>View</span>
-            <select class="projection-mode-select" aria-label="Projection mode">
-              <option value="screen" selected>Screen</option>
-              <option value="sphere">Sphere</option>
-            </select>
-          </label>
         </section>
         <aside class="pane-host" aria-label="Wavefield shader settings" hidden></aside>
         <section class="diagnostics-strip" aria-label="Wavefield diagnostics">
-          <label class="drive-mode-picker">
-            <i class="ph ph-wave-sine" aria-hidden="true"></i>
-            <span>Drive</span>
-            <select class="drive-mode-select" aria-label="Drive mode">
-              <option value="audio">Audio</option>
-              <option value="manual" selected>Manual</option>
-              <option value="live">Live</option>
-            </select>
-          </label>
-          <div class="mode-settings-host" aria-label="Drive mode settings" hidden></div>
+          <details class="drive-pane">
+            <summary class="drive-pane-summary">
+              <span class="drive-pane-title">
+                <i class="ph ph-wave-sine" aria-hidden="true"></i>
+                <span>Drive</span>
+              </span>
+              <span class="drive-summary-value">Manual</span>
+              <i class="ph ph-caret-down drive-pane-caret" aria-hidden="true"></i>
+            </summary>
+            <div class="drive-pane-body">
+              <label class="drive-mode-picker">
+                <span>Mode</span>
+                <select class="drive-mode-select" aria-label="Drive mode">
+                  <option value="audio">Audio</option>
+                  <option value="manual" selected>Manual</option>
+                  <option value="live">Live</option>
+                </select>
+              </label>
+              <div class="source-picker" hidden>
+                <button class="source-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">
+                  <i class="ph ph-music-notes" aria-hidden="true"></i>
+                  <span class="selected-source">Choose audio</span>
+                  <i class="ph ph-caret-down" aria-hidden="true"></i>
+                </button>
+                <div class="source-menu" role="listbox" hidden>
+                  ${fixtureOptions}
+                  <button class="source-option upload-option" type="button" role="option">
+                    <i class="ph ph-upload-simple" aria-hidden="true"></i>
+                    <span>Upload audio...</span>
+                  </button>
+                </div>
+                <input class="audio-file" type="file" accept="audio/*" />
+              </div>
+              <div class="mode-settings-host" aria-label="Drive mode settings" hidden></div>
+            </div>
+          </details>
         </section>
         <section class="transport" aria-label="Audio transport">
           <button class="play-toggle" type="button" aria-label="Play" title="Play">
@@ -266,19 +273,17 @@ export class WavefieldApp {
     });
 
     document.addEventListener("click", (event) => {
-      if (!this.query<HTMLElement>(".source-picker").contains(event.target as Node)) {
+      if (!this.sourcePicker.contains(event.target as Node)) {
         this.setSourceMenuOpen(false);
       }
     });
 
-    this.projectionSelect.addEventListener("change", () => {
-      this.settings.projectionMode = this.projectionSelect.value as CymaticSettings["projectionMode"];
-      this.syncHeaderControls();
-      this.setStatus(`Projection: ${this.projectionSelect.selectedOptions[0].text}`);
-    });
-
     this.driveModeSelect.addEventListener("change", () => {
       void this.setDriveMode(this.driveModeSelect.value as DriveMode);
+    });
+
+    this.drivePane.addEventListener("toggle", () => {
+      this.modeSettingsPane?.refresh();
     });
 
     this.playButton.addEventListener("click", () => {
@@ -887,10 +892,15 @@ export class WavefieldApp {
   }
 
   private syncHeaderControls() {
-    this.projectionSelect.value = this.settings.projectionMode;
     this.driveModeSelect.value = this.settings.driveMode;
+    this.driveSummaryValue.textContent = formatDriveMode(this.settings.driveMode);
+    this.sourcePicker.hidden = this.settings.driveMode !== "audio";
     this.transport.hidden = this.settings.driveMode !== "audio";
     this.root.classList.toggle("is-audio-drive", this.settings.driveMode === "audio");
+    this.root.classList.toggle(
+      "is-live-recording",
+      this.settings.driveMode === "live" && this.liveAnalyzer.isActive,
+    );
     this.syncModeSettingsPane();
     this.controls.refresh();
   }
@@ -938,6 +948,10 @@ export class WavefieldApp {
             ? error.message
             : "Microphone input could not be started",
         );
+      }
+      this.syncHeaderControls();
+      if (announce) {
+        this.setStatus(`Drive: ${formatDriveMode(driveMode)}`);
       }
       return;
     }

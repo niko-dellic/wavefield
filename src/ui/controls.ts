@@ -51,6 +51,9 @@ for (const [label, key] of [
   ["projection", "projectionMode"],
   ["color", "colorMode"],
   ["palette", "heatmapPalette"],
+  ["mono", "monoColor"],
+  ["cold", "thermalColdColor"],
+  ["hot", "thermalHotColor"],
   ["boundary", "boundaryMode"],
   ["aspect", "screenAspectMode"],
   ["field", "sphereFieldMode"],
@@ -63,8 +66,11 @@ for (const [label, key] of [
 }
 
 const TOOLTIP_ATTR = "data-wf-tooltip";
+const FOLDER_STATE_STORAGE_KEY = "wavefield:tweakpane-folder-state:v1";
 let tooltipElement: HTMLElement | null = null;
 let tooltipBound = false;
+
+type FolderExpansionState = Record<string, boolean>;
 
 function ensureTooltipElement() {
   if (!tooltipElement) {
@@ -167,6 +173,29 @@ export function createControls(
   let monitorPane: Pane | null = null;
   let postPanes: Pane[] = [];
   let layoutKey = "";
+  const folderExpansionState = loadFolderExpansionState();
+  const persistFolderExpansion = (id: string, expanded: boolean) => {
+    folderExpansionState[id] = expanded;
+    saveFolderExpansionState(folderExpansionState);
+  };
+  const addPersistentFolder = (
+    parent: Pane | FolderApi,
+    id: string,
+    title: string,
+    defaultExpanded = true,
+  ) =>
+    trackFolderExpansion(
+      parent.addFolder({
+        title,
+        expanded: getStoredFolderExpansion(
+          folderExpansionState,
+          id,
+          defaultExpanded,
+        ),
+      }),
+      id,
+      persistFolderExpansion,
+    );
 
   const build = () => {
     postPanes = removePostPanel(container, postPanes);
@@ -175,10 +204,16 @@ export function createControls(
     pane?.dispose();
     pane = new Pane({
       container,
+      expanded: getStoredFolderExpansion(
+        folderExpansionState,
+        "pane:Wavefield",
+        true,
+      ),
       title: "Wavefield",
     });
+    trackFolderExpansion(pane, "pane:Wavefield", persistFolderExpansion);
 
-    const engine = pane.addFolder({ title: "Engine", expanded: true });
+    const engine = addPersistentFolder(pane, "folder:Engine", "Engine");
     engine.addBinding(settings, "projectionMode", {
       label: "projection",
       options: {
@@ -205,6 +240,17 @@ export function createControls(
           "Turbo-style": "turbo",
         },
       });
+    } else if (settings.colorMode === "mono") {
+      engine.addBinding(settings, "monoColor", {
+        label: "mono",
+      });
+    } else if (settings.colorMode === "thermalPhase") {
+      engine.addBinding(settings, "thermalColdColor", {
+        label: "cold",
+      });
+      engine.addBinding(settings, "thermalHotColor", {
+        label: "hot",
+      });
     }
 
     engine.addBinding(settings, "boundaryMode", {
@@ -224,14 +270,18 @@ export function createControls(
         },
       });
     }
-    const topology = pane.addFolder({ title: "Topology", expanded: true });
+    const topology = addPersistentFolder(pane, "folder:Topology", "Topology");
     addNumericBinding(topology, settings, ENGINE_CONTROLS.modalCount);
     addNumericBinding(topology, settings, AUDIO_CONTROLS.sensitivity);
     addNumericBinding(topology, settings, ENGINE_CONTROLS.patternHoldSeconds);
     addNumericBinding(topology, settings, ENGINE_CONTROLS.morphSeconds);
     addNumericBinding(topology, settings, SHADER_CONTROLS.cymaticHarmonicMix);
 
-    const excitation = pane.addFolder({ title: "Excitation", expanded: true });
+    const excitation = addPersistentFolder(
+      pane,
+      "folder:Excitation",
+      "Excitation",
+    );
     addNumericBinding(excitation, settings, AUDIO_CONTROLS.gain);
     addNumericBinding(excitation, settings, AUDIO_CONTROLS.audioResponse);
     addNumericBinding(excitation, settings, ENGINE_CONTROLS.modalDrive);
@@ -241,7 +291,7 @@ export function createControls(
     addNumericBinding(excitation, settings, AUDIO_CONTROLS.highScale);
 
     if (settings.projectionMode === "sphere") {
-      const sphere = pane.addFolder({ title: "Sphere", expanded: true });
+      const sphere = addPersistentFolder(pane, "folder:Sphere", "Sphere");
       sphere.addBinding(settings, "sphereFieldMode", {
         label: "field",
         options: {
@@ -270,7 +320,7 @@ export function createControls(
       addNumericBinding(sphere, settings, SPHERE_CONTROLS.sphereRadius);
     }
 
-    const shader = pane.addFolder({ title: "Rendering", expanded: true });
+    const shader = addPersistentFolder(pane, "folder:Rendering", "Rendering");
     Object.values(SHADER_CONTROLS).forEach((control) => {
       if (control.key === "cymaticHarmonicMix") {
         return;
@@ -286,7 +336,7 @@ export function createControls(
     // Live monitors live in their own pane: their 50ms ticks emit change events
     // that must NOT reach the input pane's change/refresh path (that recurses).
     monitorPane = new Pane({ container });
-    const status = monitorPane.addFolder({ title: "Status", expanded: true });
+    const status = addPersistentFolder(monitorPane, "folder:Status", "Status");
     status.addBinding(monitorState, "drive", { readonly: true, label: "drive" });
     status.addBinding(monitorState, "peak", { readonly: true, label: "peak" });
     status.addBinding(monitorState, "base", { readonly: true, label: "base" });
@@ -334,7 +384,13 @@ export function createControls(
       format: formatSignal,
     });
 
-    postPanes = mountPostPanel(container, settings, onChange);
+    postPanes = mountPostPanel(
+      container,
+      settings,
+      onChange,
+      folderExpansionState,
+      persistFolderExpansion,
+    );
     applyTooltipsByLabel(container);
   };
 
@@ -392,6 +448,56 @@ function addNumericBinding(
   });
 }
 
+function getStoredFolderExpansion(
+  state: FolderExpansionState,
+  id: string,
+  defaultExpanded: boolean,
+) {
+  return state[id] ?? defaultExpanded;
+}
+
+function trackFolderExpansion<T extends FolderApi>(
+  folder: T,
+  id: string,
+  onFold: (id: string, expanded: boolean) => void,
+) {
+  folder.on("fold", (event) => {
+    onFold(id, event.expanded);
+  });
+  return folder;
+}
+
+function loadFolderExpansionState(): FolderExpansionState {
+  try {
+    const rawState = window.localStorage.getItem(FOLDER_STATE_STORAGE_KEY);
+    if (!rawState) {
+      return {};
+    }
+
+    const parsedState = JSON.parse(rawState) as unknown;
+    if (!parsedState || typeof parsedState !== "object") {
+      return {};
+    }
+
+    return Object.fromEntries(
+      Object.entries(parsedState).filter(
+        (entry): entry is [string, boolean] => typeof entry[1] === "boolean",
+      ),
+    );
+  } catch {
+    return {};
+  }
+}
+
+function saveFolderExpansionState(state: FolderExpansionState) {
+  try {
+    window.localStorage.setItem(FOLDER_STATE_STORAGE_KEY, JSON.stringify(state));
+  } catch {
+    // Folder state persistence is a convenience; private browsing/storage
+    // failures should never break the controls.
+  }
+}
+
 const POST_EFFECT_ENABLED_KEYS: Record<
   PostEffectId,
   | "postBloomEnabled"
@@ -417,11 +523,31 @@ function mountPostPanel(
   container: HTMLElement,
   settings: CymaticSettings,
   onChange: () => void,
+  folderExpansionState: FolderExpansionState,
+  persistFolderExpansion: (id: string, expanded: boolean) => void,
 ): Pane[] {
   const postPanes: Pane[] = [];
   removePostPanel(container, postPanes);
 
-  const root = document.createElement("section");
+  const postPane = new Pane({ container });
+  postPane.element.classList.add("post-panel-pane");
+
+  const postFolder = postPane.addFolder({
+    title: "Post processing",
+    expanded: getStoredFolderExpansion(
+      folderExpansionState,
+      "folder:Post processing",
+      true,
+    ),
+  });
+  trackFolderExpansion(
+    postFolder,
+    "folder:Post processing",
+    persistFolderExpansion,
+  );
+  postFolder.element.classList.add("post-panel-folder");
+
+  const root = document.createElement("div");
   root.className = "post-panel";
   root.setAttribute("aria-label", "Post processing controls");
   root.addEventListener("dragenter", stopInternalDrag);
@@ -429,13 +555,13 @@ function mountPostPanel(
   root.addEventListener("dragover", stopInternalDrag);
   root.addEventListener("drop", stopInternalDrag);
 
-  const header = document.createElement("div");
-  header.className = "post-panel-heading";
-  header.append(
+  const toolbar = document.createElement("div");
+  toolbar.className = "post-panel-toolbar";
+  toolbar.append(
     createCheckbox({
       checked: settings.postProcessingEnabled,
       className: "post-panel-master",
-      label: "Post processing",
+      label: "Enabled",
       onChange: (checked) => {
         settings.postProcessingEnabled = checked;
         onChange();
@@ -445,8 +571,8 @@ function mountPostPanel(
   const hint = document.createElement("span");
   hint.className = "post-panel-hint";
   hint.textContent = "drag effects";
-  header.append(hint);
-  root.append(header);
+  toolbar.append(hint);
+  root.append(toolbar);
 
   let draggedId: PostEffectId | null = null;
   let dropPlacement: "before" | "after" = "before";
@@ -559,7 +685,11 @@ function mountPostPanel(
     root.append(row);
   }
 
-  container.append(root);
+  const folderContent =
+    postFolder.element.querySelector<HTMLElement>(":scope > .tp-fldv_c") ??
+    postFolder.element;
+  folderContent.append(root);
+  postPanes.push(postPane);
   return postPanes;
 }
 

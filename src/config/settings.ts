@@ -15,6 +15,9 @@ export const DEFAULT_SETTINGS: CymaticSettings = {
   idleMode: "ambient",
   monitorSignal: "frequency",
   heatmapPalette: "turbo",
+  monoColor: "#60b8db",
+  thermalColdColor: "#145ce6",
+  thermalHotColor: "#ff7a2e",
   cymaticDensity: 1.2,
   cymaticBrightness: 1.35,
   cymaticOpacity: 1.1,
@@ -60,7 +63,7 @@ export const DEFAULT_SETTINGS: CymaticSettings = {
   postFisheyeK1: -0.33,
   postFisheyeK2: 0,
   postFisheyeStrength: 1,
-  postAlphaDecayEnabled: false,
+  postAlphaDecayEnabled: true,
   postAlphaDecayFrames: 24,
   postAlphaDecayBlendMode: "screen",
   terminalContourEnabled: true,
@@ -458,6 +461,12 @@ export const SETTING_DESCRIPTIONS: Partial<Record<keyof CymaticSettings, string>
     "How the field is colored: chromesthesia (pitch-mapped hue), mono, frequency-band split, thermal phase, or heatmap.",
   heatmapPalette:
     "Heatmap palette used when color is Heatmap: scientific heat, blackbody, or turbo-style.",
+  monoColor:
+    "Single hue used by Mono mode. The renderer still varies brightness across the field.",
+  thermalColdColor:
+    "Cold-side color used by Thermal phase when the field phase is low.",
+  thermalHotColor:
+    "Hot-side color used by Thermal phase when the field phase is high.",
   boundaryMode:
     "Plate edge condition that defines the figure family: free plate, Dirichlet (clamped), or Neumann.",
   screenAspectMode:
