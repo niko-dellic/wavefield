@@ -60,6 +60,10 @@ const BLEND_FRAGMENT_SHADER = `
     return blendOverlay(blend, base);
   }
 
+  float alphaDecayLuminance(vec3 color) {
+    return dot(color, vec3(0.2126, 0.7152, 0.0722));
+  }
+
   vec3 blendColors(vec3 current, vec3 history) {
     if (blendMode == 0) {
       return mix(current, history, decay);
@@ -99,6 +103,9 @@ const BLEND_FRAGMENT_SHADER = `
 
     vec3 color = clamp(blendColors(current.rgb, history.rgb), 0.0, 1.0);
     float alpha = max(current.a, history.a * decay);
+    float floorFade = smoothstep(0.006, 0.018, alphaDecayLuminance(color));
+    color *= floorFade;
+    alpha *= floorFade;
     gl_FragColor = vec4(color, alpha);
   }
 `;
@@ -226,6 +233,6 @@ export class AlphaDecayPass extends Pass {
   }
 
   private getDecayForFrames(frames: number) {
-    return Math.exp(-1 / Math.max(1, frames));
+    return Math.pow(0.01, 1 / Math.max(1, frames));
   }
 }
