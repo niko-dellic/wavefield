@@ -11,7 +11,12 @@ import {
 import { decodeAndAnalyzeAudio } from "./audio/analyze";
 import { LiveAudioAnalyzer } from "./audio/liveAnalysis";
 import { AUDIO_CONTROLS, DEFAULT_SETTINGS } from "./config/settings";
-import { createControls, type ControlsManager } from "./ui/controls";
+import {
+  applyTooltipsByLabel,
+  createControls,
+  type ControlsManager,
+  type MonitorState,
+} from "./ui/controls";
 import {
   ModalFieldRenderer,
   type ScreenViewTransform,
@@ -54,7 +59,6 @@ export class WavefieldApp {
   private readonly projectionSelect: HTMLSelectElement;
   private readonly driveModeSelect: HTMLSelectElement;
   private readonly modeSettingsHost: HTMLElement;
-  private readonly analysisDebug: HTMLElement;
   private readonly transport: HTMLElement;
   private readonly guiHost: HTMLElement;
   private modeSettingsPane: Pane | null = null;
@@ -69,6 +73,18 @@ export class WavefieldApp {
   private analysisPreviewTime = 0;
   private fieldSettingsKey = "";
   private lastAudibleVolume = 1;
+  private readonly monitorState: MonitorState = {
+    graph: 0,
+    reading: "0 Hz",
+    drive: "Manual",
+    peak: "none",
+    base: "none",
+    modes: "0/0",
+    topology: 0,
+    excitation: 0,
+    change: 0,
+    pulse: 0,
+  };
   private lastModalFieldFrame: ModalFieldFrame = EMPTY_MODAL_FIELD_FRAME;
   private readonly screenView: ScreenViewTransform = {
     scale: 1,
@@ -97,7 +113,6 @@ export class WavefieldApp {
     this.projectionSelect = this.query<HTMLSelectElement>(".projection-mode-select");
     this.driveModeSelect = this.query<HTMLSelectElement>(".drive-mode-select");
     this.modeSettingsHost = this.query<HTMLElement>(".mode-settings-host");
-    this.analysisDebug = this.query<HTMLElement>(".analysis-debug");
     this.transport = this.query<HTMLElement>(".transport");
     this.guiHost = this.query<HTMLElement>(".pane-host");
 
@@ -126,6 +141,7 @@ export class WavefieldApp {
       this.guiHost,
       this.settings,
       () => this.handleSettingsChange(),
+      this.monitorState,
     );
 
     this.bindUi();
@@ -214,7 +230,6 @@ export class WavefieldApp {
             </select>
           </label>
           <div class="mode-settings-host" aria-label="Drive mode settings" hidden></div>
-          <section class="analysis-debug" aria-label="Audio analysis debug" hidden></section>
         </section>
         <section class="transport" aria-label="Audio transport">
           <button class="play-toggle" type="button" aria-label="Play" title="Play">
@@ -488,7 +503,6 @@ export class WavefieldApp {
       );
       this.lastModalFieldFrame = fieldFrame;
       renderDeltaSeconds = deltaSeconds;
-      this.updateAnalysisDebug(fieldFrame, false);
     } else if (isLiveDrive) {
       this.liveSeconds += deltaSeconds;
       const liveFrame = this.liveAnalyzer.getFrame(this.liveSeconds);
@@ -500,35 +514,31 @@ export class WavefieldApp {
         );
         this.lastModalFieldFrame = fieldFrame;
         renderDeltaSeconds = deltaSeconds;
-        this.updateAnalysisDebug(fieldFrame, false);
       } else {
         this.ambientSeconds += deltaSeconds;
         fieldFrame = createAmbientModalFieldFrame(this.ambientSeconds);
         renderDeltaSeconds = deltaSeconds;
         isIdlePreview = true;
-        this.analysisDebug.hidden = true;
       }
     } else if (!this.analysis) {
       this.ambientSeconds += deltaSeconds;
       fieldFrame = createAmbientModalFieldFrame(this.ambientSeconds);
       renderDeltaSeconds = deltaSeconds;
       isIdlePreview = true;
-      this.analysisDebug.hidden = true;
     } else if (isPlaying) {
       fieldFrame = this.modalEngine.update(time, this.settings, deltaSeconds);
       this.lastModalFieldFrame = fieldFrame;
       renderDeltaSeconds = deltaSeconds;
-      this.updateAnalysisDebug(fieldFrame, false);
     } else {
       if (fieldFrame.modes.length === 0) {
         const previewTime = time > 0.05 ? time : this.analysisPreviewTime;
         fieldFrame = this.modalEngine.update(previewTime, this.settings, 1 / 60);
         this.lastModalFieldFrame = fieldFrame;
-        this.updateAnalysisDebug(fieldFrame, false);
       }
     }
 
     this.updateScreenViewDamping(deltaSeconds);
+    this.updateMonitorState(fieldFrame);
     this.modalRenderer.render(
       this.renderer,
       fieldFrame,
@@ -540,6 +550,73 @@ export class WavefieldApp {
 
     this.animationFrame = requestAnimationFrame(this.animate);
   };
+
+  private updateMonitorState(fieldFrame: ModalFieldFrame) {
+    const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
+
+    // Diagnostics readouts (formerly the floating analysis-debug HUD).
+    const peak = fieldFrame.peaks[0];
+    this.monitorState.drive = formatDriveMode(this.settings.driveMode);
+    this.monitorState.peak = peak
+      ? `${Math.round(peak.frequency)} Hz`
+      : fieldFrame.debug.peakSummary;
+    this.monitorState.base =
+      fieldFrame.debug.topologyFrequency > 0
+        ? `${Math.round(fieldFrame.debug.topologyFrequency)} Hz / ${fieldFrame.debug.topologyMode}`
+        : "none";
+    this.monitorState.modes = `${fieldFrame.modes.length}/${fieldFrame.debug.activeModeCount}`;
+    this.monitorState.topology = fieldFrame.signals.topology;
+    this.monitorState.excitation = fieldFrame.debug.excitation;
+    this.monitorState.change = fieldFrame.signals.change;
+    this.monitorState.pulse = fieldFrame.signals.pulse;
+
+    switch (this.settings.monitorSignal) {
+      case "frequency": {
+        const frequency =
+          fieldFrame.debug.topologyFrequency ||
+          fieldFrame.peaks[0]?.frequency ||
+          0;
+        // Log-normalise across the audible band the engine spans (70–7200 Hz).
+        this.monitorState.graph =
+          frequency > 0
+            ? clamp01(
+                (Math.log2(frequency) - Math.log2(70)) /
+                  (Math.log2(7_200) - Math.log2(70)),
+              )
+            : 0;
+        this.monitorState.reading = `${Math.round(frequency)} Hz`;
+        return;
+      }
+      case "level":
+        this.monitorState.graph = clamp01(fieldFrame.rms);
+        this.monitorState.reading = fieldFrame.rms.toFixed(2);
+        return;
+      case "excitation":
+        this.monitorState.graph = clamp01(fieldFrame.signals.excitation);
+        this.monitorState.reading = fieldFrame.signals.excitation.toFixed(2);
+        return;
+      case "change":
+        this.monitorState.graph = clamp01(fieldFrame.signals.change);
+        this.monitorState.reading = fieldFrame.signals.change.toFixed(2);
+        return;
+      case "pulse":
+        this.monitorState.graph = clamp01(fieldFrame.signals.pulse);
+        this.monitorState.reading = fieldFrame.signals.pulse.toFixed(2);
+        return;
+      case "low":
+        this.monitorState.graph = clamp01(fieldFrame.bands.low);
+        this.monitorState.reading = fieldFrame.bands.low.toFixed(2);
+        return;
+      case "mid":
+        this.monitorState.graph = clamp01(fieldFrame.bands.mid);
+        this.monitorState.reading = fieldFrame.bands.mid.toFixed(2);
+        return;
+      case "high":
+        this.monitorState.graph = clamp01(fieldFrame.bands.high);
+        this.monitorState.reading = fieldFrame.bands.high.toFixed(2);
+        return;
+    }
+  }
 
   private resize = () => {
     const width = window.innerWidth;
@@ -822,47 +899,6 @@ export class WavefieldApp {
     this.modalRenderer.requestReset();
   }
 
-  private updateAnalysisDebug(fieldFrame: ModalFieldFrame, isIdlePreview: boolean) {
-    if (!this.analysis && !isIdlePreview && this.settings.driveMode === "audio") {
-      this.analysisDebug.hidden = true;
-      return;
-    }
-
-    const signals = fieldFrame.signals;
-    const peak = fieldFrame.peaks[0];
-    const peakLabel = peak
-      ? `${Math.round(peak.frequency)}Hz`
-      : fieldFrame.debug.peakSummary;
-    const topologyLabel =
-      fieldFrame.debug.topologyFrequency > 0
-        ? `${Math.round(fieldFrame.debug.topologyFrequency)}Hz / ${fieldFrame.debug.topologyMode}`
-        : "none";
-    this.analysisDebug.hidden = false;
-    this.analysisDebug.innerHTML = `
-      <div class="analysis-debug-row">
-        <span>drive</span>
-        <strong>${formatDriveMode(this.settings.driveMode)}</strong>
-      </div>
-      <div class="analysis-debug-row">
-        <span>peak</span>
-        <strong>${peakLabel}</strong>
-      </div>
-      <div class="analysis-debug-row">
-        <span>base</span>
-        <strong>${topologyLabel}</strong>
-      </div>
-      <div class="analysis-debug-row">
-        <span>modes</span>
-        <strong>${fieldFrame.modes.length}/${fieldFrame.debug.activeModeCount}</strong>
-      </div>
-      <div class="analysis-debug-meter">
-        <span>T ${formatSignal(signals.topology)}</span>
-        <span>X ${formatSignal(fieldFrame.debug.excitation)}</span>
-        <span>C ${formatSignal(signals.change)}</span>
-        <span>P ${formatSignal(signals.pulse)}</span>
-      </div>
-    `;
-  }
 
   private async setDriveMode(driveMode: DriveMode, announce = true) {
     const shouldRestartLive =
@@ -887,7 +923,6 @@ export class WavefieldApp {
     this.manualSeconds = 0;
     this.liveSeconds = 0;
     this.lastModalFieldFrame = EMPTY_MODAL_FIELD_FRAME;
-    this.analysisDebug.hidden = true;
     this.modalEngine.reset(driveMode === "audio" ? this.wavesurfer.getCurrentTime() : 0);
     this.fieldSettingsKey = getFieldSettingsKey(this.settings);
     this.resetVisualState();
@@ -947,10 +982,17 @@ export class WavefieldApp {
         max: AUDIO_CONTROLS.frequencySweepRate.max,
         step: AUDIO_CONTROLS.frequencySweepRate.step,
       });
+      this.modeSettingsPane.addBinding(this.settings, "frequencySweepRange", {
+        label: AUDIO_CONTROLS.frequencySweepRange.label,
+        min: AUDIO_CONTROLS.frequencySweepRange.min,
+        max: AUDIO_CONTROLS.frequencySweepRange.max,
+        step: AUDIO_CONTROLS.frequencySweepRange.step,
+      });
     }
     this.modeSettingsPane.on("change", () => {
       this.handleSettingsChange();
     });
+    applyTooltipsByLabel(this.modeSettingsHost);
   }
 
   private disposeModeSettingsPane() {
@@ -972,10 +1014,6 @@ function formatFixtureLabel(path: string) {
   const fileName = path.split("/").pop() ?? path;
   const label = fileName.replace(/\.[^.]+$/, "").replace(/[-_]+/g, " ");
   return label.replace(/\b\w/g, (letter) => letter.toUpperCase());
-}
-
-function formatSignal(value: number) {
-  return Math.round(value * 100).toString().padStart(2, "0");
 }
 
 function formatDriveMode(driveMode: DriveMode) {

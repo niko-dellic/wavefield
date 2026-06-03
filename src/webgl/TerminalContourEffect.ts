@@ -9,6 +9,7 @@ const FRAGMENT_SHADER = `
   uniform float contourLevels;
   uniform float contourStrength;
   uniform float contourThreshold;
+  uniform float colorPreserve;
 
   float luminance(vec3 color) {
     return dot(color, vec3(0.2126, 0.7152, 0.0722));
@@ -48,7 +49,9 @@ const FRAGMENT_SHADER = `
     float glyph = lineShape(local, centerLum) * mark;
     vec3 terminalColor = vec3(0.72, 0.94, 1.0) * glyph * (0.38 + centerLum * 1.55);
     vec3 base = inputColor.rgb * 0.2;
-    vec3 color = max(base, terminalColor);
+    vec3 terminalComposite = max(base, terminalColor);
+    vec3 preservedColor = max(inputColor.rgb, terminalColor * 0.22);
+    vec3 color = mix(terminalComposite, preservedColor, colorPreserve);
 
     outputColor = vec4(color, inputColor.a);
   }
@@ -60,6 +63,7 @@ export class TerminalContourEffect extends Effect {
   private readonly contourLevelsUniform: Uniform<number>;
   private readonly contourStrengthUniform: Uniform<number>;
   private readonly contourThresholdUniform: Uniform<number>;
+  private readonly colorPreserveUniform: Uniform<number>;
 
   constructor() {
     const resolutionUniform = new Uniform(new Vector2(1, 1));
@@ -67,6 +71,7 @@ export class TerminalContourEffect extends Effect {
     const contourLevelsUniform = new Uniform(8);
     const contourStrengthUniform = new Uniform(1);
     const contourThresholdUniform = new Uniform(0.09);
+    const colorPreserveUniform = new Uniform(0);
 
     super("TerminalContourEffect", FRAGMENT_SHADER, {
       attributes: EffectAttribute.CONVOLUTION,
@@ -77,6 +82,7 @@ export class TerminalContourEffect extends Effect {
         ["contourLevels", contourLevelsUniform],
         ["contourStrength", contourStrengthUniform],
         ["contourThreshold", contourThresholdUniform],
+        ["colorPreserve", colorPreserveUniform],
       ]),
     });
 
@@ -85,6 +91,7 @@ export class TerminalContourEffect extends Effect {
     this.contourLevelsUniform = contourLevelsUniform;
     this.contourStrengthUniform = contourStrengthUniform;
     this.contourThresholdUniform = contourThresholdUniform;
+    this.colorPreserveUniform = colorPreserveUniform;
   }
 
   setSize(width: number, height: number) {
@@ -96,5 +103,6 @@ export class TerminalContourEffect extends Effect {
     this.contourLevelsUniform.value = settings.terminalContourLevels;
     this.contourStrengthUniform.value = settings.terminalContourStrength;
     this.contourThresholdUniform.value = settings.terminalContourThreshold;
+    this.colorPreserveUniform.value = settings.colorMode === "heatmap" ? 0.86 : 0;
   }
 }

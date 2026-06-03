@@ -157,7 +157,9 @@ export function getManualFrequency(settings: CymaticSettings, time: number) {
     return baseFrequency;
   }
 
-  const sweep =
-    0.5 + 0.5 * Math.sin(time * Math.PI * 2 * settings.frequencySweepRate);
-  return MIN_FREQUENCY * Math.pow(MAX_FREQUENCY / MIN_FREQUENCY, sweep);
+  // Oscillate around the chosen test frequency by ±range octaves. The range
+  // controls how far the figure roams (intensity); the rate controls how fast.
+  const oscillation = Math.sin(time * Math.PI * 2 * settings.frequencySweepRate);
+  const swept = baseFrequency * Math.pow(2, settings.frequencySweepRange * oscillation);
+  return clamp(swept, MIN_FREQUENCY, MAX_FREQUENCY);
 }

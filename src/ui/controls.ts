@@ -3,13 +3,154 @@ import { Pane, type FolderApi } from "tweakpane";
 import {
   AUDIO_CONTROLS,
   ENGINE_CONTROLS,
+  MONITOR_SIGNAL_OPTIONS,
   POST_EFFECT_CONTROLS,
   POST_EFFECT_LABELS,
+  SETTING_DESCRIPTIONS,
   SHADER_CONTROLS,
   SPHERE_CONTROLS,
   type NumericControlConfig,
+  type PostEffectControlConfig,
 } from "../config/settings";
 import type { CymaticSettings, PostEffectId } from "../types";
+
+/** Live, read-only state surfaced by the Status monitor folder. */
+export type MonitorState = {
+  graph: number;
+  reading: string;
+  drive: string;
+  peak: string;
+  base: string;
+  modes: string;
+  topology: number;
+  excitation: number;
+  change: number;
+  pulse: number;
+};
+
+// Maps each visible control label back to its settings key so we can attach
+// hover tooltips after Tweakpane has rendered its rows.
+const LABEL_TO_KEY = new Map<string, keyof CymaticSettings>();
+for (const group of [
+  ENGINE_CONTROLS,
+  AUDIO_CONTROLS,
+  SHADER_CONTROLS,
+  SPHERE_CONTROLS,
+]) {
+  for (const control of Object.values(group)) {
+    LABEL_TO_KEY.set(control.label, control.key);
+  }
+}
+for (const controls of Object.values(POST_EFFECT_CONTROLS)) {
+  for (const control of controls) {
+    LABEL_TO_KEY.set(control.label, control.key);
+  }
+}
+// Bindings whose label is defined inline (selects / toggles).
+for (const [label, key] of [
+  ["projection", "projectionMode"],
+  ["color", "colorMode"],
+  ["palette", "heatmapPalette"],
+  ["boundary", "boundaryMode"],
+  ["aspect", "screenAspectMode"],
+  ["field", "sphereFieldMode"],
+  ["mapping", "sphereProjectionType"],
+  ["transparent sphere", "sphereBackgroundTransparent"],
+  ["sweep", "frequencySweep"],
+  ["monitor", "monitorSignal"],
+] satisfies Array<[string, keyof CymaticSettings]>) {
+  LABEL_TO_KEY.set(label, key);
+}
+
+const TOOLTIP_ATTR = "data-wf-tooltip";
+let tooltipElement: HTMLElement | null = null;
+let tooltipBound = false;
+
+function ensureTooltipElement() {
+  if (!tooltipElement) {
+    tooltipElement = document.createElement("div");
+    tooltipElement.className = "wf-tooltip";
+    tooltipElement.setAttribute("role", "tooltip");
+    document.body.append(tooltipElement);
+  }
+  return tooltipElement;
+}
+
+function hideTooltip() {
+  tooltipElement?.classList.remove("is-visible");
+}
+
+function showTooltip(row: HTMLElement) {
+  const text = row.getAttribute(TOOLTIP_ATTR);
+  if (!text) {
+    return;
+  }
+
+  const tip = ensureTooltipElement();
+  tip.textContent = text;
+  const rowRect = row.getBoundingClientRect();
+  const tipRect = tip.getBoundingClientRect();
+  const margin = 12;
+  // Prefer the left of the row (panels hug the right edge); fall back to the
+  // right when there isn't room.
+  let left = rowRect.left - tipRect.width - margin;
+  if (left < 8) {
+    left = Math.min(rowRect.right + margin, window.innerWidth - tipRect.width - 8);
+  }
+  const top = Math.max(
+    8,
+    Math.min(
+      rowRect.top + rowRect.height / 2 - tipRect.height / 2,
+      window.innerHeight - tipRect.height - 8,
+    ),
+  );
+  tip.style.left = `${Math.max(8, left)}px`;
+  tip.style.top = `${top}px`;
+  tip.classList.add("is-visible");
+}
+
+// One delegated listener handles every current and future control row.
+function bindTooltipDelegation() {
+  if (tooltipBound) {
+    return;
+  }
+  tooltipBound = true;
+
+  document.addEventListener("pointerover", (event) => {
+    const row = (event.target as HTMLElement | null)?.closest<HTMLElement>(
+      `[${TOOLTIP_ATTR}]`,
+    );
+    if (row) {
+      showTooltip(row);
+    }
+  });
+  document.addEventListener("pointerout", (event) => {
+    const row = (event.target as HTMLElement | null)?.closest<HTMLElement>(
+      `[${TOOLTIP_ATTR}]`,
+    );
+    const related = event.relatedTarget as HTMLElement | null;
+    if (row && !(related && row.contains(related))) {
+      hideTooltip();
+    }
+  });
+  document.addEventListener("pointerdown", hideTooltip);
+  window.addEventListener("scroll", hideTooltip, true);
+}
+
+/** Attach styled hover tooltips to every Tweakpane row inside `root`. */
+export function applyTooltipsByLabel(root: HTMLElement) {
+  bindTooltipDelegation();
+  for (const label of root.querySelectorAll<HTMLElement>(".tp-lblv_l")) {
+    const key = LABEL_TO_KEY.get(label.textContent?.trim() ?? "");
+    const description = key ? SETTING_DESCRIPTIONS[key] : undefined;
+    if (description) {
+      (label.closest<HTMLElement>(".tp-lblv") ?? label).setAttribute(
+        TOOLTIP_ATTR,
+        description,
+      );
+    }
+  }
+}
 
 export type ControlsManager = {
   dispose(): void;
@@ -20,13 +161,17 @@ export function createControls(
   container: HTMLElement,
   settings: CymaticSettings,
   onChange: () => void,
+  monitorState: MonitorState,
 ): ControlsManager {
   let pane: Pane | null = null;
+  let monitorPane: Pane | null = null;
   let postPanes: Pane[] = [];
   let layoutKey = "";
 
   const build = () => {
     postPanes = removePostPanel(container, postPanes);
+    monitorPane?.dispose();
+    monitorPane = null;
     pane?.dispose();
     pane = new Pane({
       container,
@@ -48,8 +193,19 @@ export function createControls(
         Mono: "mono",
         "Band split": "bandSplit",
         "Thermal phase": "thermalPhase",
+        Heatmap: "heatmap",
       },
     });
+    if (settings.colorMode === "heatmap") {
+      engine.addBinding(settings, "heatmapPalette", {
+        label: "palette",
+        options: {
+          "Scientific heat": "scientificHeat",
+          Blackbody: "blackbody",
+          "Turbo-style": "turbo",
+        },
+      });
+    }
 
     engine.addBinding(settings, "boundaryMode", {
       label: "boundary",
@@ -126,7 +282,60 @@ export function createControls(
     }
 
     pane.on("change", onChange);
+
+    // Live monitors live in their own pane: their 50ms ticks emit change events
+    // that must NOT reach the input pane's change/refresh path (that recurses).
+    monitorPane = new Pane({ container });
+    const status = monitorPane.addFolder({ title: "Status", expanded: true });
+    status.addBinding(monitorState, "drive", { readonly: true, label: "drive" });
+    status.addBinding(monitorState, "peak", { readonly: true, label: "peak" });
+    status.addBinding(monitorState, "base", { readonly: true, label: "base" });
+    status.addBinding(monitorState, "modes", { readonly: true, label: "active modes" });
+    const monitorBinding = status.addBinding(settings, "monitorSignal", {
+      label: "monitor",
+      options: MONITOR_SIGNAL_OPTIONS,
+    });
+    // Only the selector (an input) propagates; the readonly monitors below do not.
+    monitorBinding.on("change", onChange);
+    // Normalised 0..1 rolling graph of the selected live signal.
+    status.addBinding(monitorState, "graph", {
+      readonly: true,
+      view: "graph",
+      label: "graph",
+      min: 0,
+      max: 1,
+      interval: 50,
+    });
+    // Real value (e.g. "440 Hz" or "0.42") of the selected signal.
+    status.addBinding(monitorState, "reading", {
+      readonly: true,
+      label: "value",
+      interval: 50,
+    });
+    const formatSignal = (value: number) => value.toFixed(2);
+    status.addBinding(monitorState, "topology", {
+      readonly: true,
+      label: "topology",
+      format: formatSignal,
+    });
+    status.addBinding(monitorState, "excitation", {
+      readonly: true,
+      label: "excitation",
+      format: formatSignal,
+    });
+    status.addBinding(monitorState, "change", {
+      readonly: true,
+      label: "change",
+      format: formatSignal,
+    });
+    status.addBinding(monitorState, "pulse", {
+      readonly: true,
+      label: "pulse",
+      format: formatSignal,
+    });
+
     postPanes = mountPostPanel(container, settings, onChange);
+    applyTooltipsByLabel(container);
   };
 
   const refresh = () => {
@@ -145,6 +354,8 @@ export function createControls(
   return {
     dispose() {
       postPanes = removePostPanel(container, postPanes);
+      monitorPane?.dispose();
+      monitorPane = null;
       pane?.dispose();
       pane = null;
     },
@@ -162,6 +373,7 @@ function getLayoutKey(settings: CymaticSettings) {
     settings.postBloomEnabled,
     settings.postPixelationEnabled,
     settings.postFisheyeEnabled,
+    settings.postAlphaDecayEnabled,
     settings.terminalContourEnabled,
     settings.postEffectOrder.join(","),
   ].join(":");
@@ -185,13 +397,21 @@ const POST_EFFECT_ENABLED_KEYS: Record<
   | "postBloomEnabled"
   | "postPixelationEnabled"
   | "postFisheyeEnabled"
+  | "postAlphaDecayEnabled"
   | "terminalContourEnabled"
 > = {
   bloom: "postBloomEnabled",
   pixelation: "postPixelationEnabled",
   fisheye: "postFisheyeEnabled",
+  alphaDecay: "postAlphaDecayEnabled",
   terminal: "terminalContourEnabled",
 };
+
+function isNumericControl(
+  control: PostEffectControlConfig,
+): control is NumericControlConfig {
+  return "min" in control;
+}
 
 function mountPostPanel(
   container: HTMLElement,
@@ -267,13 +487,21 @@ function mountPostPanel(
       });
       effectPane.element.classList.add("post-effect-pane");
       for (const control of POST_EFFECT_CONTROLS[effectId]) {
-        effectPane.addBinding(settings, control.key, {
-          disabled: !settings.postProcessingEnabled,
-          label: control.label,
-          max: control.max,
-          min: control.min,
-          step: control.step,
-        });
+        if (isNumericControl(control)) {
+          effectPane.addBinding(settings, control.key, {
+            disabled: !settings.postProcessingEnabled,
+            label: control.label,
+            max: control.max,
+            min: control.min,
+            step: control.step,
+          });
+        } else {
+          effectPane.addBinding(settings, control.key, {
+            disabled: !settings.postProcessingEnabled,
+            label: control.label,
+            options: control.options,
+          });
+        }
       }
       effectPane.on("change", onChange);
       postPanes.push(effectPane);

@@ -1,12 +1,45 @@
 export type FrequencyBand = "low" | "mid" | "high";
 export type ProjectionMode = "screen" | "sphere";
 export type BoundaryMode = "freePlate" | "dirichlet" | "neumann";
-export type ColorMode = "chromesthesia" | "mono" | "bandSplit" | "thermalPhase";
+export type ColorMode =
+  | "chromesthesia"
+  | "mono"
+  | "bandSplit"
+  | "thermalPhase"
+  | "heatmap";
+export type HeatmapPalette = "scientificHeat" | "blackbody" | "turbo";
 export type SphereFieldMode = "surface" | "volume";
 export type SphereProjectionType = "uv" | "triplanar";
 export type ScreenAspectMode = "circle" | "fit";
 export type IdleMode = "ambient";
-export type PostEffectId = "bloom" | "pixelation" | "fisheye" | "terminal";
+export type MonitorSignal =
+  | "frequency"
+  | "level"
+  | "excitation"
+  | "change"
+  | "pulse"
+  | "low"
+  | "mid"
+  | "high";
+export type PostEffectId =
+  | "bloom"
+  | "pixelation"
+  | "fisheye"
+  | "alphaDecay"
+  | "terminal";
+export type AlphaDecayBlendMode =
+  | "normal"
+  | "screen"
+  | "multiply"
+  | "overlay"
+  | "add"
+  | "subtract"
+  | "darken"
+  | "lighten"
+  | "difference"
+  | "exclusion"
+  | "softLight"
+  | "hardLight";
 export type DriveMode = "audio" | "manual" | "live";
 
 export type SpectralPeak = {
@@ -66,6 +99,8 @@ export type CymaticSettings = {
   sphereProjectionType: SphereProjectionType;
   screenAspectMode: ScreenAspectMode;
   idleMode: IdleMode;
+  monitorSignal: MonitorSignal;
+  heatmapPalette: HeatmapPalette;
   cymaticDensity: number;
   cymaticBrightness: number;
   cymaticOpacity: number;
@@ -84,6 +119,7 @@ export type CymaticSettings = {
   testFrequency: number;
   frequencySweep: boolean;
   frequencySweepRate: number;
+  frequencySweepRange: number;
   lowScale: number;
   midScale: number;
   highScale: number;
@@ -110,6 +146,9 @@ export type CymaticSettings = {
   postFisheyeK1: number;
   postFisheyeK2: number;
   postFisheyeStrength: number;
+  postAlphaDecayEnabled: boolean;
+  postAlphaDecayFrames: number;
+  postAlphaDecayBlendMode: AlphaDecayBlendMode;
   terminalContourEnabled: boolean;
   terminalCellSize: number;
   terminalContourLevels: number;

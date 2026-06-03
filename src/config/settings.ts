@@ -1,13 +1,20 @@
-import type { CymaticSettings, PostEffectId } from "../types";
+import type {
+  AlphaDecayBlendMode,
+  CymaticSettings,
+  MonitorSignal,
+  PostEffectId,
+} from "../types";
 
 export const DEFAULT_SETTINGS: CymaticSettings = {
   projectionMode: "screen",
   boundaryMode: "freePlate",
-  colorMode: "chromesthesia",
+  colorMode: "heatmap",
   sphereFieldMode: "surface",
   sphereProjectionType: "triplanar",
   screenAspectMode: "circle",
   idleMode: "ambient",
+  monitorSignal: "frequency",
+  heatmapPalette: "turbo",
   cymaticDensity: 1.2,
   cymaticBrightness: 1.35,
   cymaticOpacity: 1.1,
@@ -26,6 +33,7 @@ export const DEFAULT_SETTINGS: CymaticSettings = {
   testFrequency: 220,
   frequencySweep: true,
   frequencySweepRate: 0.05,
+  frequencySweepRange: 1.5,
   lowScale: 1.18,
   midScale: 1.12,
   highScale: 1.08,
@@ -43,7 +51,7 @@ export const DEFAULT_SETTINGS: CymaticSettings = {
   sphereInteriorGlow: 0.35,
   sphereBackgroundTransparent: false,
   postProcessingEnabled: true,
-  postEffectOrder: ["bloom", "pixelation", "fisheye", "terminal"],
+  postEffectOrder: ["bloom", "pixelation", "fisheye", "terminal", "alphaDecay"],
   postBloomEnabled: false,
   postBloomIntensity: 0.72,
   postPixelationEnabled: false,
@@ -52,6 +60,9 @@ export const DEFAULT_SETTINGS: CymaticSettings = {
   postFisheyeK1: -0.33,
   postFisheyeK2: 0,
   postFisheyeStrength: 1,
+  postAlphaDecayEnabled: false,
+  postAlphaDecayFrames: 24,
+  postAlphaDecayBlendMode: "screen",
   terminalContourEnabled: true,
   terminalCellSize: 9,
   terminalContourLevels: 8,
@@ -65,6 +76,43 @@ export type NumericControlConfig = {
   min: number;
   max: number;
   step: number;
+};
+
+export type SelectControlConfig = {
+  key: keyof CymaticSettings;
+  label: string;
+  options: Record<string, string>;
+};
+
+export type PostEffectControlConfig =
+  | NumericControlConfig
+  | SelectControlConfig;
+
+export const ALPHA_DECAY_BLEND_OPTIONS: Record<string, AlphaDecayBlendMode> = {
+  Normal: "normal",
+  Screen: "screen",
+  Multiply: "multiply",
+  Overlay: "overlay",
+  Add: "add",
+  Subtract: "subtract",
+  Darken: "darken",
+  Lighten: "lighten",
+  Difference: "difference",
+  Exclusion: "exclusion",
+  "Soft light": "softLight",
+  "Hard light": "hardLight",
+};
+
+// Live signal sources selectable in the Signals monitor folder.
+export const MONITOR_SIGNAL_OPTIONS: Record<string, MonitorSignal> = {
+  "Frequency (Hz)": "frequency",
+  "Level (RMS)": "level",
+  Excitation: "excitation",
+  Change: "change",
+  Pulse: "pulse",
+  "Low band": "low",
+  "Mid band": "mid",
+  "High band": "high",
 };
 
 export const ENGINE_CONTROLS = {
@@ -248,9 +296,16 @@ export const AUDIO_CONTROLS = {
   frequencySweepRate: {
     key: "frequencySweepRate",
     label: "sweep rate",
-    min: 0.02,
-    max: 1.2,
+    min: 0.01,
+    max: 0.5,
     step: 0.01,
+  },
+  frequencySweepRange: {
+    key: "frequencySweepRange",
+    label: "sweep range",
+    min: 0.1,
+    max: 4,
+    step: 0.05,
   },
   gain: {
     key: "gain",
@@ -300,10 +355,14 @@ export const POST_EFFECT_LABELS: Record<PostEffectId, string> = {
   bloom: "Bloom",
   pixelation: "Pixelation",
   fisheye: "Fisheye",
+  alphaDecay: "Alpha decay",
   terminal: "Terminal contours",
 };
 
-export const POST_EFFECT_CONTROLS: Record<PostEffectId, NumericControlConfig[]> = {
+export const POST_EFFECT_CONTROLS: Record<
+  PostEffectId,
+  PostEffectControlConfig[]
+> = {
   bloom: [
     {
       key: "postBloomIntensity",
@@ -345,6 +404,20 @@ export const POST_EFFECT_CONTROLS: Record<PostEffectId, NumericControlConfig[]> 
       step: 0.01,
     },
   ],
+  alphaDecay: [
+    {
+      key: "postAlphaDecayFrames",
+      label: "Trail frames",
+      min: 1,
+      max: 180,
+      step: 1,
+    },
+    {
+      key: "postAlphaDecayBlendMode",
+      label: "Blend",
+      options: ALPHA_DECAY_BLEND_OPTIONS,
+    },
+  ],
   terminal: [
     {
       key: "terminalCellSize",
@@ -375,4 +448,86 @@ export const POST_EFFECT_CONTROLS: Record<PostEffectId, NumericControlConfig[]> 
       step: 0.001,
     },
   ],
+};
+
+// Hover tooltips for GUI controls, keyed by settings field. Surfaced via the
+// `title` attribute on each Tweakpane row.
+export const SETTING_DESCRIPTIONS: Partial<Record<keyof CymaticSettings, string>> = {
+  projectionMode: "Render the field on a flat screen plate or wrapped onto a sphere.",
+  colorMode:
+    "How the field is colored: chromesthesia (pitch-mapped hue), mono, frequency-band split, thermal phase, or heatmap.",
+  heatmapPalette:
+    "Heatmap palette used when color is Heatmap: scientific heat, blackbody, or turbo-style.",
+  boundaryMode:
+    "Plate edge condition that defines the figure family: free plate, Dirichlet (clamped), or Neumann.",
+  screenAspectMode:
+    "Circle keeps the figure square/centered regardless of window shape; Fit stretches it to the viewport.",
+  monitorSignal:
+    "Which live signal feeds the graph monitor below: frequency, level, the excitation/change/pulse signals, or a frequency band.",
+  modalCount:
+    "Maximum number of Chladni modes layered at once. Lower = cleaner single figures; higher = busier, more complex patterns.",
+  sensitivity:
+    "How strongly audio level drives the figure's presence (its geometry), independent of glow.",
+  audioResponse:
+    "Dynamics curve. Above 1 lifts quiet moments so subtle sounds make bigger changes; 1 is linear; below 1 only loud hits show.",
+  patternHoldSeconds:
+    "Focus: contrast between the dominant figure and weaker modes. Higher = one crisp figure; lower = several modes share the field.",
+  morphSeconds:
+    "How fast modes rise to a new shape (attack). Lower = snappier and more reactive; higher = smoother, slower morphing.",
+  cymaticHarmonicMix:
+    "Harmonic spread: layers a higher overtone of each figure as extra texture/detail.",
+  gain: "Master gain on audio excitation — overall brightness/energy response to the audio.",
+  modalDrive: "How strongly audio energizes each mode's glow/excitation.",
+  modalDecay:
+    "Decay/hold: how long modes (and their glow) linger after the triggering sound fades before returning to rest.",
+  lowScale: "Weighting of low-frequency (bass) content in the pattern.",
+  midScale: "Weighting of mid-frequency content in the pattern.",
+  highScale: "Weighting of high-frequency (treble) content in the pattern.",
+  cymaticDensity:
+    "How much of the field lights up — raises overall coverage and intensity of the nodal pattern.",
+  cymaticBrightness: "Master exposure on the rendered color. Push up for bolder, brighter lines.",
+  cymaticOpacity:
+    "How solid vs. transparent the field renders. Higher makes the pattern more opaque.",
+  cymaticNodeWidth:
+    "Thickness of the nodal lines. Larger = thicker, bolder lines; smaller = fine and crisp.",
+  cymaticSoftness: "Soft glow/bleed around the nodal lines.",
+  cymaticInterference:
+    "Overlays a transposed partner figure to create moiré cross-lattice detail.",
+  cymaticEdgeFade: "Controls how contour edges taper off based on the field gradient.",
+  cymaticWarp: "Amount of organic domain warping applied to the field for a more fluid look.",
+  cymaticWarpScale:
+    "Scale of the warp noise — larger = broad swirls; smaller = finer turbulence.",
+  cymaticDrift: "Slow continuous drift of the field over time.",
+  chromesthesiaMix:
+    "Blend between neutral coloring and pitch-class color mapping (chromesthesia).",
+  testFrequency: "Manual drive: the frequency (Hz) fed to the engine to pick the figure.",
+  frequencySweep:
+    "Manual drive: continuously oscillate the frequency around the test Hz.",
+  frequencySweepRate: "Manual drive: how fast the sweep oscillates.",
+  frequencySweepRange:
+    "Manual drive: how far the sweep roams around the test Hz, in octaves (the intensity of the morph).",
+  sphereFieldMode: "Render the figure on the sphere surface, or as a volumetric interior.",
+  sphereProjectionType:
+    "How the 2D figure maps onto the sphere: triplanar (seamless) or UV.",
+  sphereRaymarchSteps:
+    "Volume quality — more steps give a smoother volume at higher GPU cost.",
+  sphereAbsorption: "How quickly the volume accumulates opacity along each ray.",
+  sphereShellBias: "Biases density toward the outer shell vs. throughout the volume.",
+  sphereInteriorGlow: "Brightness of the volume's interior body fill.",
+  sphereSurfaceOpacity: "Opacity of the sphere surface / transparent volume.",
+  sphereRadius: "Size of the sphere in the view.",
+  sphereBackgroundTransparent: "Render the sphere over a transparent background.",
+  postBloomIntensity: "Strength of the bloom glow.",
+  postPixelSize: "Size of the pixelation blocks.",
+  postFisheyeK1: "Primary fisheye lens distortion coefficient.",
+  postFisheyeK2: "Secondary fisheye lens distortion coefficient.",
+  postFisheyeStrength: "Overall strength of the fisheye distortion.",
+  postAlphaDecayFrames:
+    "Approximate frame count for the alpha-decay trail. Higher values linger longer.",
+  postAlphaDecayBlendMode:
+    "How the decayed history blends with the current frame.",
+  terminalCellSize: "Size of the terminal/ASCII contour cells.",
+  terminalContourLevels: "Number of contour bands drawn.",
+  terminalContourStrength: "Contrast/strength of the contour lines.",
+  terminalContourThreshold: "Minimum field level before contour lines appear.",
 };

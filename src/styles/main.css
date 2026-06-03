@@ -328,56 +328,6 @@ select {
   min-width: 0;
 }
 
-.analysis-debug {
-  pointer-events: auto;
-  padding: 9px 10px;
-  border: 1px solid rgb(255 255 255 / 11%);
-  border-radius: 6px;
-  background: rgb(0 0 0 / 58%);
-  color: rgb(238 250 255 / 76%);
-  font: 11px/1.25 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
-  backdrop-filter: blur(14px);
-}
-
-.analysis-debug {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 5px;
-  width: min(360px, calc(100vw - 32px));
-}
-
-.analysis-debug[hidden] {
-  display: none;
-}
-
-.analysis-debug-row,
-.analysis-debug-meter {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
-.analysis-debug-row span {
-  flex: 0 0 42px;
-  color: rgb(238 250 255 / 42%);
-  text-transform: uppercase;
-}
-
-.analysis-debug-row strong {
-  min-width: 0;
-  overflow: hidden;
-  color: #eefaff;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.analysis-debug-meter {
-  justify-content: space-between;
-  color: rgb(217 247 255 / 68%);
-}
-
 .post-panel {
   margin-top: 8px;
   padding: 8px;
@@ -715,4 +665,30 @@ select {
     height: 32px;
     padding: 0;
   }
+}
+
+.wf-tooltip {
+  position: fixed;
+  z-index: 9999;
+  max-width: 248px;
+  padding: 8px 10px;
+  border-radius: 9px;
+  background: rgb(10 16 22 / 96%);
+  color: rgb(232 246 255 / 92%);
+  font-size: 11px;
+  line-height: 1.42;
+  letter-spacing: 0.01em;
+  border: 1px solid rgb(255 255 255 / 12%);
+  box-shadow: 0 10px 28px rgb(0 0 0 / 48%);
+  pointer-events: none;
+  opacity: 0;
+  transform: translateX(4px);
+  transition:
+    opacity 90ms ease,
+    transform 90ms ease;
+}
+
+.wf-tooltip.is-visible {
+  opacity: 1;
+  transform: none;
 }

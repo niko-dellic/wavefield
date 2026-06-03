@@ -13,11 +13,13 @@ import type {
   BoundaryMode,
   ColorMode,
   CymaticSettings,
+  HeatmapPalette,
   PostEffectId,
   ProjectionMode,
   SphereFieldMode,
   SphereProjectionType,
 } from "../types";
+import { AlphaDecayPass } from "./AlphaDecayPass";
 import { FisheyeEffect } from "./FisheyeEffect";
 import { TerminalContourEffect } from "./TerminalContourEffect";
 
@@ -32,6 +34,13 @@ const COLOR_MODE_INDEX: Record<ColorMode, number> = {
   mono: 1,
   bandSplit: 2,
   thermalPhase: 3,
+  heatmap: 4,
+};
+
+const HEATMAP_PALETTE_INDEX: Record<HeatmapPalette, number> = {
+  scientificHeat: 0,
+  blackbody: 1,
+  turbo: 2,
 };
 
 const PROJECTION_MODE_INDEX: Record<ProjectionMode, number> = {
@@ -109,6 +118,7 @@ const FRAGMENT_SHADER = `
   uniform vec4 uFeatureSignals;
   uniform vec4 uChromaProfile;
   uniform float uChromesthesiaMix;
+  uniform int uHeatmapPalette;
   uniform float uIdlePreview;
   uniform float uSurfaceOpacity;
   uniform float uSphereTransparent;
@@ -164,6 +174,57 @@ const FRAGMENT_SHADER = `
     }
 
     return values.z;
+  }
+
+  vec3 ramp4(float t, vec3 a, vec3 b, vec3 c, vec3 d) {
+    float x = clamp(t, 0.0, 1.0);
+    if (x < 0.33) {
+      return mix(a, b, smoothstep(0.0, 0.33, x));
+    }
+
+    if (x < 0.68) {
+      return mix(b, c, smoothstep(0.33, 0.68, x));
+    }
+
+    return mix(c, d, smoothstep(0.68, 1.0, x));
+  }
+
+  vec3 heatmapPalette(float heat) {
+    float t = clamp(heat, 0.0, 1.0);
+    if (uHeatmapPalette == 1) {
+      return ramp4(
+        t,
+        vec3(0.025, 0.0, 0.0),
+        vec3(0.58, 0.03, 0.0),
+        vec3(1.0, 0.48, 0.05),
+        vec3(1.0, 0.96, 0.72)
+      );
+    }
+
+    if (uHeatmapPalette == 2) {
+      return ramp4(
+        t,
+        vec3(0.28, 0.05, 0.58),
+        vec3(0.05, 0.46, 0.92),
+        vec3(0.08, 0.86, 0.42),
+        vec3(1.0, 0.08, 0.02)
+      );
+    }
+
+    return ramp4(
+      t,
+      vec3(0.02, 0.08, 0.42),
+      vec3(0.0, 0.78, 0.92),
+      vec3(1.0, 0.92, 0.18),
+      vec3(1.0, 0.12, 0.02)
+    );
+  }
+
+  float lineFeatherHeat(float fieldDistance, float nodeWidth, float featherScale, float haloHeat) {
+    float lineDistance = fieldDistance / max(0.00001, nodeWidth);
+    float featherDistance = clamp(lineDistance / max(1.0, featherScale), 0.0, 1.0);
+    float heat = pow(1.0 - smoothstep(0.0, 1.0, featherDistance), 0.78);
+    return clamp(max(heat, haloHeat), 0.0, 1.0);
   }
 
   vec2 plateUvFromScreen(vec2 uv) {
@@ -536,8 +597,11 @@ const FRAGMENT_SHADER = `
         interiorMask *
         uSphereInteriorGlow *
         (0.08 + field.energy * 0.06);
+      float featherInk = uColorMode == 4
+        ? broadBand * (0.16 + uSoftness * 0.34)
+        : broadBand * uSoftness * 0.06;
       float contourDensity =
-        (pow(nodeBand, 2.2) * 0.88 + broadBand * uSoftness * 0.06) *
+        (pow(nodeBand, 2.2) * 0.88 + featherInk) *
         (0.24 + structure * 0.76) *
         (0.48 + field.energy * 0.46) *
         shellWeight;
@@ -560,6 +624,13 @@ const FRAGMENT_SHADER = `
       vec3 thermalCold = vec3(0.08, 0.36, 0.9);
       vec3 thermalHot = vec3(1.0, 0.48, 0.18);
       vec3 thermalColor = mix(thermalCold, thermalHot, smoothstep(-0.35, 0.35, normalizedField));
+      float heat = lineFeatherHeat(
+        abs(normalizedField),
+        nodeWidth,
+        5.0 + uSoftness * 5.5,
+        0.0
+      );
+      vec3 heatmapColor = heatmapPalette(heat);
       vec3 bandColor = normalize(uBandEnergies + vec3(0.02)) *
         vec3(0.38, 0.74, 0.96) +
         vec3(uBandEnergies.z * 0.9, uBandEnergies.y * 0.42, uBandEnergies.x * 0.32) +
@@ -572,6 +643,8 @@ const FRAGMENT_SHADER = `
         color = mix(monoColor, clamp(bandColor, 0.0, 1.0), 0.72);
       } else if (uColorMode == 3) {
         color = mix(monoColor, thermalColor, 0.78);
+      } else if (uColorMode == 4) {
+        color = heatmapColor;
       }
 
       color *= 0.45 + nodeBand * 0.95 + field.energy * 0.18 + shellAccent * 0.18;
@@ -632,8 +705,11 @@ const FRAGMENT_SHADER = `
     float broadBand =
       1.0 - smoothstep(nodeWidth * 1.4, nodeWidth * (4.2 + uSoftness * 4.0), abs(normalizedField));
     float structure = smoothstep(0.02, 0.28 + uEdgeFade * 0.36, field.grad);
+    float featherInk = uColorMode == 4
+      ? broadBand * (0.2 + uSoftness * 0.38)
+      : broadBand * uSoftness * 0.06;
     float density = clamp(
-      (pow(nodeBand, 2.0) * 1.0 + broadBand * uSoftness * 0.06)
+      (pow(nodeBand, 2.0) * 1.0 + featherInk)
         * (0.4 + structure * 0.6)
         * (0.66 + field.energy * (uProjectionMode == 0 ? 0.42 : 0.52))
         * uDensity
@@ -663,6 +739,14 @@ const FRAGMENT_SHADER = `
     vec3 thermalCold = vec3(0.08, 0.36, 0.9);
     vec3 thermalHot = vec3(1.0, 0.48, 0.18);
     vec3 thermalColor = mix(thermalCold, thermalHot, smoothstep(-0.35, 0.35, normalizedField));
+    float haloHeat = clamp(halo * (3.0 + uSoftness * 3.0), 0.0, 0.2);
+    float heat = lineFeatherHeat(
+      abs(normalizedField),
+      nodeWidth,
+      4.2 + uSoftness * 4.0,
+      haloHeat
+    );
+    vec3 heatmapColor = heatmapPalette(heat);
     vec3 color = monoColor;
 
     if (uColorMode == 0) {
@@ -671,6 +755,8 @@ const FRAGMENT_SHADER = `
       color = mix(monoColor, clamp(bandColor, 0.0, 1.0), 0.72);
     } else if (uColorMode == 3) {
       color = mix(monoColor, thermalColor, 0.78);
+    } else if (uColorMode == 4) {
+      color = heatmapColor;
     }
 
     color *=
@@ -752,6 +838,7 @@ export class ModalFieldRenderer {
       uFeatureSignals: { value: new THREE.Vector4() },
       uChromaProfile: { value: new THREE.Vector4(0.86, 0.96, 1, 0) },
       uChromesthesiaMix: { value: 0.82 },
+      uHeatmapPalette: { value: HEATMAP_PALETTE_INDEX.scientificHeat },
       uIdlePreview: { value: 0 },
       uSurfaceOpacity: { value: 0.64 },
       uSphereTransparent: { value: 0 },
@@ -773,8 +860,10 @@ export class ModalFieldRenderer {
   private pixelationPass: EffectPass | null = null;
   private bloomPass: EffectPass | null = null;
   private fisheyePass: EffectPass | null = null;
+  private alphaDecayPass: AlphaDecayPass | null = null;
   private terminalPass: EffectPass | null = null;
   private postPipelineKey = "";
+  private alphaDecayResetKey = "";
   private readonly pixelationEffect = new PixelationEffect(6);
   private readonly bloomEffect = new BloomEffect({
     intensity: 0.72,
@@ -807,6 +896,7 @@ export class ModalFieldRenderer {
     this.controls?.handleResize();
     this.composer?.setSize(targetWidth, targetHeight, false);
     this.fisheyeEffect.setSize(targetWidth, targetHeight);
+    this.alphaDecayPass?.setSize(targetWidth, targetHeight);
     this.terminalContourEffect.setSize(targetWidth, targetHeight);
   }
 
@@ -916,6 +1006,7 @@ export class ModalFieldRenderer {
     this.pixelationPass = new EffectPass(camera, this.pixelationEffect);
     this.bloomPass = new EffectPass(camera, this.bloomEffect);
     this.fisheyePass = new EffectPass(camera, this.fisheyeEffect);
+    this.alphaDecayPass = new AlphaDecayPass();
     this.terminalPass = new EffectPass(camera, this.terminalContourEffect);
   }
 
@@ -947,6 +1038,9 @@ export class ModalFieldRenderer {
       this.fisheyePass.mainCamera = camera;
       this.fisheyePass.enabled = true;
     }
+    if (this.alphaDecayPass) {
+      this.alphaDecayPass.enabled = true;
+    }
     if (this.terminalPass) {
       this.terminalPass.mainCamera = camera;
       this.terminalPass.enabled = true;
@@ -955,8 +1049,26 @@ export class ModalFieldRenderer {
     this.pixelationEffect.granularity = settings.postPixelSize;
     this.bloomEffect.intensity = settings.postBloomIntensity;
     this.fisheyeEffect.updateSettings(settings);
+    this.alphaDecayPass?.updateSettings(settings);
+    this.resetAlphaDecayHistoryIfNeeded(settings);
     this.terminalContourEffect.updateSettings(settings);
     this.rebuildPostPipeline(enabledPostEffects);
+  }
+
+  private resetAlphaDecayHistoryIfNeeded(settings: CymaticSettings) {
+    const resetKey = [
+      settings.projectionMode,
+      settings.sphereFieldMode,
+      settings.sphereBackgroundTransparent,
+      settings.postProcessingEnabled,
+      settings.postAlphaDecayEnabled,
+      settings.postEffectOrder.join(">"),
+    ].join(":");
+
+    if (resetKey !== this.alphaDecayResetKey) {
+      this.alphaDecayPass?.resetHistory();
+      this.alphaDecayResetKey = resetKey;
+    }
   }
 
   private rebuildPostPipeline(enabledPostEffects: PostEffectId[]) {
@@ -988,6 +1100,8 @@ export class ModalFieldRenderer {
         return this.pixelationPass;
       case "fisheye":
         return this.fisheyePass;
+      case "alphaDecay":
+        return this.alphaDecayPass;
       case "terminal":
         return this.terminalPass;
     }
@@ -1006,6 +1120,8 @@ export class ModalFieldRenderer {
           return settings.postPixelationEnabled;
         case "fisheye":
           return settings.postFisheyeEnabled;
+        case "alphaDecay":
+          return settings.postAlphaDecayEnabled;
         case "terminal":
           return settings.terminalContourEnabled;
       }
@@ -1109,6 +1225,8 @@ export class ModalFieldRenderer {
       fieldFrame.chroma.confidence,
     );
     this.material.uniforms.uChromesthesiaMix.value = settings.chromesthesiaMix;
+    this.material.uniforms.uHeatmapPalette.value =
+      HEATMAP_PALETTE_INDEX[settings.heatmapPalette];
     this.material.uniforms.uIdlePreview.value = isIdlePreview ? 1 : 0;
     this.material.uniforms.uSurfaceOpacity.value = settings.sphereSurfaceOpacity;
     this.material.uniforms.uSphereTransparent.value =
