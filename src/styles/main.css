@@ -396,10 +396,10 @@ select {
   padding: 0;
 }
 
-#app.is-fullscreen .topbar,
-#app.is-fullscreen .settings-modal,
-#app.is-fullscreen .diagnostics-strip,
-#app.is-fullscreen .transport {
+#app.is-fullscreen:not(.is-fullscreen-ui-visible) .topbar,
+#app.is-fullscreen:not(.is-fullscreen-ui-visible) .settings-modal,
+#app.is-fullscreen:not(.is-fullscreen-ui-visible) .diagnostics-strip,
+#app.is-fullscreen:not(.is-fullscreen-ui-visible) .transport {
   display: none;
 }
 

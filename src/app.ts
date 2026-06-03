@@ -102,6 +102,7 @@ export class WavefieldApp {
   private modeSettingsLayoutKey = "";
   private isSettingsOpen = false;
   private isMobileSettings = false;
+  private isFullscreenUiVisible = false;
   private lastSettingsTrigger: HTMLElement | null = null;
   private analysis: AudioAnalysis | null = null;
   private animationFrame = 0;
@@ -619,6 +620,11 @@ export class WavefieldApp {
 
     if (event.code === "Tab") {
       event.preventDefault();
+      if (document.fullscreenElement === this.root) {
+        this.setFullscreenUiVisible(!this.isFullscreenUiVisible);
+        return;
+      }
+
       this.setSettingsOpen(!this.isSettingsOpen, this.settingsButton);
       return;
     }
@@ -873,6 +879,10 @@ export class WavefieldApp {
     );
     this.root.classList.toggle("is-settings-open", this.isSettingsOpen);
     this.root.classList.toggle("is-mobile-settings", this.isMobileSettings);
+    this.root.classList.toggle(
+      "is-fullscreen-ui-visible",
+      this.isFullscreenUiVisible,
+    );
 
     if (this.isSettingsOpen) {
       this.controls.refresh();
@@ -914,10 +924,26 @@ export class WavefieldApp {
   private handleFullscreenChange = () => {
     const isFullscreen = document.fullscreenElement === this.root;
     if (isFullscreen) {
-      this.setSettingsOpen(false);
+      this.setFullscreenUiVisible(false);
+    } else {
+      this.isFullscreenUiVisible = false;
+      this.root.classList.remove("is-fullscreen-ui-visible");
     }
     this.root.classList.toggle("is-fullscreen", isFullscreen);
   };
+
+  private setFullscreenUiVisible(isVisible: boolean) {
+    if (
+      this.isFullscreenUiVisible === isVisible &&
+      this.isSettingsOpen === isVisible
+    ) {
+      return;
+    }
+
+    this.isFullscreenUiVisible = isVisible;
+    this.setSettingsOpen(isVisible, this.settingsButton);
+    this.root.classList.toggle("is-fullscreen-ui-visible", isVisible);
+  }
 
   private async toggleFullscreen() {
     try {
