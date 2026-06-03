@@ -1,6 +1,6 @@
 {
   "name": "Knicks in 6",
-  "createdAt": "2026-06-03T22:18:58.345Z",
+  "createdAt": "2026-06-03T22:36:23.796Z",
   "settings": {
     "projectionMode": "screen",
     "boundaryMode": "dirichlet",
@@ -62,7 +62,7 @@
     "postPixelationEnabled": false,
     "postPixelSize": 6,
     "postFisheyeEnabled": true,
-    "postFisheyeK1": -1,
+    "postFisheyeK1": 0.30000000000000004,
     "postFisheyeK2": -1,
     "postFisheyeStrength": 2,
     "postAlphaDecayEnabled": false,
