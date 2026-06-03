@@ -173,6 +173,7 @@ export type TemplateControlsOptions = {
   templates: WavefieldTemplate[];
   onApplyTemplate: (template: WavefieldTemplate) => void;
   onDeleteTemplate: (template: WavefieldTemplate) => void | Promise<void>;
+  onResaveTemplate: (template: WavefieldTemplate) => void | Promise<void>;
   onSaveTemplate: (name: string) => void | Promise<void>;
 };
 
@@ -601,6 +602,18 @@ function createTemplateRow(
   row.append(applyButton);
 
   if (templateControls.isDev) {
+    const resaveButton = document.createElement("button");
+    resaveButton.className = "template-resave-button";
+    resaveButton.type = "button";
+    resaveButton.title = `Resave ${template.name}`;
+    resaveButton.setAttribute("aria-label", `Resave ${template.name}`);
+    resaveButton.innerHTML = `<i class="ph ph-arrow-clockwise" aria-hidden="true"></i>`;
+    resaveButton.addEventListener("click", () => {
+      runTemplateAction(resaveButton, () =>
+        templateControls.onResaveTemplate(template),
+      );
+    });
+
     const deleteButton = document.createElement("button");
     deleteButton.className = "template-delete-button";
     deleteButton.type = "button";
@@ -612,6 +625,7 @@ function createTemplateRow(
         templateControls.onDeleteTemplate(template),
       );
     });
+    row.append(resaveButton);
     row.append(deleteButton);
   }
 

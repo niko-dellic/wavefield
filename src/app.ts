@@ -201,6 +201,7 @@ export class WavefieldApp {
         templates: this.templates,
         onApplyTemplate: (template) => this.applyTemplate(template),
         onDeleteTemplate: (template) => this.deleteTemplate(template),
+        onResaveTemplate: (template) => this.resaveTemplate(template),
         onSaveTemplate: (name) => this.saveTemplate(name),
       },
     );
@@ -1253,13 +1254,32 @@ export class WavefieldApp {
   }
 
   private async saveTemplate(name: string) {
-    if (!import.meta.env.DEV) {
+    const template = await this.writeTemplate(name);
+    if (!template) {
       return;
+    }
+
+    this.templateSaveState.name = "";
+    this.setStatus(`Saved template: ${template.name}`);
+  }
+
+  private async resaveTemplate(template: WavefieldTemplate) {
+    const nextTemplate = await this.writeTemplate(template.name);
+    if (!nextTemplate) {
+      return;
+    }
+
+    this.setStatus(`Resaved template: ${nextTemplate.name}`);
+  }
+
+  private async writeTemplate(name: string) {
+    if (!import.meta.env.DEV) {
+      return null;
     }
 
     const trimmedName = name.trim();
     if (!trimmedName) {
-      return;
+      return null;
     }
 
     const response = await fetch("/api/templates", {
@@ -1279,9 +1299,8 @@ export class WavefieldApp {
 
     const body = (await response.json()) as { template?: unknown };
     const template = coerceWavefieldTemplate(body.template, "template");
-    this.templateSaveState.name = "";
     this.upsertTemplate(template);
-    this.setStatus(`Saved template: ${template.name}`);
+    return template;
   }
 
   private async deleteTemplate(template: WavefieldTemplate) {
