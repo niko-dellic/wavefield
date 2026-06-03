@@ -86,6 +86,7 @@ const FRAGMENT_SHADER = `
   uniform float uChromesthesiaMix;
   uniform float uIdlePreview;
   uniform float uSurfaceOpacity;
+  uniform float uSphereTransparent;
   varying vec2 vUv;
   varying vec3 vWorldNormal;
 
@@ -162,16 +163,28 @@ const FRAGMENT_SHADER = `
     fieldSample.color = vec3(0.0);
     fieldSample.colorWeight = 0.0;
 
+    float spectrumShape = clamp(
+      dot(uBandEnergies, vec3(0.34, 0.42, 0.5)) +
+      dot(uBandOnsets, vec3(0.42, 0.52, 0.62)) +
+      uRms * 0.48 +
+      uFlux * 0.72,
+      0.0,
+      3.0
+    );
     vec2 drift = vec2(
-      uTime * (0.013 + uDrift * 0.034),
-      -uTime * (0.011 + uDrift * 0.026)
+      uTime * (0.013 + uDrift * 0.034 + spectrumShape * 0.012),
+      -uTime * (0.011 + uDrift * 0.026 + spectrumShape * 0.009)
     );
     float largeNoise = fbm(p.xy * (0.82 + uWarpScale * 2.4) + drift) - 0.5;
     vec3 warped = clamp(
       p + vec3(
-        largeNoise * uWarp * 0.036,
-        (fbm(p.yz * (1.4 + uWarpScale * 1.9) - drift.yx) - 0.5) * uWarp * 0.03,
-        (fbm(p.zx * (1.2 + uWarpScale * 1.7) + drift * 0.6) - 0.5) * uWarp * 0.026
+        largeNoise * uWarp * (0.036 + spectrumShape * 0.018),
+        (fbm(p.yz * (1.4 + uWarpScale * 1.9) - drift.yx) - 0.5) *
+          uWarp *
+          (0.03 + spectrumShape * 0.014),
+        (fbm(p.zx * (1.2 + uWarpScale * 1.7) + drift * 0.6) - 0.5) *
+          uWarp *
+          (0.026 + spectrumShape * 0.012)
       ),
       vec3(0.0),
       vec3(1.0)
@@ -189,6 +202,19 @@ const FRAGMENT_SHADER = `
         continue;
       }
 
+      float bandEnergy = bandValue(uBandEnergies, meta.w);
+      float bandOnset = bandValue(uBandOnsets, meta.w);
+      float localAudio = clamp(
+        bandEnergy * 2.1 + bandOnset * 2.7 + uRms * 0.42 + uFlux * 0.62,
+        0.0,
+        3.0
+      );
+      float boundaryGain = uBoundaryMode == 0
+        ? smoothstep(0.04, 0.28, warped.x) *
+          smoothstep(0.96, 0.72, warped.x) *
+          smoothstep(0.04, 0.28, warped.y) *
+          smoothstep(0.96, 0.72, warped.y)
+        : 0.88 + 0.12 * cos((warped.x + warped.y + warped.z) * PI * 2.0);
       float bx = basisValue(slot.x, warped.x);
       float by = basisValue(slot.y, warped.y);
       float bz = basisValue(slot.z, warped.z);
@@ -196,18 +222,31 @@ const FRAGMENT_SHADER = `
       float dy = bx * basisDerivative(slot.y, warped.y) * bz;
       float dz = bx * by * basisDerivative(slot.z, warped.z);
       float standing = bx * by * bz;
-      float phaseMotion = cos(meta.x + uTime * (0.12 + meta.z * 0.42));
+      float phaseMotion = cos(
+        meta.x +
+        uTime * (0.12 + meta.z * 0.42 + localAudio * 0.11) +
+        bandEnergy * 1.45 +
+        bandOnset * 2.1 +
+        uFlux * 1.2
+      );
       float harmonic = sin(
-        (bx + by + bz) * (2.2 + uInterference * 4.6) +
-        meta.x * 0.31
+        (bx + by + bz) * (2.2 + uInterference * 4.6 + localAudio * 1.8) +
+        meta.x * 0.31 +
+        bandOnset * 2.4
       );
       float localField =
-        standing * mix(1.0, phaseMotion, 0.18 + meta.y * 0.18) +
-        harmonic * amplitude * uInterference * 0.1;
-      float localInfluence = amplitude * (0.42 + abs(localField) * 0.58);
+        standing *
+          mix(1.0, phaseMotion, 0.18 + meta.y * 0.18 + localAudio * 0.08) *
+          (0.72 + boundaryGain * 0.38 + localAudio * 0.18) +
+        harmonic * amplitude * uInterference * (0.1 + localAudio * 0.045);
+      float localInfluence =
+        amplitude *
+        (0.36 + localAudio * 0.22 + abs(localField) * 0.58) *
+        (0.68 + boundaryGain * 0.42);
 
       fieldSample.field += localField * amplitude;
-      fieldSample.grad += length(vec3(dx, dy, dz)) * amplitude * 0.045;
+      fieldSample.grad +=
+        length(vec3(dx, dy, dz)) * amplitude * (0.045 + localAudio * 0.018);
       fieldSample.energy += localInfluence;
       fieldSample.color += uModeColors[index].rgb * localInfluence * uModeColors[index].a;
       fieldSample.colorWeight += localInfluence * uModeColors[index].a;
@@ -243,7 +282,15 @@ const FRAGMENT_SHADER = `
       (0.008 + spectrumShape * 0.01);
     float warpedRadius = length(warped);
     float warpedAngle = atan(warped.y, warped.x);
-    float edgeEnvelope = smoothstep(1.32, 0.08, warpedRadius);
+    float normalizedRadius = clamp(warpedRadius / 1.32, 0.0, 1.0);
+    float dirichletBoundary = sin((1.0 - normalizedRadius) * PI * 0.5);
+    float neumannBoundary = 0.92 + 0.08 * cos(normalizedRadius * PI * 2.0);
+    float boundaryEnvelope = uBoundaryMode == 0
+      ? smoothstep(1.12, 0.05, warpedRadius) * mix(0.42, 1.0, dirichletBoundary)
+      : smoothstep(1.48, 0.0, warpedRadius) * neumannBoundary;
+    float boundaryPhase = uBoundaryMode == 0
+      ? -warpedRadius * (1.6 + uInterference * 0.8)
+      : warpedRadius * (0.45 + uInterference * 0.32);
 
     for (int index = 0; index < MAX_MODAL_MODES; index++) {
       if (index >= uModeCount) {
@@ -268,14 +315,16 @@ const FRAGMENT_SHADER = `
       );
       float radialFrequency =
         (5.5 + modeSum * 0.62 + meta.z * 20.0) *
-        (0.68 + uDensity * 0.46 + bandEnergy * 0.9 + bandOnset * 0.42);
+        (0.68 + uDensity * 0.46 + bandEnergy * 0.9 + bandOnset * 0.42) *
+        (uBoundaryMode == 0 ? 1.16 : 0.92);
       float angularOrder = max(
         2.0,
         floor(
           uSymmetry +
           bandBias * 1.7 +
           bandOnset * 4.0 +
-          mod(slot.x + slot.y + slot.z, 3.0)
+          mod(slot.x + slot.y + slot.z, 3.0) +
+          (uBoundaryMode == 0 ? 1.0 : -0.35)
         )
       );
       float phase =
@@ -284,12 +333,17 @@ const FRAGMENT_SHADER = `
         idleDrift * (0.35 + meta.z) +
         bandEnergy * 1.1 +
         bandOnset * 1.8;
-      float radialWave = sin(warpedRadius * radialFrequency + phase * 0.2);
+      float radialWave = sin(
+        warpedRadius * radialFrequency +
+        phase * 0.2 +
+        boundaryPhase
+      );
       float angularWave = cos(
         warpedAngle * angularOrder +
         meta.x * 0.33 +
         bandEnergy * 1.9 -
-        bandOnset * 0.7
+        bandOnset * 0.7 +
+        (uBoundaryMode == 0 ? warpedRadius * 0.8 : -warpedRadius * 0.3)
       );
       float harmonicWave = sin(
         warpedRadius *
@@ -303,16 +357,16 @@ const FRAGMENT_SHADER = `
         harmonicWave * mix(0.08, 0.36, uHarmonicMix);
       float localInfluence =
         amplitude *
-        edgeEnvelope *
+        boundaryEnvelope *
         (0.26 + localAudio * 0.22 + abs(localField) * 0.52) *
         (0.72 + meta.y * 0.34);
 
-      fieldSample.field += localField * amplitude * edgeEnvelope;
+      fieldSample.field += localField * amplitude * boundaryEnvelope;
       fieldSample.grad +=
         (abs(cos(warpedRadius * radialFrequency - phase)) * radialFrequency * 0.0035 +
           abs(angularWave) * 0.026) *
         amplitude *
-        edgeEnvelope;
+        boundaryEnvelope;
       fieldSample.energy += localInfluence;
       fieldSample.color += uModeColors[index].rgb * localInfluence * uModeColors[index].a;
       fieldSample.colorWeight += localInfluence * uModeColors[index].a;
@@ -371,9 +425,14 @@ const FRAGMENT_SHADER = `
       ? max(0.055, sqrt(max(field.energy, 0.0)) * 0.26)
       : max(0.045, sqrt(max(field.energy, 0.0)) * 0.18);
     float normalizedField = field.field / energyScale;
+    float audioPulse = clamp(
+      uRms * 0.46 + uFlux * 0.56 + dot(uBandOnsets, vec3(0.18, 0.24, 0.3)),
+      0.0,
+      1.8
+    );
     float nodeWidth = uProjectionMode == 0
-      ? max(0.00042, uNodeWidth * 0.035)
-      : max(0.00035, uNodeWidth * 0.055);
+      ? max(0.00042, uNodeWidth * 0.035 * (uBoundaryMode == 0 ? 0.82 : 1.08))
+      : max(0.00035, uNodeWidth * 0.055 * (0.82 + audioPulse * 0.34));
     float nodeBand = 1.0 - smoothstep(nodeWidth * 0.32, nodeWidth * 1.35, abs(normalizedField));
     float broadBand =
       1.0 - smoothstep(nodeWidth * 1.4, nodeWidth * (4.2 + uSoftness * 4.0), abs(normalizedField));
@@ -381,9 +440,9 @@ const FRAGMENT_SHADER = `
     float density = clamp(
       (pow(nodeBand, 2.15) * 0.86 + broadBand * uSoftness * 0.045)
         * (0.22 + structure * 0.72)
-        * (0.48 + field.energy * 0.32)
+        * (0.48 + field.energy * (uProjectionMode == 0 ? 0.32 : 0.52))
         * uDensity
-        * (0.9 + uRms * 0.28 + uFlux * 0.18),
+        * (0.9 + uRms * 0.42 + uFlux * 0.34 + audioPulse * 0.28),
       0.0,
       1.0
     );
@@ -392,8 +451,12 @@ const FRAGMENT_SHADER = `
       field.energy *
       0.08;
     float visibleInk = uProjectionMode == 0
-      ? smoothstep(0.004, 0.045, density + halo)
+      ? smoothstep(0.018, 0.075, density + halo)
       : 1.0;
+    if (uProjectionMode == 0 && visibleInk <= 0.001) {
+      gl_FragColor = vec4(vec3(0.0), 1.0);
+      return;
+    }
     float alpha = clamp((density + halo) * (0.92 + uRms * 0.22), 0.0, 0.86);
     vec3 modalColor =
       field.colorWeight > 0.0001 ? field.color / field.colorWeight : vec3(0.86, 0.96, 1.0);
@@ -414,9 +477,11 @@ const FRAGMENT_SHADER = `
       color = mix(monoColor, thermalColor, 0.78);
     }
 
-    color *= (0.82 + density * 0.72 + field.energy * 0.24) * visibleInk;
+    color *=
+      (0.82 + density * 0.72 + field.energy * 0.24 + audioPulse * 0.16) *
+      visibleInk;
     float outputAlpha = uProjectionMode == 1
-      ? clamp(alpha * uSurfaceOpacity, 0.02, 1.0)
+      ? (uSphereTransparent > 0.5 ? clamp(alpha * uSurfaceOpacity, 0.02, 1.0) : 1.0)
       : 1.0;
     gl_FragColor = vec4(clamp(color * alpha, 0.0, 1.0), outputAlpha);
   }
@@ -424,6 +489,7 @@ const FRAGMENT_SHADER = `
 
 export class ModalFieldRenderer {
   private readonly scene = new THREE.Scene();
+  private readonly opaqueBackground = new THREE.Color(0x000000);
   private readonly screenCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   private readonly sphereCamera = new THREE.PerspectiveCamera(42, 1, 0.1, 100);
   private readonly screenMesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2));
@@ -474,6 +540,7 @@ export class ModalFieldRenderer {
       uChromesthesiaMix: { value: 0.82 },
       uIdlePreview: { value: 0 },
       uSurfaceOpacity: { value: 0.64 },
+      uSphereTransparent: { value: 0 },
     },
     vertexShader: VERTEX_SHADER,
     fragmentShader: FRAGMENT_SHADER,
@@ -536,6 +603,18 @@ export class ModalFieldRenderer {
     this.ensureControls(renderer);
 
     const isSphere = settings.projectionMode === "sphere";
+    const useTransparentBackground =
+      isSphere && settings.sphereBackgroundTransparent;
+    this.scene.background = useTransparentBackground ? null : this.opaqueBackground;
+    this.material.depthTest = isSphere;
+    this.material.depthWrite = isSphere && !useTransparentBackground;
+    const nextSide = useTransparentBackground
+      ? THREE.DoubleSide
+      : THREE.FrontSide;
+    if (this.material.side !== nextSide) {
+      this.material.side = nextSide;
+      this.material.needsUpdate = true;
+    }
     this.screenMesh.visible = !isSphere;
     this.sphereMesh.visible = isSphere;
     this.sphereMesh.scale.setScalar(settings.sphereRadius);
@@ -561,7 +640,7 @@ export class ModalFieldRenderer {
     renderer.setRenderTarget(null);
     renderer.setClearColor(
       0x000000,
-      isSphere && settings.sphereBackgroundTransparent ? 0 : 1,
+      useTransparentBackground ? 0 : 1,
     );
     renderer.clear(true, true, true);
     if (enabledPostEffects.length > 0) {
@@ -678,6 +757,10 @@ export class ModalFieldRenderer {
   }
 
   private getEnabledPostEffects(settings: CymaticSettings): PostEffectId[] {
+    if (!settings.postProcessingEnabled) {
+      return [];
+    }
+
     return settings.postEffectOrder.filter((effectId) => {
       switch (effectId) {
         case "bloom":
@@ -762,6 +845,8 @@ export class ModalFieldRenderer {
     this.material.uniforms.uChromesthesiaMix.value = settings.chromesthesiaMix;
     this.material.uniforms.uIdlePreview.value = isIdlePreview ? 1 : 0;
     this.material.uniforms.uSurfaceOpacity.value = settings.sphereSurfaceOpacity;
+    this.material.uniforms.uSphereTransparent.value =
+      settings.projectionMode === "sphere" && settings.sphereBackgroundTransparent ? 1 : 0;
   }
 }
 

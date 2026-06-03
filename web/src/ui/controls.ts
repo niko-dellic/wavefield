@@ -13,10 +13,11 @@ export function createControls(
   onChange: () => void,
 ): ControlsManager {
   let pane: Pane | null = null;
+  let postPanes: Pane[] = [];
   let layoutKey = "";
 
   const build = () => {
-    removePostStack(container);
+    postPanes = removePostPanel(container, postPanes);
     pane?.dispose();
     pane = new Pane({
       container,
@@ -53,7 +54,7 @@ export function createControls(
         label: "aspect",
         options: {
           Circle: "circle",
-          "Viewport oval": "viewport",
+          Fit: "fit",
         },
       });
     }
@@ -106,7 +107,7 @@ export function createControls(
         },
       });
       sphere.addBinding(settings, "sphereBackgroundTransparent", {
-        label: "transparent bg",
+        label: "transparent sphere",
       });
       sphere.addBinding(settings, "sphereSurfaceOpacity", {
         label: "surface alpha",
@@ -216,65 +217,8 @@ export function createControls(
       step: 0.01,
     });
 
-    const bloom = pane.addFolder({ title: "Bloom", expanded: false });
-    bloom.addBinding(settings, "postBloomEnabled", {
-      label: "enabled",
-    });
-    if (settings.postBloomEnabled) {
-      bloom.addBinding(settings, "postBloomIntensity", {
-        label: "power",
-        min: 0,
-        max: 3,
-        step: 0.01,
-      });
-    }
-
-    const pixelation = pane.addFolder({ title: "Pixelation", expanded: false });
-    pixelation.addBinding(settings, "postPixelationEnabled", {
-      label: "enabled",
-    });
-    if (settings.postPixelationEnabled) {
-      pixelation.addBinding(settings, "postPixelSize", {
-        label: "pixel size",
-        min: 2,
-        max: 40,
-        step: 1,
-      });
-    }
-
-    const terminal = pane.addFolder({ title: "Terminal contours", expanded: false });
-    terminal.addBinding(settings, "terminalContourEnabled", {
-      label: "enabled",
-    });
-    if (settings.terminalContourEnabled) {
-      terminal.addBinding(settings, "terminalCellSize", {
-        label: "cell size",
-        min: 4,
-        max: 24,
-        step: 1,
-      });
-      terminal.addBinding(settings, "terminalContourLevels", {
-        label: "contours",
-        min: 3,
-        max: 18,
-        step: 1,
-      });
-      terminal.addBinding(settings, "terminalContourStrength", {
-        label: "line power",
-        min: 0.2,
-        max: 3,
-        step: 0.01,
-      });
-      terminal.addBinding(settings, "terminalContourThreshold", {
-        label: "threshold",
-        min: 0.01,
-        max: 0.35,
-        step: 0.001,
-      });
-    }
-
     pane.on("change", onChange);
-    mountPostStack(container, settings, onChange);
+    postPanes = mountPostPanel(container, settings, onChange);
   };
 
   const refresh = () => {
@@ -292,7 +236,7 @@ export function createControls(
 
   return {
     dispose() {
-      removePostStack(container);
+      postPanes = removePostPanel(container, postPanes);
       pane?.dispose();
       pane = null;
     },
@@ -305,6 +249,7 @@ function getLayoutKey(settings: CymaticSettings) {
     settings.projectionMode,
     settings.colorMode,
     settings.screenAspectMode,
+    settings.postProcessingEnabled,
     settings.postBloomEnabled,
     settings.postPixelationEnabled,
     settings.terminalContourEnabled,
@@ -318,56 +263,207 @@ const POST_EFFECT_LABELS: Record<PostEffectId, string> = {
   terminal: "Terminal contours",
 };
 
-function mountPostStack(
+const POST_EFFECT_CONTROLS: Record<
+  PostEffectId,
+  Array<{
+    key: keyof CymaticSettings;
+    label: string;
+    min: number;
+    max: number;
+    step: number;
+  }>
+> = {
+  bloom: [
+    {
+      key: "postBloomIntensity",
+      label: "Power",
+      min: 0,
+      max: 3,
+      step: 0.01,
+    },
+  ],
+  pixelation: [
+    {
+      key: "postPixelSize",
+      label: "Pixel size",
+      min: 2,
+      max: 40,
+      step: 1,
+    },
+  ],
+  terminal: [
+    {
+      key: "terminalCellSize",
+      label: "Cell size",
+      min: 4,
+      max: 24,
+      step: 1,
+    },
+    {
+      key: "terminalContourLevels",
+      label: "Contours",
+      min: 3,
+      max: 18,
+      step: 1,
+    },
+    {
+      key: "terminalContourStrength",
+      label: "Line power",
+      min: 0.2,
+      max: 3,
+      step: 0.01,
+    },
+    {
+      key: "terminalContourThreshold",
+      label: "Threshold",
+      min: 0.01,
+      max: 0.35,
+      step: 0.001,
+    },
+  ],
+};
+
+const POST_EFFECT_ENABLED_KEYS: Record<
+  PostEffectId,
+  "postBloomEnabled" | "postPixelationEnabled" | "terminalContourEnabled"
+> = {
+  bloom: "postBloomEnabled",
+  pixelation: "postPixelationEnabled",
+  terminal: "terminalContourEnabled",
+};
+
+function mountPostPanel(
   container: HTMLElement,
   settings: CymaticSettings,
   onChange: () => void,
-) {
-  removePostStack(container);
+): Pane[] {
+  const postPanes: Pane[] = [];
+  removePostPanel(container, postPanes);
 
   const root = document.createElement("section");
-  root.className = "post-stack-control";
-  root.setAttribute("aria-label", "Post processing order");
-  root.innerHTML = `
-    <div class="post-stack-heading">
-      <span>Post order</span>
-      <span class="post-stack-hint">drag</span>
-    </div>
-  `;
+  root.className = "post-panel";
+  root.setAttribute("aria-label", "Post processing controls");
+  root.addEventListener("dragenter", stopInternalDrag);
+  root.addEventListener("dragleave", stopInternalDrag);
+  root.addEventListener("dragover", stopInternalDrag);
+  root.addEventListener("drop", stopInternalDrag);
+
+  const header = document.createElement("div");
+  header.className = "post-panel-heading";
+  header.append(
+    createCheckbox({
+      checked: settings.postProcessingEnabled,
+      className: "post-panel-master",
+      label: "Post processing",
+      onChange: (checked) => {
+        settings.postProcessingEnabled = checked;
+        onChange();
+      },
+    }),
+  );
+  const hint = document.createElement("span");
+  hint.className = "post-panel-hint";
+  hint.textContent = "drag effects";
+  header.append(hint);
+  root.append(header);
 
   let draggedId: PostEffectId | null = null;
+  let dropPlacement: "before" | "after" = "before";
   for (const effectId of settings.postEffectOrder) {
     const row = document.createElement("div");
-    row.className = "post-stack-row";
-    row.draggable = true;
+    row.className = "post-effect-card";
+    if (!settings.postProcessingEnabled) {
+      row.classList.add("is-disabled");
+    }
     row.dataset.effectId = effectId;
-    row.innerHTML = `
-      <span class="post-stack-grip" aria-hidden="true">::</span>
-      <span>${POST_EFFECT_LABELS[effectId]}</span>
-      <span class="post-stack-state">${getEffectStateLabel(settings, effectId)}</span>
-    `;
 
-    row.addEventListener("dragstart", () => {
+    const effectHeader = document.createElement("div");
+    effectHeader.className = "post-effect-heading";
+    const grip = document.createElement("span");
+    grip.className = "post-effect-grip";
+    grip.setAttribute("aria-hidden", "true");
+    grip.draggable = true;
+    grip.textContent = "::";
+    effectHeader.append(grip);
+    effectHeader.append(
+      createCheckbox({
+        checked: Boolean(settings[POST_EFFECT_ENABLED_KEYS[effectId]]),
+        disabled: !settings.postProcessingEnabled,
+        label: POST_EFFECT_LABELS[effectId],
+        onChange: (checked) => {
+          settings[POST_EFFECT_ENABLED_KEYS[effectId]] = checked;
+          onChange();
+        },
+      }),
+    );
+    row.append(effectHeader);
+
+    if (settings[POST_EFFECT_ENABLED_KEYS[effectId]]) {
+      const controls = document.createElement("div");
+      controls.className = "post-effect-controls";
+      const effectPane = new Pane({
+        container: controls,
+      });
+      effectPane.element.classList.add("post-effect-pane");
+      for (const control of POST_EFFECT_CONTROLS[effectId]) {
+        effectPane.addBinding(settings, control.key, {
+          disabled: !settings.postProcessingEnabled,
+          label: control.label,
+          max: control.max,
+          min: control.min,
+          step: control.step,
+        });
+      }
+      effectPane.on("change", onChange);
+      postPanes.push(effectPane);
+      row.append(controls);
+    }
+
+    grip.addEventListener("dragstart", (event) => {
+      event.stopPropagation();
       draggedId = effectId;
       row.classList.add("is-dragging");
     });
-    row.addEventListener("dragend", () => {
+    grip.addEventListener("dragend", (event) => {
+      event.stopPropagation();
       draggedId = null;
+      clearDropMarkers(root);
       row.classList.remove("is-dragging");
     });
     row.addEventListener("dragover", (event) => {
       event.preventDefault();
+      event.stopPropagation();
+      if (!draggedId || draggedId === effectId) {
+        clearDropMarkers(root);
+        return;
+      }
+
+      const bounds = row.getBoundingClientRect();
+      dropPlacement =
+        event.clientY < bounds.top + bounds.height / 2 ? "before" : "after";
+      clearDropMarkers(root);
+      row.classList.add(
+        dropPlacement === "before" ? "is-drop-before" : "is-drop-after",
+      );
+    });
+    row.addEventListener("dragleave", (event) => {
+      event.stopPropagation();
+      row.classList.remove("is-drop-before", "is-drop-after");
     });
     row.addEventListener("drop", (event) => {
       event.preventDefault();
+      event.stopPropagation();
       if (!draggedId || draggedId === effectId) {
+        clearDropMarkers(root);
         return;
       }
 
       const nextOrder = settings.postEffectOrder.filter((id) => id !== draggedId);
       const targetIndex = nextOrder.indexOf(effectId);
-      nextOrder.splice(Math.max(0, targetIndex), 0, draggedId);
+      const insertIndex = targetIndex + (dropPlacement === "after" ? 1 : 0);
+      nextOrder.splice(Math.max(0, insertIndex), 0, draggedId);
       settings.postEffectOrder = nextOrder;
+      clearDropMarkers(root);
       onChange();
     });
 
@@ -375,19 +471,51 @@ function mountPostStack(
   }
 
   container.append(root);
+  return postPanes;
 }
 
-function removePostStack(container: HTMLElement) {
-  container.querySelector(".post-stack-control")?.remove();
-}
-
-function getEffectStateLabel(settings: CymaticSettings, effectId: PostEffectId) {
-  switch (effectId) {
-    case "bloom":
-      return settings.postBloomEnabled ? "on" : "off";
-    case "pixelation":
-      return settings.postPixelationEnabled ? "on" : "off";
-    case "terminal":
-      return settings.terminalContourEnabled ? "on" : "off";
+function removePostPanel(container: HTMLElement, postPanes: Pane[]) {
+  for (const postPane of postPanes) {
+    postPane.dispose();
   }
+  container.querySelector(".post-panel")?.remove();
+  return [];
+}
+
+function stopInternalDrag(event: DragEvent) {
+  event.stopPropagation();
+}
+
+function clearDropMarkers(root: HTMLElement) {
+  root.querySelectorAll(".is-drop-before, .is-drop-after").forEach((element) => {
+    element.classList.remove("is-drop-before", "is-drop-after");
+  });
+}
+
+function createCheckbox({
+  checked,
+  className,
+  disabled = false,
+  label,
+  onChange,
+}: {
+  checked: boolean;
+  className?: string;
+  disabled?: boolean;
+  label: string;
+  onChange: (checked: boolean) => void;
+}) {
+  const wrapper = document.createElement("label");
+  wrapper.className = ["post-checkbox", className].filter(Boolean).join(" ");
+  const input = document.createElement("input");
+  input.type = "checkbox";
+  input.checked = checked;
+  input.disabled = disabled;
+  input.addEventListener("change", () => {
+    onChange(input.checked);
+  });
+  const text = document.createElement("span");
+  text.textContent = label;
+  wrapper.append(input, text);
+  return wrapper;
 }

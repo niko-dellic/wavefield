@@ -54,6 +54,7 @@ export type CymaticSettings = {
   sphereRadius: number;
   sphereSurfaceOpacity: number;
   sphereBackgroundTransparent: boolean;
+  postProcessingEnabled: boolean;
   postEffectOrder: PostEffectId[];
   postBloomEnabled: boolean;
   postBloomIntensity: number;
@@ -98,12 +99,13 @@ export const DEFAULT_SETTINGS: CymaticSettings = {
   sphereRadius: 1.35,
   sphereSurfaceOpacity: 0.64,
   sphereBackgroundTransparent: false,
+  postProcessingEnabled: true,
   postEffectOrder: ["bloom", "pixelation", "terminal"],
   postBloomEnabled: false,
   postBloomIntensity: 0.72,
   postPixelationEnabled: false,
   postPixelSize: 6,
-  terminalContourEnabled: false,
+  terminalContourEnabled: true,
   terminalCellSize: 9,
   terminalContourLevels: 8,
   terminalContourStrength: 1,

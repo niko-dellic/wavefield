@@ -5,7 +5,9 @@ Wavefield is a cymatic audio visualization playground with two implementations:
 - `terminal/`: Rust CLI renderer for ANSI and Kitty-compatible terminals.
 - `web/`: Vite + TypeScript + Three.js visual instrument with GPU shader rendering.
 
-Shared audio fixtures live in `fixtures/audio/`.
+Shared audio fixtures live in `fixtures/audio/`. The web app imports the MP3
+fixtures from `web/src/fixtures/audio/` so Vite can include them in the build
+asset graph.
 
 ## Web Visualizer
 
@@ -19,7 +21,8 @@ npm run build
 npm run preview
 ```
 
-The dev and preview servers expose root fixtures at `/fixtures/audio/*`, so the fixture buttons work without duplicating audio files into `web/public`.
+The fixture buttons use normal Vite static asset imports from `web/src`, so dev,
+build, and preview all resolve the same bundled audio URLs.
 
 ## Terminal Visualizer
 

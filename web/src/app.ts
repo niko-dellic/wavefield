@@ -8,6 +8,8 @@ import {
   type ModalFieldFrame,
 } from "./audio/ModalField";
 import { decodeAndAnalyzeAudio } from "./audio/analyze";
+import contradictionsUrl from "./fixtures/audio/contradictions inst mix ab oz.mp3";
+import musicForUrl from "./fixtures/audio/music for inst mix ab oz.mp3";
 import { createControls, type ControlsManager } from "./ui/controls";
 import { ModalFieldRenderer } from "./webgl/ModalFieldRenderer";
 import { DEFAULT_SETTINGS, type AudioAnalysis, type CymaticSettings } from "./types";
@@ -15,11 +17,11 @@ import { DEFAULT_SETTINGS, type AudioAnalysis, type CymaticSettings } from "./ty
 const FIXTURES = [
   {
     label: "Music For",
-    url: "/fixtures/audio/music%20for%20inst%20mix%20ab%20oz.mp3",
+    url: musicForUrl,
   },
   {
     label: "Contradictions",
-    url: "/fixtures/audio/contradictions%20inst%20mix%20ab%20oz.mp3",
+    url: contradictionsUrl,
   },
 ];
 

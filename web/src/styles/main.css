@@ -210,7 +210,7 @@ select {
   overflow: auto;
 }
 
-.post-stack-control {
+.post-panel {
   margin-top: 8px;
   padding: 8px;
   border-radius: 6px;
@@ -220,54 +220,190 @@ select {
   line-height: 1.2;
 }
 
-.post-stack-heading,
-.post-stack-row {
+.post-panel-heading,
+.post-effect-heading {
   display: grid;
   grid-template-columns: 1fr auto;
   align-items: center;
   gap: 8px;
 }
 
-.post-stack-heading {
+.post-panel-heading {
   margin-bottom: 6px;
   color: rgb(245 251 255 / 62%);
   font-weight: 600;
   text-transform: uppercase;
 }
 
-.post-stack-hint,
-.post-stack-state {
+.post-panel-hint {
   color: rgb(245 251 255 / 42%);
   font-size: 10px;
 }
 
-.post-stack-row {
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  min-height: 28px;
-  padding: 0 8px;
+.post-effect-card {
+  position: relative;
+  padding: 8px;
   border: 1px solid rgb(255 255 255 / 8%);
   border-radius: 4px;
   background: rgb(0 0 0 / 24%);
-  cursor: grab;
+  cursor: default;
   user-select: none;
 }
 
-.post-stack-row + .post-stack-row {
-  margin-top: 4px;
+.post-effect-card + .post-effect-card {
+  margin-top: 6px;
 }
 
-.post-stack-row:hover {
+.post-effect-card:hover {
   border-color: rgb(217 247 255 / 26%);
   background: rgb(20 38 44 / 38%);
 }
 
-.post-stack-row.is-dragging {
+.post-effect-card.is-disabled {
+  opacity: 0.54;
+}
+
+.post-effect-card.is-dragging {
   opacity: 0.46;
 }
 
-.post-stack-grip {
+.post-effect-card.is-drop-before::before,
+.post-effect-card.is-drop-after::after {
+  content: "";
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  z-index: 1;
+  height: 2px;
+  border-radius: 999px;
+  background: #dffbff;
+  box-shadow:
+    0 0 8px rgb(217 247 255 / 76%),
+    0 0 18px rgb(59 214 255 / 34%);
+  pointer-events: none;
+}
+
+.post-effect-card.is-drop-before::before {
+  top: -5px;
+}
+
+.post-effect-card.is-drop-after::after {
+  bottom: -5px;
+}
+
+.post-effect-heading {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.post-effect-grip {
   color: rgb(245 251 255 / 36%);
+  cursor: grab;
   letter-spacing: 1px;
+  padding: 3px 4px;
+  border-radius: 3px;
+  line-height: 1;
+}
+
+.post-effect-grip:hover {
+  color: rgb(245 251 255 / 72%);
+  background: rgb(255 255 255 / 8%);
+}
+
+.post-effect-grip:active {
+  cursor: grabbing;
+}
+
+.post-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.post-checkbox input {
+  position: relative;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  border: 1px solid rgb(217 247 255 / 32%);
+  border-radius: 3px;
+  appearance: none;
+  accent-color: #dffbff;
+  background: rgb(0 0 0 / 32%);
+  cursor: pointer;
+}
+
+.post-checkbox input::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 4px;
+  width: 4px;
+  height: 7px;
+  border: solid #091215;
+  border-width: 0 2px 2px 0;
+  opacity: 0;
+  transform: rotate(45deg);
+}
+
+.post-checkbox input:checked {
+  border-color: rgb(217 247 255 / 84%);
+  background: #dffbff;
+  box-shadow: 0 0 10px rgb(59 214 255 / 24%);
+}
+
+.post-checkbox input:checked::after {
+  opacity: 1;
+}
+
+.post-checkbox input:focus-visible {
+  outline: 2px solid rgb(217 247 255 / 42%);
+  outline-offset: 2px;
+}
+
+.post-checkbox input:disabled,
+.post-effect-pane input:disabled {
+  cursor: not-allowed;
+}
+
+.post-panel-master {
+  color: #eefaff;
+}
+
+.post-effect-controls {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgb(255 255 255 / 8%);
+}
+
+.post-effect-pane {
+  --tp-base-background-color: transparent;
+  --tp-container-background-color: transparent;
+  --tp-container-background-color-active: rgb(255 255 255 / 8%);
+  --tp-container-background-color-focus: rgb(255 255 255 / 8%);
+  --tp-container-background-color-hover: rgb(255 255 255 / 6%);
+  --tp-container-foreground-color: rgb(245 251 255 / 74%);
+  --tp-groove-foreground-color: rgb(217 247 255 / 38%);
+  --tp-input-background-color: rgb(255 255 255 / 6%);
+  --tp-input-background-color-active: rgb(255 255 255 / 12%);
+  --tp-input-background-color-focus: rgb(255 255 255 / 12%);
+  --tp-input-background-color-hover: rgb(255 255 255 / 10%);
+  --tp-input-foreground-color: rgb(245 251 255 / 72%);
+  --tp-label-foreground-color: rgb(245 251 255 / 68%);
+  --tp-monitor-background-color: rgb(0 0 0 / 18%);
+  --tp-monitor-foreground-color: rgb(245 251 255 / 54%);
+  width: 100%;
+}
+
+.post-effect-pane > .tp-rotv {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+.post-effect-pane .tp-lblv_v {
+  min-width: 0;
 }
 
 .transport {
