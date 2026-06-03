@@ -3,6 +3,7 @@ export type ProjectionMode = "screen" | "sphere";
 export type BoundaryMode = "dirichlet" | "neumann";
 export type ColorMode = "chromesthesia" | "mono" | "bandSplit" | "thermalPhase";
 export type SphereProjectionType = "uv" | "triplanar";
+export type ScreenAspectMode = "circle" | "viewport";
 export type IdleMode = "ambient";
 
 export type AudioFeatureFrame = {
@@ -25,6 +26,7 @@ export type CymaticSettings = {
   boundaryMode: BoundaryMode;
   colorMode: ColorMode;
   sphereProjectionType: SphereProjectionType;
+  screenAspectMode: ScreenAspectMode;
   idleMode: IdleMode;
   cymaticDensity: number;
   cymaticSymmetry: number;
@@ -51,6 +53,15 @@ export type CymaticSettings = {
   sphereRadius: number;
   sphereSurfaceOpacity: number;
   sphereBackgroundTransparent: boolean;
+  postBloomEnabled: boolean;
+  postBloomIntensity: number;
+  postPixelationEnabled: boolean;
+  postPixelSize: number;
+  terminalContourEnabled: boolean;
+  terminalCellSize: number;
+  terminalContourLevels: number;
+  terminalContourStrength: number;
+  terminalContourThreshold: number;
 };
 
 export const DEFAULT_SETTINGS: CymaticSettings = {
@@ -58,6 +69,7 @@ export const DEFAULT_SETTINGS: CymaticSettings = {
   boundaryMode: "neumann",
   colorMode: "chromesthesia",
   sphereProjectionType: "triplanar",
+  screenAspectMode: "circle",
   idleMode: "ambient",
   cymaticDensity: 0.82,
   cymaticSymmetry: 6,
@@ -84,6 +96,15 @@ export const DEFAULT_SETTINGS: CymaticSettings = {
   sphereRadius: 1.35,
   sphereSurfaceOpacity: 0.64,
   sphereBackgroundTransparent: false,
+  postBloomEnabled: true,
+  postBloomIntensity: 0.72,
+  postPixelationEnabled: false,
+  postPixelSize: 6,
+  terminalContourEnabled: false,
+  terminalCellSize: 9,
+  terminalContourLevels: 8,
+  terminalContourStrength: 1,
+  terminalContourThreshold: 0.09,
 };
 
 export const BAND_COLORS: Record<FrequencyBand, [number, number, number]> = {

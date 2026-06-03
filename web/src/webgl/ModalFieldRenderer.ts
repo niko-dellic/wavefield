@@ -1,5 +1,12 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import {
+  BloomEffect,
+  EffectComposer,
+  EffectPass,
+  PixelationEffect,
+  RenderPass,
+} from "postprocessing";
 
 import { MAX_MODAL_MODES, type ModalFieldFrame } from "../audio/ModalField";
 import type {
@@ -9,6 +16,7 @@ import type {
   ProjectionMode,
   SphereProjectionType,
 } from "../types";
+import { TerminalContourEffect } from "./TerminalContourEffect";
 
 const BOUNDARY_MODE_INDEX: Record<BoundaryMode, number> = {
   dirichlet: 0,
@@ -54,6 +62,7 @@ const FRAGMENT_SHADER = `
   uniform int uColorMode;
   uniform int uProjectionMode;
   uniform int uSphereProjectionType;
+  uniform int uScreenAspectMode;
   uniform vec2 uSource;
   uniform vec4 uModeSlots[MAX_MODAL_MODES];
   uniform vec4 uModeMeta[MAX_MODAL_MODES];
@@ -215,7 +224,8 @@ const FRAGMENT_SHADER = `
     fieldSample.colorWeight = 0.0;
 
     float aspect = uResolution.x / max(1.0, uResolution.y);
-    vec2 centered = (uv - uSource) * vec2(aspect, 1.0) * 2.0;
+    vec2 aspectScale = uScreenAspectMode == 0 ? vec2(aspect, 1.0) : vec2(1.0);
+    vec2 centered = (uv - uSource) * aspectScale * 2.0;
     float spectrumShape = clamp(
       dot(uBandEnergies, vec3(0.24, 0.38, 0.52)) +
       dot(uBandOnsets, vec3(0.28, 0.4, 0.52)) +
@@ -348,7 +358,8 @@ const FRAGMENT_SHADER = `
       }
 
       float aspect = uResolution.x / max(1.0, uResolution.y);
-      vec2 centered = (vUv - uSource) * vec2(aspect, 1.0) * 2.0;
+      vec2 aspectScale = uScreenAspectMode == 0 ? vec2(aspect, 1.0) : vec2(1.0);
+      vec2 centered = (vUv - uSource) * aspectScale * 2.0;
       float ring = 1.0 - smoothstep(0.006, 0.02, abs(length(centered) - 0.28));
       gl_FragColor = vec4(vec3(0.08, 0.16, 0.2) * ring * 0.22, 1.0);
       return;
@@ -378,7 +389,10 @@ const FRAGMENT_SHADER = `
     float halo = pow(clamp(1.0 - abs(normalizedField), 0.0, 1.0), 4.0) *
       uSoftness *
       field.energy *
-      0.12;
+      0.08;
+    float visibleInk = uProjectionMode == 0
+      ? smoothstep(0.004, 0.045, density + halo)
+      : 1.0;
     float alpha = clamp((density + halo) * (0.92 + uRms * 0.22), 0.0, 0.86);
     vec3 modalColor =
       field.colorWeight > 0.0001 ? field.color / field.colorWeight : vec3(0.86, 0.96, 1.0);
@@ -399,7 +413,7 @@ const FRAGMENT_SHADER = `
       color = mix(monoColor, thermalColor, 0.78);
     }
 
-    color *= 0.82 + density * 0.72 + field.energy * 0.24;
+    color *= (0.82 + density * 0.72 + field.energy * 0.24) * visibleInk;
     float outputAlpha = uProjectionMode == 1
       ? clamp(alpha * uSurfaceOpacity, 0.02, 1.0)
       : 1.0;
@@ -436,6 +450,7 @@ export class ModalFieldRenderer {
       uColorMode: { value: COLOR_MODE_INDEX.chromesthesia },
       uProjectionMode: { value: PROJECTION_MODE_INDEX.screen },
       uSphereProjectionType: { value: SPHERE_PROJECTION_TYPE_INDEX.triplanar },
+      uScreenAspectMode: { value: 0 },
       uSource: { value: new THREE.Vector2(0.5, 0.5) },
       uModeSlots: { value: this.modeSlotUniforms },
       uModeMeta: { value: this.modeMetaUniforms },
@@ -467,6 +482,20 @@ export class ModalFieldRenderer {
     transparent: true,
   });
   private controls: OrbitControls | null = null;
+  private composer: EffectComposer | null = null;
+  private renderPass: RenderPass | null = null;
+  private pixelationPass: EffectPass | null = null;
+  private bloomPass: EffectPass | null = null;
+  private terminalPass: EffectPass | null = null;
+  private readonly pixelationEffect = new PixelationEffect(6);
+  private readonly bloomEffect = new BloomEffect({
+    intensity: 0.72,
+    luminanceThreshold: 0.02,
+    luminanceSmoothing: 0.18,
+    mipmapBlur: true,
+    radius: 0.72,
+  });
+  private readonly terminalContourEffect = new TerminalContourEffect();
   private elapsedSeconds = 0;
 
   constructor() {
@@ -485,6 +514,8 @@ export class ModalFieldRenderer {
     this.material.uniforms.uResolution.value.set(targetWidth, targetHeight);
     this.sphereCamera.aspect = targetWidth / targetHeight;
     this.sphereCamera.updateProjectionMatrix();
+    this.composer?.setSize(targetWidth, targetHeight, false);
+    this.terminalContourEffect.setSize(targetWidth, targetHeight);
   }
 
   requestReset() {
@@ -512,6 +543,7 @@ export class ModalFieldRenderer {
         this.controls.update();
       }
     }
+    this.updatePostProcessing(renderer, settings, isSphere ? this.sphereCamera : this.screenCamera);
 
     const previousTarget = renderer.getRenderTarget();
     const previousClearColor = new THREE.Color();
@@ -526,7 +558,11 @@ export class ModalFieldRenderer {
       isSphere && settings.sphereBackgroundTransparent ? 0 : 1,
     );
     renderer.clear(true, true, true);
-    renderer.render(this.scene, isSphere ? this.sphereCamera : this.screenCamera);
+    if (this.hasActivePostProcessing(settings)) {
+      this.composer?.render(deltaSeconds);
+    } else {
+      renderer.render(this.scene, isSphere ? this.sphereCamera : this.screenCamera);
+    }
 
     renderer.setRenderTarget(previousTarget);
     renderer.setClearColor(previousClearColor, previousClearAlpha);
@@ -535,6 +571,7 @@ export class ModalFieldRenderer {
 
   dispose() {
     this.controls?.dispose();
+    this.composer?.dispose();
     this.material.dispose();
     this.screenMesh.geometry.dispose();
     this.sphereMesh.geometry.dispose();
@@ -550,6 +587,67 @@ export class ModalFieldRenderer {
     this.controls.dampingFactor = 0.08;
     this.controls.enablePan = false;
     this.controls.enabled = false;
+  }
+
+  private ensureComposer(renderer: THREE.WebGLRenderer, camera: THREE.Camera) {
+    if (this.composer) {
+      return;
+    }
+
+    this.composer = new EffectComposer(renderer, {
+      depthBuffer: true,
+      multisampling: 0,
+    });
+    this.renderPass = new RenderPass(this.scene, camera);
+    this.pixelationPass = new EffectPass(camera, this.pixelationEffect);
+    this.bloomPass = new EffectPass(camera, this.bloomEffect);
+    this.terminalPass = new EffectPass(camera, this.terminalContourEffect);
+
+    this.composer.addPass(this.renderPass);
+    this.composer.addPass(this.pixelationPass);
+    this.composer.addPass(this.bloomPass);
+    this.composer.addPass(this.terminalPass);
+  }
+
+  private updatePostProcessing(
+    renderer: THREE.WebGLRenderer,
+    settings: CymaticSettings,
+    camera: THREE.Camera,
+  ) {
+    this.ensureComposer(renderer, camera);
+
+    if (this.composer) {
+      this.composer.setMainScene(this.scene);
+      this.composer.setMainCamera(camera);
+    }
+    if (this.renderPass) {
+      this.renderPass.mainScene = this.scene;
+      this.renderPass.mainCamera = camera;
+    }
+    if (this.pixelationPass) {
+      this.pixelationPass.mainCamera = camera;
+      this.pixelationPass.enabled = settings.postPixelationEnabled;
+    }
+    if (this.bloomPass) {
+      this.bloomPass.mainCamera = camera;
+      this.bloomPass.enabled = settings.postBloomEnabled;
+    }
+    if (this.terminalPass) {
+      this.terminalPass.mainCamera = camera;
+      this.terminalPass.enabled = settings.terminalContourEnabled;
+    }
+
+    this.pixelationEffect.granularity = settings.postPixelSize;
+    this.bloomEffect.intensity = settings.postBloomIntensity;
+    this.terminalContourEffect.updateSettings(settings);
+  }
+
+  private hasActivePostProcessing(settings: CymaticSettings) {
+    return (
+      settings.postBloomEnabled ||
+      settings.postPixelationEnabled ||
+      settings.terminalContourEnabled
+    );
   }
 
   private updateUniforms(
@@ -595,6 +693,8 @@ export class ModalFieldRenderer {
       PROJECTION_MODE_INDEX[settings.projectionMode];
     this.material.uniforms.uSphereProjectionType.value =
       SPHERE_PROJECTION_TYPE_INDEX[settings.sphereProjectionType];
+    this.material.uniforms.uScreenAspectMode.value =
+      settings.screenAspectMode === "circle" ? 0 : 1;
     this.material.uniforms.uSource.value.set(settings.sourceX, settings.sourceY);
     this.material.uniforms.uDensity.value = settings.cymaticDensity;
     this.material.uniforms.uSymmetry.value = settings.cymaticSymmetry;

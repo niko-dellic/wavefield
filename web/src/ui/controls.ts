@@ -47,6 +47,15 @@ export function createControls(
         Dirichlet: "dirichlet",
       },
     });
+    if (settings.projectionMode === "screen") {
+      engine.addBinding(settings, "screenAspectMode", {
+        label: "aspect",
+        options: {
+          Circle: "circle",
+          "Viewport oval": "viewport",
+        },
+      });
+    }
     engine.addBinding(settings, "modalCount", {
       label: "modes",
       min: 4,
@@ -206,6 +215,59 @@ export function createControls(
       step: 0.01,
     });
 
+    const post = pane.addFolder({ title: "Post", expanded: true });
+    post.addBinding(settings, "postBloomEnabled", {
+      label: "bloom",
+    });
+    if (settings.postBloomEnabled) {
+      post.addBinding(settings, "postBloomIntensity", {
+        label: "bloom power",
+        min: 0,
+        max: 3,
+        step: 0.01,
+      });
+    }
+    post.addBinding(settings, "postPixelationEnabled", {
+      label: "pixelate",
+    });
+    if (settings.postPixelationEnabled) {
+      post.addBinding(settings, "postPixelSize", {
+        label: "pixel size",
+        min: 2,
+        max: 40,
+        step: 1,
+      });
+    }
+    post.addBinding(settings, "terminalContourEnabled", {
+      label: "terminal",
+    });
+    if (settings.terminalContourEnabled) {
+      post.addBinding(settings, "terminalCellSize", {
+        label: "cell size",
+        min: 4,
+        max: 24,
+        step: 1,
+      });
+      post.addBinding(settings, "terminalContourLevels", {
+        label: "contours",
+        min: 3,
+        max: 18,
+        step: 1,
+      });
+      post.addBinding(settings, "terminalContourStrength", {
+        label: "line power",
+        min: 0.2,
+        max: 3,
+        step: 0.01,
+      });
+      post.addBinding(settings, "terminalContourThreshold", {
+        label: "threshold",
+        min: 0.01,
+        max: 0.35,
+        step: 0.001,
+      });
+    }
+
     pane.on("change", onChange);
   };
 
@@ -235,5 +297,9 @@ function getLayoutKey(settings: CymaticSettings) {
   return [
     settings.projectionMode,
     settings.colorMode,
+    settings.screenAspectMode,
+    settings.postBloomEnabled,
+    settings.postPixelationEnabled,
+    settings.terminalContourEnabled,
   ].join(":");
 }
