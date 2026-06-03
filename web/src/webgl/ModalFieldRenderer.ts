@@ -54,10 +54,13 @@ const FRAGMENT_SHADER = `
   uniform int uColorMode;
   uniform int uProjectionMode;
   uniform int uSphereProjectionType;
+  uniform vec2 uSource;
   uniform vec4 uModeSlots[MAX_MODAL_MODES];
   uniform vec4 uModeMeta[MAX_MODAL_MODES];
   uniform vec4 uModeColors[MAX_MODAL_MODES];
   uniform float uDensity;
+  uniform float uSymmetry;
+  uniform float uHarmonicMix;
   uniform float uNodeWidth;
   uniform float uSoftness;
   uniform float uInterference;
@@ -69,8 +72,10 @@ const FRAGMENT_SHADER = `
   uniform float uCentroid;
   uniform float uFlux;
   uniform vec3 uBandEnergies;
+  uniform vec3 uBandOnsets;
   uniform float uChromesthesiaMix;
   uniform float uIdlePreview;
+  uniform float uSurfaceOpacity;
   varying vec2 vUv;
   varying vec3 vWorldNormal;
 
@@ -125,6 +130,18 @@ const FRAGMENT_SHADER = `
     }
 
     return -sin(argument) * angularScale;
+  }
+
+  float bandValue(vec3 values, float bandIndex) {
+    if (bandIndex < 0.5) {
+      return values.x;
+    }
+
+    if (bandIndex < 1.5) {
+      return values.y;
+    }
+
+    return values.z;
   }
 
   FieldSample evaluateField(vec3 p) {
@@ -189,11 +206,113 @@ const FRAGMENT_SHADER = `
     return fieldSample;
   }
 
+  FieldSample evaluateRadialField(vec2 uv) {
+    FieldSample fieldSample;
+    fieldSample.field = 0.0;
+    fieldSample.grad = 0.0;
+    fieldSample.energy = 0.0;
+    fieldSample.color = vec3(0.0);
+    fieldSample.colorWeight = 0.0;
+
+    float aspect = uResolution.x / max(1.0, uResolution.y);
+    vec2 centered = (uv - uSource) * vec2(aspect, 1.0) * 2.0;
+    float spectrumShape = clamp(
+      dot(uBandEnergies, vec3(0.24, 0.38, 0.52)) +
+      dot(uBandOnsets, vec3(0.28, 0.4, 0.52)) +
+      uFlux * 0.5,
+      0.0,
+      3.0
+    );
+    float idleDrift = uIdlePreview > 0.5 ? uTime * (0.018 + uDrift * 0.08) : 0.0;
+    float warpNoise = fbm(centered * (1.6 + uWarpScale * 3.4) + idleDrift) - 0.5;
+    vec2 warped = centered +
+      normalize(centered + vec2(0.003, -0.002)) *
+      warpNoise *
+      uWarp *
+      (0.008 + spectrumShape * 0.01);
+    float warpedRadius = length(warped);
+    float warpedAngle = atan(warped.y, warped.x);
+    float edgeEnvelope = smoothstep(1.32, 0.08, warpedRadius);
+
+    for (int index = 0; index < MAX_MODAL_MODES; index++) {
+      if (index >= uModeCount) {
+        continue;
+      }
+
+      vec4 slot = uModeSlots[index];
+      vec4 meta = uModeMeta[index];
+      float amplitude = slot.w;
+      if (amplitude <= 0.0001) {
+        continue;
+      }
+
+      float modeSum = slot.x + slot.y * 1.37 + slot.z * 0.73;
+      float bandEnergy = bandValue(uBandEnergies, meta.w);
+      float bandOnset = bandValue(uBandOnsets, meta.w);
+      float bandBias = meta.w - 1.0;
+      float localAudio = clamp(
+        bandEnergy * 2.35 + bandOnset * 2.2 + uRms * 0.34 + uFlux * 0.28,
+        0.0,
+        3.0
+      );
+      float radialFrequency =
+        (5.5 + modeSum * 0.62 + meta.z * 20.0) *
+        (0.68 + uDensity * 0.46 + bandEnergy * 0.9 + bandOnset * 0.42);
+      float angularOrder = max(
+        2.0,
+        floor(
+          uSymmetry +
+          bandBias * 1.7 +
+          bandOnset * 4.0 +
+          mod(slot.x + slot.y + slot.z, 3.0)
+        )
+      );
+      float phase =
+        meta.x * 0.18 +
+        meta.y * 1.2 +
+        idleDrift * (0.35 + meta.z) +
+        bandEnergy * 1.1 +
+        bandOnset * 1.8;
+      float radialWave = sin(warpedRadius * radialFrequency + phase * 0.2);
+      float angularWave = cos(
+        warpedAngle * angularOrder +
+        meta.x * 0.33 +
+        bandEnergy * 1.9 -
+        bandOnset * 0.7
+      );
+      float harmonicWave = sin(
+        warpedRadius *
+          radialFrequency *
+          (1.18 + uHarmonicMix * 1.05 + bandOnset * 0.38) +
+        angularWave * (0.55 + uInterference * 1.4 + bandEnergy * 0.5) +
+        phase * 0.57
+      );
+      float localField =
+        radialWave * mix(1.0, angularWave, uInterference * 0.42) +
+        harmonicWave * mix(0.08, 0.36, uHarmonicMix);
+      float localInfluence =
+        amplitude *
+        edgeEnvelope *
+        (0.26 + localAudio * 0.22 + abs(localField) * 0.52) *
+        (0.72 + meta.y * 0.34);
+
+      fieldSample.field += localField * amplitude * edgeEnvelope;
+      fieldSample.grad +=
+        (abs(cos(warpedRadius * radialFrequency - phase)) * radialFrequency * 0.0035 +
+          abs(angularWave) * 0.026) *
+        amplitude *
+        edgeEnvelope;
+      fieldSample.energy += localInfluence;
+      fieldSample.color += uModeColors[index].rgb * localInfluence * uModeColors[index].a;
+      fieldSample.colorWeight += localInfluence * uModeColors[index].a;
+    }
+
+    return fieldSample;
+  }
+
   FieldSample sampleProjectedField() {
     if (uProjectionMode == 0) {
-      vec2 plate = vUv;
-      vec3 p = vec3(plate, 0.5 + sin(uTime * 0.09) * 0.08);
-      return evaluateField(clamp(p, vec3(0.0), vec3(1.0)));
+      return evaluateRadialField(vUv);
     }
 
     vec3 normal = normalize(vWorldNormal);
@@ -228,15 +347,21 @@ const FRAGMENT_SHADER = `
         return;
       }
 
-      vec2 centered = vUv * 2.0 - 1.0;
+      float aspect = uResolution.x / max(1.0, uResolution.y);
+      vec2 centered = (vUv - uSource) * vec2(aspect, 1.0) * 2.0;
       float ring = 1.0 - smoothstep(0.006, 0.02, abs(length(centered) - 0.28));
       gl_FragColor = vec4(vec3(0.08, 0.16, 0.2) * ring * 0.22, 1.0);
       return;
     }
 
     FieldSample field = sampleProjectedField();
-    float normalizedField = field.field / max(0.045, sqrt(max(field.energy, 0.0)) * 0.18);
-    float nodeWidth = max(0.00035, uNodeWidth * 0.055);
+    float energyScale = uProjectionMode == 0
+      ? max(0.055, sqrt(max(field.energy, 0.0)) * 0.26)
+      : max(0.045, sqrt(max(field.energy, 0.0)) * 0.18);
+    float normalizedField = field.field / energyScale;
+    float nodeWidth = uProjectionMode == 0
+      ? max(0.00042, uNodeWidth * 0.035)
+      : max(0.00035, uNodeWidth * 0.055);
     float nodeBand = 1.0 - smoothstep(nodeWidth * 0.32, nodeWidth * 1.35, abs(normalizedField));
     float broadBand =
       1.0 - smoothstep(nodeWidth * 1.4, nodeWidth * (4.2 + uSoftness * 4.0), abs(normalizedField));
@@ -275,7 +400,10 @@ const FRAGMENT_SHADER = `
     }
 
     color *= 0.82 + density * 0.72 + field.energy * 0.24;
-    gl_FragColor = vec4(clamp(color * alpha, 0.0, 1.0), 1.0);
+    float outputAlpha = uProjectionMode == 1
+      ? clamp(alpha * uSurfaceOpacity, 0.02, 1.0)
+      : 1.0;
+    gl_FragColor = vec4(clamp(color * alpha, 0.0, 1.0), outputAlpha);
   }
 `;
 
@@ -308,10 +436,13 @@ export class ModalFieldRenderer {
       uColorMode: { value: COLOR_MODE_INDEX.chromesthesia },
       uProjectionMode: { value: PROJECTION_MODE_INDEX.screen },
       uSphereProjectionType: { value: SPHERE_PROJECTION_TYPE_INDEX.triplanar },
+      uSource: { value: new THREE.Vector2(0.5, 0.5) },
       uModeSlots: { value: this.modeSlotUniforms },
       uModeMeta: { value: this.modeMetaUniforms },
       uModeColors: { value: this.modeColorUniforms },
       uDensity: { value: 0.82 },
+      uSymmetry: { value: 6 },
+      uHarmonicMix: { value: 0.34 },
       uNodeWidth: { value: 0.052 },
       uSoftness: { value: 0.38 },
       uInterference: { value: 0.62 },
@@ -323,13 +454,17 @@ export class ModalFieldRenderer {
       uCentroid: { value: 0 },
       uFlux: { value: 0 },
       uBandEnergies: { value: new THREE.Vector3() },
+      uBandOnsets: { value: new THREE.Vector3() },
       uChromesthesiaMix: { value: 0.82 },
       uIdlePreview: { value: 0 },
+      uSurfaceOpacity: { value: 0.64 },
     },
     vertexShader: VERTEX_SHADER,
     fragmentShader: FRAGMENT_SHADER,
     depthTest: false,
     depthWrite: false,
+    side: THREE.DoubleSide,
+    transparent: true,
   });
   private controls: OrbitControls | null = null;
   private elapsedSeconds = 0;
@@ -371,7 +506,6 @@ export class ModalFieldRenderer {
     this.screenMesh.visible = !isSphere;
     this.sphereMesh.visible = isSphere;
     this.sphereMesh.scale.setScalar(settings.sphereRadius);
-    this.sphereMesh.rotation.y += deltaSeconds * settings.sphereRotation;
     if (this.controls) {
       this.controls.enabled = isSphere;
       if (isSphere) {
@@ -461,7 +595,10 @@ export class ModalFieldRenderer {
       PROJECTION_MODE_INDEX[settings.projectionMode];
     this.material.uniforms.uSphereProjectionType.value =
       SPHERE_PROJECTION_TYPE_INDEX[settings.sphereProjectionType];
+    this.material.uniforms.uSource.value.set(settings.sourceX, settings.sourceY);
     this.material.uniforms.uDensity.value = settings.cymaticDensity;
+    this.material.uniforms.uSymmetry.value = settings.cymaticSymmetry;
+    this.material.uniforms.uHarmonicMix.value = settings.cymaticHarmonicMix;
     this.material.uniforms.uNodeWidth.value = settings.cymaticNodeWidth;
     this.material.uniforms.uSoftness.value = settings.cymaticSoftness;
     this.material.uniforms.uInterference.value = settings.cymaticInterference;
@@ -477,8 +614,14 @@ export class ModalFieldRenderer {
       fieldFrame.bands.mid,
       fieldFrame.bands.high,
     );
+    this.material.uniforms.uBandOnsets.value.set(
+      fieldFrame.onsets.low,
+      fieldFrame.onsets.mid,
+      fieldFrame.onsets.high,
+    );
     this.material.uniforms.uChromesthesiaMix.value = settings.chromesthesiaMix;
     this.material.uniforms.uIdlePreview.value = isIdlePreview ? 1 : 0;
+    this.material.uniforms.uSurfaceOpacity.value = settings.sphereSurfaceOpacity;
   }
 }
 

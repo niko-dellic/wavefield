@@ -8,19 +8,9 @@ import {
   type ModalFieldFrame,
 } from "./audio/ModalField";
 import { decodeAndAnalyzeAudio } from "./audio/analyze";
-import { PulseScheduler } from "./audio/PulseScheduler";
 import { createControls, type ControlsManager } from "./ui/controls";
-import { CymaticPulseRenderer } from "./webgl/CymaticPulseRenderer";
 import { ModalFieldRenderer } from "./webgl/ModalFieldRenderer";
-import {
-  BAND_COLORS,
-  DEFAULT_SETTINGS,
-  type AudioAnalysis,
-  type CymaticSettings,
-  type FrequencyBand,
-  type OriginMode,
-  type PulseBurst,
-} from "./types";
+import { DEFAULT_SETTINGS, type AudioAnalysis, type CymaticSettings } from "./types";
 
 const FIXTURES = [
   {
@@ -35,10 +25,8 @@ const FIXTURES = [
 
 export class WavefieldApp {
   private readonly settings: CymaticSettings = { ...DEFAULT_SETTINGS };
-  private readonly scheduler = new PulseScheduler();
   private readonly modalEngine = new ModalFieldEngine();
   private readonly renderer: THREE.WebGLRenderer;
-  private readonly burstRenderer = new CymaticPulseRenderer();
   private readonly modalRenderer = new ModalFieldRenderer();
   private readonly wavesurfer: WaveSurfer;
   private readonly controls: ControlsManager;
@@ -48,17 +36,12 @@ export class WavefieldApp {
   private readonly sourceTrigger: HTMLButtonElement;
   private readonly sourceMenu: HTMLElement;
   private readonly selectedSource: HTMLElement;
-  private readonly simulationSelect: HTMLSelectElement;
   private readonly projectionSelect: HTMLSelectElement;
-  private readonly originModeSelect: HTMLSelectElement;
   private analysis: AudioAnalysis | null = null;
   private animationFrame = 0;
   private lastFrameTime = performance.now();
-  private pendingBursts: PulseBurst[] = [];
   private ambientSeconds = 0;
   private lastModalFieldFrame: ModalFieldFrame = EMPTY_MODAL_FIELD_FRAME;
-  private previousSimulationMode: CymaticSettings["simulationMode"] =
-    this.settings.simulationMode;
 
   constructor(private readonly root: HTMLElement) {
     this.root.innerHTML = this.renderShell();
@@ -68,9 +51,7 @@ export class WavefieldApp {
     this.sourceTrigger = this.query<HTMLButtonElement>(".source-trigger");
     this.sourceMenu = this.query<HTMLElement>(".source-menu");
     this.selectedSource = this.query<HTMLElement>(".selected-source");
-    this.simulationSelect = this.query<HTMLSelectElement>(".simulation-mode-select");
     this.projectionSelect = this.query<HTMLSelectElement>(".projection-mode-select");
-    this.originModeSelect = this.query<HTMLSelectElement>(".origin-mode-select");
 
     this.renderer = new THREE.WebGLRenderer({
       canvas: this.canvas,
@@ -111,7 +92,6 @@ export class WavefieldApp {
   dispose() {
     cancelAnimationFrame(this.animationFrame);
     this.controls.dispose();
-    this.burstRenderer.dispose();
     this.modalRenderer.dispose();
     this.renderer.dispose();
     this.wavesurfer.destroy();
@@ -150,28 +130,11 @@ export class WavefieldApp {
             <input class="audio-file" type="file" accept="audio/*" />
           </div>
           <label class="mode-picker">
-            <i class="ph ph-sliders-horizontal" aria-hidden="true"></i>
-            <span>Sim</span>
-            <select class="simulation-mode-select" aria-label="Simulation mode">
-              <option value="modal" selected>Modal</option>
-              <option value="bursts">Bursts</option>
-              <option value="wave" disabled>Wave soon</option>
-            </select>
-          </label>
-          <label class="mode-picker">
             <i class="ph ph-sphere" aria-hidden="true"></i>
             <span>View</span>
             <select class="projection-mode-select" aria-label="Projection mode">
               <option value="screen" selected>Screen</option>
               <option value="sphere">Sphere</option>
-            </select>
-          </label>
-          <label class="mode-picker">
-            <i class="ph ph-waveform" aria-hidden="true"></i>
-            <span>Origin</span>
-            <select class="origin-mode-select" aria-label="Origin mode">
-              <option value="mono" selected>Mono</option>
-              <option value="split">Split</option>
             </select>
           </label>
         </section>
@@ -201,33 +164,10 @@ export class WavefieldApp {
       }
     });
 
-    this.simulationSelect.addEventListener("change", () => {
-      this.settings.simulationMode = this.simulationSelect.value as CymaticSettings["simulationMode"];
-      if (this.settings.simulationMode === "bursts") {
-        this.settings.projectionMode = "screen";
-      }
-      this.previousSimulationMode = this.settings.simulationMode;
-      this.pendingBursts =
-        this.settings.simulationMode === "bursts"
-          ? createPreviewBursts(this.settings)
-          : [];
-      this.resetVisualState();
-      this.syncHeaderControls();
-      this.setStatus(`Simulation: ${this.simulationSelect.selectedOptions[0].text}`);
-    });
-
     this.projectionSelect.addEventListener("change", () => {
       this.settings.projectionMode = this.projectionSelect.value as CymaticSettings["projectionMode"];
       this.syncHeaderControls();
       this.setStatus(`Projection: ${this.projectionSelect.selectedOptions[0].text}`);
-    });
-
-    this.originModeSelect.addEventListener("change", () => {
-      this.settings.originMode = this.originModeSelect.value as OriginMode;
-      this.pendingBursts = createPreviewBursts(this.settings);
-      this.resetVisualState();
-      this.syncHeaderControls();
-      this.setStatus(`Origin mode: ${this.originModeSelect.selectedOptions[0].text}`);
     });
 
     this.playButton.addEventListener("click", () => {
@@ -281,7 +221,6 @@ export class WavefieldApp {
     });
 
     this.wavesurfer.on("ready", () => {
-      this.scheduler.reset(this.wavesurfer.getCurrentTime());
       this.setStatus(
         this.analysis
           ? `${formatDuration(this.analysis.duration)} ready`
@@ -298,14 +237,12 @@ export class WavefieldApp {
       this.setPlayButton(false);
     });
     this.wavesurfer.on("seeking", (time) => {
-      this.scheduler.reset(time);
       this.modalEngine.reset(time);
       this.lastModalFieldFrame = EMPTY_MODAL_FIELD_FRAME;
       this.resetVisualState();
     });
     this.wavesurfer.on("interaction", () => {
       const time = this.wavesurfer.getCurrentTime();
-      this.scheduler.reset(time);
       this.modalEngine.reset(time);
     });
     this.wavesurfer.on("error", (error) => {
@@ -350,16 +287,13 @@ export class WavefieldApp {
 
   private setAnalysis(analysis: AudioAnalysis) {
     this.analysis = analysis;
-    this.scheduler.setAnalysis(analysis);
     this.modalEngine.setAnalysis(analysis);
     this.lastModalFieldFrame = EMPTY_MODAL_FIELD_FRAME;
-    this.pendingBursts = createPreviewBursts(this.settings);
     this.resetVisualState();
   }
 
   private prepareForNewAudio() {
     this.analysis = null;
-    this.scheduler.setAnalysis(null);
     this.modalEngine.setAnalysis(null);
     this.lastModalFieldFrame = EMPTY_MODAL_FIELD_FRAME;
     this.ambientSeconds = 0;
@@ -372,45 +306,28 @@ export class WavefieldApp {
     this.lastFrameTime = now;
     const time = this.wavesurfer.getCurrentTime();
     const isPlaying = this.wavesurfer.isPlaying();
-    if (this.settings.simulationMode === "bursts") {
-      const scheduledBursts = isPlaying
-        ? this.scheduler.collect(time, this.settings)
-        : [];
-      const bursts = this.pendingBursts.length
-        ? [...this.pendingBursts, ...scheduledBursts].slice(-12)
-        : scheduledBursts;
-      this.pendingBursts = [];
-      this.burstRenderer.render(
-        this.renderer,
-        bursts,
-        this.settings,
-        isPlaying ? deltaSeconds : 0,
-      );
-    } else {
-      let fieldFrame = this.lastModalFieldFrame;
-      let renderDeltaSeconds = 0;
-      let isIdlePreview = false;
+    let fieldFrame = this.lastModalFieldFrame;
+    let renderDeltaSeconds = 0;
+    let isIdlePreview = false;
 
-      if (!this.analysis) {
-        this.ambientSeconds += deltaSeconds;
-        fieldFrame = createAmbientModalFieldFrame(this.ambientSeconds);
-        renderDeltaSeconds = deltaSeconds;
-        isIdlePreview = true;
-      } else if (isPlaying) {
-        fieldFrame = this.modalEngine.update(time, this.settings, deltaSeconds);
-        this.lastModalFieldFrame = fieldFrame;
-        renderDeltaSeconds = deltaSeconds;
-      }
-
-      this.pendingBursts = [];
-      this.modalRenderer.render(
-        this.renderer,
-        fieldFrame,
-        this.settings,
-        renderDeltaSeconds,
-        isIdlePreview,
-      );
+    if (!this.analysis) {
+      this.ambientSeconds += deltaSeconds;
+      fieldFrame = createAmbientModalFieldFrame(this.ambientSeconds);
+      renderDeltaSeconds = deltaSeconds;
+      isIdlePreview = true;
+    } else if (isPlaying) {
+      fieldFrame = this.modalEngine.update(time, this.settings, deltaSeconds);
+      this.lastModalFieldFrame = fieldFrame;
+      renderDeltaSeconds = deltaSeconds;
     }
+
+    this.modalRenderer.render(
+      this.renderer,
+      fieldFrame,
+      this.settings,
+      renderDeltaSeconds,
+      isIdlePreview,
+    );
 
     this.animationFrame = requestAnimationFrame(this.animate);
   };
@@ -419,7 +336,6 @@ export class WavefieldApp {
     const width = window.innerWidth;
     const height = window.innerHeight;
     this.renderer.setSize(width, height, false);
-    this.burstRenderer.setSize(this.canvas.width, this.canvas.height);
     this.modalRenderer.setSize(this.canvas.width, this.canvas.height);
   };
 
@@ -452,38 +368,16 @@ export class WavefieldApp {
   }
 
   private handleSettingsChange() {
-    if (this.settings.simulationMode === "wave") {
-      this.settings.simulationMode = "modal";
-      this.setStatus("Wave solver is coming soon");
-    } else if (this.settings.simulationMode === "bursts") {
-      this.settings.projectionMode = "screen";
-      this.setStatus("Settings updated");
-    } else {
-      this.setStatus("Settings updated");
-    }
-
-    if (this.settings.simulationMode !== this.previousSimulationMode) {
-      this.previousSimulationMode = this.settings.simulationMode;
-      this.pendingBursts =
-        this.settings.simulationMode === "bursts"
-          ? createPreviewBursts(this.settings)
-          : [];
-      this.resetVisualState();
-    }
-
+    this.setStatus("Settings updated");
     this.syncHeaderControls();
   }
 
   private syncHeaderControls() {
-    this.simulationSelect.value = this.settings.simulationMode;
     this.projectionSelect.value = this.settings.projectionMode;
-    this.projectionSelect.disabled = this.settings.simulationMode !== "modal";
-    this.originModeSelect.value = this.settings.originMode;
     this.controls.refresh();
   }
 
   private resetVisualState() {
-    this.burstRenderer.requestReset();
     this.modalRenderer.requestReset();
   }
 }
@@ -494,34 +388,4 @@ function formatDuration(duration: number) {
     .toString()
     .padStart(2, "0");
   return `${minutes}:${seconds}`;
-}
-
-function createPreviewBursts(settings: CymaticSettings): PulseBurst[] {
-  if (settings.originMode === "mono") {
-    return [
-      {
-        centerUv: [0.5, 0.5],
-        reachRadius: 0.58,
-        edgeRadius: 0.05,
-        intensity: 0.64,
-        phaseSeed: 0.33,
-        color: BAND_COLORS.mid,
-      },
-    ];
-  }
-
-  const bands: Array<[FrequencyBand, number]> = [
-    ["low", -1],
-    ["mid", 0],
-    ["high", 1],
-  ];
-
-  return bands.map(([band, offset], index) => ({
-    centerUv: [0.5 + offset * settings.sourceSpread, 0.5],
-    reachRadius: 0.46 + index * 0.08,
-    edgeRadius: 0.05,
-    intensity: 0.58,
-    phaseSeed: 0.18 + index * 0.27,
-    color: BAND_COLORS[band],
-  }));
 }

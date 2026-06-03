@@ -23,22 +23,13 @@ export function createControls(
     });
 
     const engine = pane.addFolder({ title: "Engine", expanded: true });
-    engine.addBinding(settings, "simulationMode", {
-      label: "simulation",
+    engine.addBinding(settings, "projectionMode", {
+      label: "projection",
       options: {
-        Modal: "modal",
-        Bursts: "bursts",
+        Screen: "screen",
+        Sphere: "sphere",
       },
     });
-    if (settings.simulationMode === "modal") {
-      engine.addBinding(settings, "projectionMode", {
-        label: "projection",
-        options: {
-          Screen: "screen",
-          Sphere: "sphere",
-        },
-      });
-    }
     engine.addBinding(settings, "colorMode", {
       label: "color",
       options: {
@@ -49,55 +40,53 @@ export function createControls(
       },
     });
 
-    if (settings.simulationMode === "modal") {
-      engine.addBinding(settings, "boundaryMode", {
-        label: "boundary",
-        options: {
-          Neumann: "neumann",
-          Dirichlet: "dirichlet",
-        },
-      });
-      engine.addBinding(settings, "modalCount", {
-        label: "modes",
-        min: 4,
-        max: 32,
-        step: 1,
-      });
-      engine.addBinding(settings, "modalDecay", {
-        label: "modal decay",
-        min: 0.12,
-        max: 5,
-        step: 0.01,
-      });
-      engine.addBinding(settings, "modalDrive", {
-        label: "drive",
+    engine.addBinding(settings, "boundaryMode", {
+      label: "boundary",
+      options: {
+        Neumann: "neumann",
+        Dirichlet: "dirichlet",
+      },
+    });
+    engine.addBinding(settings, "modalCount", {
+      label: "modes",
+      min: 4,
+      max: 32,
+      step: 1,
+    });
+    engine.addBinding(settings, "modalDecay", {
+      label: "modal decay",
+      min: 0.12,
+      max: 5,
+      step: 0.01,
+    });
+    engine.addBinding(settings, "modalDrive", {
+      label: "drive",
+      min: 0,
+      max: 3,
+      step: 0.01,
+    });
+    engine.addBinding(settings, "sourceX", {
+      label: "source x",
+      min: 0.05,
+      max: 0.95,
+      step: 0.001,
+    });
+    engine.addBinding(settings, "sourceY", {
+      label: "source y",
+      min: 0.05,
+      max: 0.95,
+      step: 0.001,
+    });
+    if (settings.colorMode === "chromesthesia") {
+      engine.addBinding(settings, "chromesthesiaMix", {
+        label: "chroma mix",
         min: 0,
-        max: 3,
+        max: 1,
         step: 0.01,
       });
-      engine.addBinding(settings, "sourceX", {
-        label: "source x",
-        min: 0.05,
-        max: 0.95,
-        step: 0.001,
-      });
-      engine.addBinding(settings, "sourceY", {
-        label: "source y",
-        min: 0.05,
-        max: 0.95,
-        step: 0.001,
-      });
-      if (settings.colorMode === "chromesthesia") {
-        engine.addBinding(settings, "chromesthesiaMix", {
-          label: "chroma mix",
-          min: 0,
-          max: 1,
-          step: 0.01,
-        });
-      }
     }
 
-    if (settings.simulationMode === "modal" && settings.projectionMode === "sphere") {
+    if (settings.projectionMode === "sphere") {
       const sphere = pane.addFolder({ title: "Sphere", expanded: true });
       sphere.addBinding(settings, "sphereProjectionType", {
         label: "mapping",
@@ -109,65 +98,33 @@ export function createControls(
       sphere.addBinding(settings, "sphereBackgroundTransparent", {
         label: "transparent bg",
       });
+      sphere.addBinding(settings, "sphereSurfaceOpacity", {
+        label: "surface alpha",
+        min: 0.08,
+        max: 1,
+        step: 0.01,
+      });
       sphere.addBinding(settings, "sphereRadius", {
         label: "size",
         min: 0.4,
         max: 2.4,
         step: 0.01,
       });
-      sphere.addBinding(settings, "sphereRotation", {
-        label: "spin",
-        min: -0.8,
-        max: 0.8,
-        step: 0.01,
-      });
     }
 
     const shader = pane.addFolder({ title: "Shader", expanded: true });
-    if (settings.simulationMode === "bursts") {
-      shader.addBinding(settings, "blendMode", {
-        label: "blend",
-        options: {
-          Screen: "screen",
-          Add: "add",
-          Lighten: "lighten",
-          Overlay: "overlay",
-          "Max energy": "maxEnergy",
-          Mix: "mix",
-          Average: "average",
-          "Alpha over": "alphaOver",
-          "Alpha mix": "alphaMix",
-        },
-      });
-      shader.addBinding(settings, "decaySeconds", {
-        label: "decay",
-        min: 0.2,
-        max: 6,
-        step: 0.05,
-      });
-      shader.addBinding(settings, "pulseOpacity", {
-        label: "pulse",
-        min: 0,
-        max: 1.5,
-        step: 0.01,
-      });
-      shader.addBinding(settings, "fillOpacity", {
-        label: "fill",
-        min: 0,
-        max: 1.5,
-        step: 0.01,
-      });
-      shader.addBinding(settings, "cymaticSymmetry", {
-        label: "symmetry",
-        min: 1,
-        max: 16,
-        step: 1,
-      });
-      shader.addBinding(settings, "lightBackgroundMode", {
-        label: "light bg",
-      });
-    }
-
+    shader.addBinding(settings, "cymaticSymmetry", {
+      label: "symmetry",
+      min: 1,
+      max: 16,
+      step: 1,
+    });
+    shader.addBinding(settings, "cymaticHarmonicMix", {
+      label: "harmonics",
+      min: 0,
+      max: 1,
+      step: 0.01,
+    });
     shader.addBinding(settings, "cymaticDensity", {
       label: "density",
       min: 0,
@@ -249,15 +206,6 @@ export function createControls(
       step: 0.01,
     });
 
-    if (settings.simulationMode === "bursts" && settings.originMode === "split") {
-      audio.addBinding(settings, "sourceSpread", {
-        label: "spread",
-        min: 0,
-        max: 0.34,
-        step: 0.001,
-      });
-    }
-
     pane.on("change", onChange);
   };
 
@@ -285,9 +233,7 @@ export function createControls(
 
 function getLayoutKey(settings: CymaticSettings) {
   return [
-    settings.simulationMode,
     settings.projectionMode,
     settings.colorMode,
-    settings.originMode,
   ].join(":");
 }

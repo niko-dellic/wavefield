@@ -25,6 +25,7 @@ export type ModalFieldFrame = {
   centroid: number;
   flux: number;
   bands: Record<FrequencyBand, number>;
+  onsets: Record<FrequencyBand, number>;
 };
 
 type ModalAtlasEntry = {
@@ -56,6 +57,7 @@ const MIN_FREQUENCY = 70;
 const MAX_FREQUENCY = 7_200;
 const ATLAS_SIZE = 48;
 const MODAL_ATLAS = buildModalAtlas();
+const DISPLAY_MODE_INDEXES = buildDisplayModeIndexes(MODAL_ATLAS.length, MAX_MODAL_MODES);
 
 const EMPTY_BANDS: Record<FrequencyBand, number> = {
   low: 0,
@@ -69,6 +71,7 @@ export const EMPTY_MODAL_FIELD_FRAME: ModalFieldFrame = {
   centroid: 0,
   flux: 0,
   bands: EMPTY_BANDS,
+  onsets: EMPTY_BANDS,
 };
 
 export class ModalFieldEngine {
@@ -76,6 +79,11 @@ export class ModalFieldEngine {
   private readonly modes: ModalState[];
   private lastTime = 0;
   private previousFrame: AudioFeatureFrame | null = null;
+  private smoothedRms = 0;
+  private smoothedCentroid = 0;
+  private smoothedFlux = 0;
+  private readonly smoothedBands: Record<FrequencyBand, number> = { ...EMPTY_BANDS };
+  private readonly smoothedOnsets: Record<FrequencyBand, number> = { ...EMPTY_BANDS };
 
   constructor() {
     this.modes = MODAL_ATLAS.map((entry) => ({
@@ -99,6 +107,13 @@ export class ModalFieldEngine {
       mode.amplitude = 0;
       mode.coherence = 0;
       mode.lastDrive = 0;
+    }
+    this.smoothedRms = 0;
+    this.smoothedCentroid = 0;
+    this.smoothedFlux = 0;
+    for (const band of BANDS) {
+      this.smoothedBands[band] = 0;
+      this.smoothedOnsets[band] = 0;
     }
   }
 
@@ -127,6 +142,37 @@ export class ModalFieldEngine {
         frame.bands.high -
         previousFrame.bands.high,
     );
+    this.smoothedRms = smoothAudioValue(this.smoothedRms, frame.rms, safeDelta, 18, 5);
+    this.smoothedCentroid = smoothAudioValue(
+      this.smoothedCentroid,
+      frame.centroid,
+      safeDelta,
+      12,
+      4,
+    );
+    this.smoothedFlux = smoothAudioValue(
+      this.smoothedFlux,
+      clamp01(flux * 1.5),
+      safeDelta,
+      24,
+      6,
+    );
+    for (const band of BANDS) {
+      this.smoothedBands[band] = smoothAudioValue(
+        this.smoothedBands[band],
+        frame.bands[band],
+        safeDelta,
+        20,
+        5,
+      );
+      this.smoothedOnsets[band] = smoothAudioValue(
+        this.smoothedOnsets[band],
+        frame.onsets[band],
+        safeDelta,
+        34,
+        8,
+      );
+    }
     const targetFrequency = frequencyFromCentroid(frame.centroid);
     const sourcePoint = [
       clamp(settings.sourceX, 0.05, 0.95),
@@ -137,8 +183,8 @@ export class ModalFieldEngine {
 
     for (const mode of this.modes) {
       const bandScale = settings[BAND_SCALE_KEYS[mode.band]];
-      const bandEnergy = frame.bands[mode.band];
-      const onset = frame.onsets[mode.band];
+      const bandEnergy = this.smoothedBands[mode.band];
+      const onset = this.smoothedOnsets[mode.band];
       const frequencyAffinity = getFrequencyAffinity(
         mode.naturalFrequency,
         targetFrequency,
@@ -150,10 +196,10 @@ export class ModalFieldEngine {
         ),
       );
       const drive = clamp01(
-        (bandEnergy * 0.5 +
-          onset * 0.86 +
-          frame.rms * 0.24 +
-          frequencyAffinity * frame.centroid * 0.18) *
+        (bandEnergy * 1.15 +
+          onset * 1.55 +
+          this.smoothedRms * 0.18 +
+          frequencyAffinity * (0.08 + bandEnergy * 0.46)) *
           settings.gain *
           settings.sensitivity *
           settings.modalDrive *
@@ -164,14 +210,14 @@ export class ModalFieldEngine {
         settings.modalDecay *
         (mode.band === "low" ? 1.28 : mode.band === "mid" ? 1 : 0.72);
       const decay = Math.exp(-safeDelta / Math.max(0.08, decaySeconds));
-      const injection = drive * (0.22 + onset * 0.18 + frame.rms * 0.08);
+      const injection = drive * (0.42 + onset * 0.38 + bandEnergy * 0.2);
       const nextAmplitude =
         mode.amplitude * decay + injection * (1 - mode.amplitude * 0.48);
       const coherenceTarget = clamp01(
-        frequencyAffinity * 0.58 +
-          bandEnergy * 0.22 +
-          onset * 0.16 +
-          frame.rms * 0.08,
+        frequencyAffinity * 0.48 +
+          bandEnergy * 0.32 +
+          onset * 0.28 +
+          this.smoothedRms * 0.08,
       );
 
       mode.amplitude = clamp01(nextAmplitude);
@@ -180,7 +226,7 @@ export class ModalFieldEngine {
         (1 - Math.exp(-safeDelta * (drive > mode.lastDrive ? 9 : 3.6)));
       mode.phase +=
         safeDelta *
-        (0.42 + mode.frequencyNorm * 4.2 + frame.rms * 1.4 + onset * 1.2);
+        (0.08 + mode.frequencyNorm * 0.42 + bandEnergy * 0.84 + onset * 0.56);
       mode.lastDrive = drive;
     }
 
@@ -188,8 +234,12 @@ export class ModalFieldEngine {
     this.lastTime = time;
 
     return {
-      modes: this.modes
-        .slice(0, Math.min(MAX_MODAL_MODES, Math.max(1, settings.modalCount)))
+      modes: DISPLAY_MODE_INDEXES.slice(
+        0,
+        Math.min(MAX_MODAL_MODES, Math.max(1, settings.modalCount)),
+      )
+        .map((modeIndex) => this.modes[modeIndex])
+        .filter((mode): mode is ModalState => Boolean(mode))
         .map((mode) => ({
           indices: mode.indices,
           amplitude: mode.amplitude,
@@ -200,10 +250,11 @@ export class ModalFieldEngine {
           color: createModeColor(mode.naturalFrequency, mode.band),
           colorWeight: clamp01(mode.amplitude * 0.58 + mode.coherence * 0.42),
         })),
-      rms: frame.rms,
-      centroid: frame.centroid,
-      flux: clamp01(flux * 1.5),
-      bands: frame.bands,
+      rms: this.smoothedRms,
+      centroid: this.smoothedCentroid,
+      flux: this.smoothedFlux,
+      bands: { ...this.smoothedBands },
+      onsets: { ...this.smoothedOnsets },
     };
   }
 
@@ -259,6 +310,11 @@ export function createAmbientModalFieldFrame(time: number): ModalFieldFrame {
     centroid: 0.34 + shimmer * 0.05,
     flux: 0.02,
     bands,
+    onsets: {
+      low: 0.02 + shimmer * 0.01,
+      mid: 0.02 + shimmer * 0.01,
+      high: 0.02 + shimmer * 0.01,
+    },
   };
 }
 
@@ -314,6 +370,32 @@ function buildFrequencyCenters(min: number, max: number, count: number) {
     const t = index / Math.max(1, count - 1);
     return min * Math.pow(max / min, t);
   });
+}
+
+function buildDisplayModeIndexes(sourceCount: number, displayCount: number) {
+  if (sourceCount <= displayCount) {
+    return Array.from({ length: sourceCount }, (_, index) => index);
+  }
+
+  const indexes: number[] = [];
+  const used = new Set<number>();
+  for (let index = 0; index < displayCount; index += 1) {
+    const t = index / Math.max(1, displayCount - 1);
+    const sourceIndex = Math.round(t * (sourceCount - 1));
+    if (!used.has(sourceIndex)) {
+      indexes.push(sourceIndex);
+      used.add(sourceIndex);
+    }
+  }
+
+  for (let index = 0; indexes.length < displayCount && index < sourceCount; index += 1) {
+    if (!used.has(index)) {
+      indexes.push(index);
+      used.add(index);
+    }
+  }
+
+  return indexes;
 }
 
 function getBandForFrequency(frequency: number): FrequencyBand {
@@ -409,6 +491,17 @@ function clamp01(value: number) {
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
+}
+
+function smoothAudioValue(
+  current: number,
+  target: number,
+  deltaSeconds: number,
+  attackHz: number,
+  releaseHz: number,
+) {
+  const speed = target > current ? attackHz : releaseHz;
+  return current + (target - current) * (1 - Math.exp(-deltaSeconds * speed));
 }
 
 function mod(value: number, base: number) {

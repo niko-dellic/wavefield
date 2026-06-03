@@ -1,21 +1,9 @@
 export type FrequencyBand = "low" | "mid" | "high";
-export type OriginMode = "mono" | "split";
-export type SimulationMode = "modal" | "bursts" | "wave";
 export type ProjectionMode = "screen" | "sphere";
 export type BoundaryMode = "dirichlet" | "neumann";
 export type ColorMode = "chromesthesia" | "mono" | "bandSplit" | "thermalPhase";
 export type SphereProjectionType = "uv" | "triplanar";
 export type IdleMode = "ambient";
-export type PulseBlendMode =
-  | "mix"
-  | "lighten"
-  | "screen"
-  | "average"
-  | "add"
-  | "alphaOver"
-  | "alphaMix"
-  | "maxEnergy"
-  | "overlay";
 
 export type AudioFeatureFrame = {
   index: number;
@@ -33,16 +21,11 @@ export type AudioAnalysis = {
 };
 
 export type CymaticSettings = {
-  simulationMode: SimulationMode;
   projectionMode: ProjectionMode;
   boundaryMode: BoundaryMode;
   colorMode: ColorMode;
   sphereProjectionType: SphereProjectionType;
   idleMode: IdleMode;
-  blendMode: PulseBlendMode;
-  decaySeconds: number;
-  pulseOpacity: number;
-  fillOpacity: number;
   cymaticDensity: number;
   cymaticSymmetry: number;
   cymaticHarmonicMix: number;
@@ -56,11 +39,9 @@ export type CymaticSettings = {
   lightBackgroundMode: boolean;
   gain: number;
   sensitivity: number;
-  originMode: OriginMode;
   lowScale: number;
   midScale: number;
   highScale: number;
-  sourceSpread: number;
   modalCount: number;
   modalDecay: number;
   modalDrive: number;
@@ -68,30 +49,16 @@ export type CymaticSettings = {
   sourceY: number;
   chromesthesiaMix: number;
   sphereRadius: number;
-  sphereRotation: number;
+  sphereSurfaceOpacity: number;
   sphereBackgroundTransparent: boolean;
 };
 
-export type PulseBurst = {
-  centerUv: [number, number];
-  reachRadius: number;
-  edgeRadius: number;
-  intensity: number;
-  phaseSeed: number;
-  color: [number, number, number];
-};
-
 export const DEFAULT_SETTINGS: CymaticSettings = {
-  simulationMode: "modal",
   projectionMode: "screen",
   boundaryMode: "neumann",
   colorMode: "chromesthesia",
   sphereProjectionType: "triplanar",
   idleMode: "ambient",
-  blendMode: "screen",
-  decaySeconds: 1.8,
-  pulseOpacity: 0.88,
-  fillOpacity: 0.72,
   cymaticDensity: 0.82,
   cymaticSymmetry: 6,
   cymaticHarmonicMix: 0.34,
@@ -105,11 +72,9 @@ export const DEFAULT_SETTINGS: CymaticSettings = {
   lightBackgroundMode: false,
   gain: 1,
   sensitivity: 1,
-  originMode: "mono",
   lowScale: 1,
   midScale: 1,
   highScale: 1,
-  sourceSpread: 0.14,
   modalCount: 28,
   modalDecay: 1.45,
   modalDrive: 1,
@@ -117,7 +82,7 @@ export const DEFAULT_SETTINGS: CymaticSettings = {
   sourceY: 0.5,
   chromesthesiaMix: 0.82,
   sphereRadius: 1.35,
-  sphereRotation: 0.08,
+  sphereSurfaceOpacity: 0.64,
   sphereBackgroundTransparent: false,
 };
 
