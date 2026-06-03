@@ -7,6 +7,33 @@ export type ScreenAspectMode = "circle" | "fit";
 export type IdleMode = "ambient";
 export type PostEffectId = "bloom" | "pixelation" | "terminal";
 
+export type SpectralPeak = {
+  frequency: number;
+  amplitude: number;
+  bin: number;
+  band: FrequencyBand;
+  pitchClass: number;
+  harmonicWeight: number;
+};
+
+export type ChromaProfile = {
+  bins: number[];
+  tonic: number;
+  confidence: number;
+  color: [number, number, number];
+};
+
+export type AudioFeatureSignals = {
+  structure: number;
+  energy: number;
+  change: number;
+  pulse: number;
+  beat: number;
+  beatConfidence: number;
+  harmonicity: number;
+  texture: number;
+};
+
 export type AudioFeatureFrame = {
   index: number;
   time: number;
@@ -14,6 +41,10 @@ export type AudioFeatureFrame = {
   centroid: number;
   bands: Record<FrequencyBand, number>;
   onsets: Record<FrequencyBand, number>;
+  peaks: SpectralPeak[];
+  chroma: ChromaProfile;
+  signals: AudioFeatureSignals;
+  spectralFlux: number;
 };
 
 export type AudioAnalysis = {

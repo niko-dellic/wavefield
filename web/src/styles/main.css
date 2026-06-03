@@ -200,6 +200,12 @@ select {
   color: #11181c;
 }
 
+.play-toggle {
+  width: 34px;
+  justify-content: center;
+  padding: 0;
+}
+
 .ph {
   flex: 0 0 auto;
   font-size: 17px;
@@ -214,6 +220,56 @@ select {
   width: 320px;
   max-height: calc(100vh - 132px);
   overflow: auto;
+}
+
+.analysis-debug {
+  position: absolute;
+  left: 16px;
+  bottom: 96px;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 5px;
+  width: min(360px, calc(100vw - 32px));
+  padding: 9px 10px;
+  border: 1px solid rgb(255 255 255 / 11%);
+  border-radius: 6px;
+  background: rgb(0 0 0 / 58%);
+  color: rgb(238 250 255 / 76%);
+  font: 11px/1.25 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  backdrop-filter: blur(14px);
+}
+
+.analysis-debug[hidden] {
+  display: none;
+}
+
+.analysis-debug-row,
+.analysis-debug-meter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.analysis-debug-row span {
+  flex: 0 0 44px;
+  color: rgb(238 250 255 / 42%);
+  text-transform: uppercase;
+}
+
+.analysis-debug-row strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #eefaff;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.analysis-debug-meter {
+  justify-content: space-between;
+  color: rgb(217 247 255 / 68%);
 }
 
 .post-panel {
@@ -468,6 +524,10 @@ select {
     max-height: 42vh;
   }
 
+  .analysis-debug {
+    bottom: 168px;
+  }
+
   .transport {
     grid-template-columns: auto minmax(0, 1fr);
   }
@@ -494,5 +554,10 @@ select {
     height: 32px;
     padding: 0 10px;
     font-size: 13px;
+  }
+
+  .play-toggle {
+    width: 32px;
+    padding: 0;
   }
 }

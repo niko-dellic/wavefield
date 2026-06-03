@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview --host 127.0.0.1"
+    "preview": "vite preview --host 127.0.0.1",
+    "test:analysis": "node --test test/audio-feature-analysis.test.ts"
   },
   "dependencies": {
     "@phosphor-icons/web": "^2.1.2",

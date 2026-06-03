@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { TrackballControls } from "three/examples/jsm/controls/TrackballControls.js";
 import {
   BloomEffect,
   EffectComposer,
@@ -69,6 +69,7 @@ const FRAGMENT_SHADER = `
   uniform vec4 uModeSlots[MAX_MODAL_MODES];
   uniform vec4 uModeMeta[MAX_MODAL_MODES];
   uniform vec4 uModeColors[MAX_MODAL_MODES];
+  uniform vec4 uModeDynamics[MAX_MODAL_MODES];
   uniform float uDensity;
   uniform float uSymmetry;
   uniform float uHarmonicMix;
@@ -84,6 +85,8 @@ const FRAGMENT_SHADER = `
   uniform float uFlux;
   uniform vec3 uBandEnergies;
   uniform vec3 uBandOnsets;
+  uniform vec4 uFeatureSignals;
+  uniform vec4 uChromaProfile;
   uniform float uChromesthesiaMix;
   uniform float uIdlePreview;
   uniform float uSurfaceOpacity;
@@ -166,9 +169,9 @@ const FRAGMENT_SHADER = `
 
     float spectrumShape = clamp(
       dot(uBandEnergies, vec3(0.34, 0.42, 0.5)) +
-      dot(uBandOnsets, vec3(0.42, 0.52, 0.62)) +
-      uRms * 0.48 +
-      uFlux * 0.72,
+      uFeatureSignals.y * 0.44 +
+      uFeatureSignals.z * 0.38 +
+      uFeatureSignals.w * 0.3,
       0.0,
       3.0
     );
@@ -198,6 +201,7 @@ const FRAGMENT_SHADER = `
 
       vec4 slot = uModeSlots[index];
       vec4 meta = uModeMeta[index];
+      vec4 dynamics = uModeDynamics[index];
       float amplitude = slot.w;
       if (amplitude <= 0.0001) {
         continue;
@@ -205,8 +209,16 @@ const FRAGMENT_SHADER = `
 
       float bandEnergy = bandValue(uBandEnergies, meta.w);
       float bandOnset = bandValue(uBandOnsets, meta.w);
+      float modeDriver = dynamics.x;
+      float modePulse = dynamics.y;
+      float modeLayer = dynamics.z;
       float localAudio = clamp(
-        bandEnergy * 2.1 + bandOnset * 2.7 + uRms * 0.42 + uFlux * 0.62,
+        bandEnergy * 1.1 +
+          bandOnset * 0.72 +
+          modeDriver * 1.65 +
+          modePulse * 1.48 +
+          uFeatureSignals.y * 0.36 +
+          uFeatureSignals.z * (0.16 + modeLayer * 0.34),
         0.0,
         3.0
       );
@@ -229,15 +241,15 @@ const FRAGMENT_SHADER = `
       float standing = bx * by * bz;
       float phaseMotion = cos(
         meta.x +
-        uTime * (0.12 + meta.z * 0.42 + localAudio * 0.11) +
-        bandEnergy * 1.45 +
-        bandOnset * 2.1 +
-        uFlux * 1.2
+        uTime * (0.08 + meta.z * 0.32 + modeDriver * 0.18 + modePulse * 0.16) +
+        bandEnergy * 0.68 +
+        modePulse * 2.2 +
+        uFeatureSignals.z * (0.4 + modeLayer * 0.5)
       );
       float harmonic = sin(
         (bx + by + bz) * (2.2 + uInterference * 4.6 + localAudio * 1.8) +
         meta.x * 0.31 +
-        bandOnset * 2.4
+        modePulse * 1.8
       );
       float localField =
         standing *
@@ -273,8 +285,9 @@ const FRAGMENT_SHADER = `
     vec2 centered = (uv - uSource) * aspectScale * 2.0;
     float spectrumShape = clamp(
       dot(uBandEnergies, vec3(0.24, 0.38, 0.52)) +
-      dot(uBandOnsets, vec3(0.28, 0.4, 0.52)) +
-      uFlux * 0.5,
+      uFeatureSignals.y * 0.34 +
+      uFeatureSignals.z * 0.32 +
+      uFeatureSignals.w * 0.22,
       0.0,
       3.0
     );
@@ -312,6 +325,7 @@ const FRAGMENT_SHADER = `
 
       vec4 slot = uModeSlots[index];
       vec4 meta = uModeMeta[index];
+      vec4 dynamics = uModeDynamics[index];
       float amplitude = slot.w;
       if (amplitude <= 0.0001) {
         continue;
@@ -321,8 +335,16 @@ const FRAGMENT_SHADER = `
       float bandEnergy = bandValue(uBandEnergies, meta.w);
       float bandOnset = bandValue(uBandOnsets, meta.w);
       float bandBias = meta.w - 1.0;
+      float modeDriver = dynamics.x;
+      float modePulse = dynamics.y;
+      float modeLayer = dynamics.z;
       float localAudio = clamp(
-        bandEnergy * 2.35 + bandOnset * 2.2 + uRms * 0.34 + uFlux * 0.28,
+        bandEnergy * 1.05 +
+          bandOnset * 0.74 +
+          modeDriver * 1.78 +
+          modePulse * 1.42 +
+          uFeatureSignals.y * 0.28 +
+          uFeatureSignals.z * (0.18 + modeLayer * 0.26),
         0.0,
         3.0
       );
@@ -335,7 +357,7 @@ const FRAGMENT_SHADER = `
         floor(
           uSymmetry +
           bandBias * 1.7 +
-          bandOnset * 4.0 +
+          modePulse * 3.8 +
           mod(slot.x + slot.y + slot.z, 3.0) +
           (uBoundaryMode == 0 ? 1.0 : (uBoundaryMode == 1 ? -0.35 : 0.15))
         )
@@ -344,8 +366,8 @@ const FRAGMENT_SHADER = `
         meta.x * 0.18 +
         meta.y * 1.2 +
         idleDrift * (0.35 + meta.z) +
-        bandEnergy * 1.1 +
-        bandOnset * 1.8;
+        bandEnergy * 0.72 +
+        modePulse * (1.2 + modeLayer * 0.8);
       float radialWave = sin(
         warpedRadius * radialFrequency +
         phase * 0.2 +
@@ -364,7 +386,7 @@ const FRAGMENT_SHADER = `
         warpedRadius *
           radialFrequency *
           (1.18 + uHarmonicMix * 1.05 + bandOnset * 0.38) +
-        angularWave * (0.55 + uInterference * 1.4 + bandEnergy * 0.5) +
+        angularWave * (0.55 + uInterference * 1.4 + modeDriver * 0.58) +
         phase * 0.57
       );
       float localField =
@@ -441,7 +463,7 @@ const FRAGMENT_SHADER = `
       : max(0.045, sqrt(max(field.energy, 0.0)) * 0.18);
     float normalizedField = field.field / energyScale;
     float audioPulse = clamp(
-      uRms * 0.46 + uFlux * 0.56 + dot(uBandOnsets, vec3(0.18, 0.24, 0.3)),
+      uFeatureSignals.w * 0.88 + uFeatureSignals.z * 0.3 + uRms * 0.16,
       0.0,
       1.8
     );
@@ -462,7 +484,7 @@ const FRAGMENT_SHADER = `
         * (0.22 + structure * 0.72)
         * (0.48 + field.energy * (uProjectionMode == 0 ? 0.32 : 0.52))
         * uDensity
-        * (0.9 + uRms * 0.42 + uFlux * 0.34 + audioPulse * 0.28),
+        * (0.88 + uFeatureSignals.y * 0.26 + audioPulse * 0.14),
       0.0,
       1.0
     );
@@ -483,7 +505,8 @@ const FRAGMENT_SHADER = `
     vec3 monoColor = mix(vec3(0.38, 0.72, 0.86), vec3(0.94, 0.98, 1.0), density);
     vec3 bandColor = normalize(uBandEnergies + vec3(0.02)) *
       vec3(0.38, 0.74, 0.96) +
-      vec3(uBandEnergies.z * 0.9, uBandEnergies.y * 0.42, uBandEnergies.x * 0.32);
+      vec3(uBandEnergies.z * 0.9, uBandEnergies.y * 0.42, uBandEnergies.x * 0.32) +
+      uChromaProfile.rgb * uChromaProfile.a * 0.22;
     vec3 thermalCold = vec3(0.08, 0.36, 0.9);
     vec3 thermalHot = vec3(1.0, 0.48, 0.18);
     vec3 thermalColor = mix(thermalCold, thermalHot, smoothstep(-0.35, 0.35, normalizedField));
@@ -528,6 +551,10 @@ export class ModalFieldRenderer {
     { length: MAX_MODAL_MODES },
     () => new THREE.Vector4(),
   );
+  private readonly modeDynamicsUniforms = Array.from(
+    { length: MAX_MODAL_MODES },
+    () => new THREE.Vector4(),
+  );
   private readonly material = new THREE.ShaderMaterial({
     uniforms: {
       uResolution: { value: new THREE.Vector2(1, 1) },
@@ -542,6 +569,7 @@ export class ModalFieldRenderer {
       uModeSlots: { value: this.modeSlotUniforms },
       uModeMeta: { value: this.modeMetaUniforms },
       uModeColors: { value: this.modeColorUniforms },
+      uModeDynamics: { value: this.modeDynamicsUniforms },
       uDensity: { value: 0.82 },
       uSymmetry: { value: 6 },
       uHarmonicMix: { value: 0.34 },
@@ -557,6 +585,8 @@ export class ModalFieldRenderer {
       uFlux: { value: 0 },
       uBandEnergies: { value: new THREE.Vector3() },
       uBandOnsets: { value: new THREE.Vector3() },
+      uFeatureSignals: { value: new THREE.Vector4() },
+      uChromaProfile: { value: new THREE.Vector4(0.86, 0.96, 1, 0) },
       uChromesthesiaMix: { value: 0.82 },
       uIdlePreview: { value: 0 },
       uSurfaceOpacity: { value: 0.64 },
@@ -569,7 +599,7 @@ export class ModalFieldRenderer {
     side: THREE.DoubleSide,
     transparent: true,
   });
-  private controls: OrbitControls | null = null;
+  private controls: TrackballControls | null = null;
   private composer: EffectComposer | null = null;
   private renderPass: RenderPass | null = null;
   private pixelationPass: EffectPass | null = null;
@@ -603,6 +633,7 @@ export class ModalFieldRenderer {
     this.material.uniforms.uResolution.value.set(targetWidth, targetHeight);
     this.sphereCamera.aspect = targetWidth / targetHeight;
     this.sphereCamera.updateProjectionMatrix();
+    this.controls?.handleResize();
     this.composer?.setSize(targetWidth, targetHeight, false);
     this.terminalContourEffect.setSize(targetWidth, targetHeight);
   }
@@ -687,10 +718,10 @@ export class ModalFieldRenderer {
       return;
     }
 
-    this.controls = new OrbitControls(this.sphereCamera, renderer.domElement);
-    this.controls.enableDamping = true;
-    this.controls.dampingFactor = 0.08;
-    this.controls.enablePan = false;
+    this.controls = new TrackballControls(this.sphereCamera, renderer.domElement);
+    this.controls.dynamicDampingFactor = 0.08;
+    this.controls.noPan = true;
+    this.controls.handleResize();
     this.controls.enabled = false;
   }
 
@@ -820,10 +851,17 @@ export class ModalFieldRenderer {
           mode.color[2],
           mode.colorWeight,
         );
+        this.modeDynamicsUniforms[index].set(
+          mode.driver,
+          mode.pulse,
+          mode.layer,
+          fieldFrame.signals.harmonicity,
+        );
       } else {
         this.modeSlotUniforms[index].set(0, 0, 0, 0);
         this.modeMetaUniforms[index].set(0, 0, 0, 0);
         this.modeColorUniforms[index].set(0, 0, 0, 0);
+        this.modeDynamicsUniforms[index].set(0, 0, 0, 0);
       }
     }
 
@@ -861,6 +899,18 @@ export class ModalFieldRenderer {
       fieldFrame.onsets.low,
       fieldFrame.onsets.mid,
       fieldFrame.onsets.high,
+    );
+    this.material.uniforms.uFeatureSignals.value.set(
+      fieldFrame.signals.structure,
+      fieldFrame.signals.energy,
+      fieldFrame.signals.change,
+      fieldFrame.signals.pulse,
+    );
+    this.material.uniforms.uChromaProfile.value.set(
+      fieldFrame.chroma.color[0],
+      fieldFrame.chroma.color[1],
+      fieldFrame.chroma.color[2],
+      fieldFrame.chroma.confidence,
     );
     this.material.uniforms.uChromesthesiaMix.value = settings.chromesthesiaMix;
     this.material.uniforms.uIdlePreview.value = isIdlePreview ? 1 : 0;

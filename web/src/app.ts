@@ -39,10 +39,12 @@ export class WavefieldApp {
   private readonly sourceMenu: HTMLElement;
   private readonly selectedSource: HTMLElement;
   private readonly projectionSelect: HTMLSelectElement;
+  private readonly analysisDebug: HTMLElement;
   private analysis: AudioAnalysis | null = null;
   private animationFrame = 0;
   private lastFrameTime = performance.now();
   private ambientSeconds = 0;
+  private analysisPreviewTime = 0;
   private lastModalFieldFrame: ModalFieldFrame = EMPTY_MODAL_FIELD_FRAME;
 
   constructor(private readonly root: HTMLElement) {
@@ -54,6 +56,7 @@ export class WavefieldApp {
     this.sourceMenu = this.query<HTMLElement>(".source-menu");
     this.selectedSource = this.query<HTMLElement>(".selected-source");
     this.projectionSelect = this.query<HTMLSelectElement>(".projection-mode-select");
+    this.analysisDebug = this.query<HTMLElement>(".analysis-debug");
 
     this.renderer = new THREE.WebGLRenderer({
       canvas: this.canvas,
@@ -93,6 +96,7 @@ export class WavefieldApp {
 
   dispose() {
     cancelAnimationFrame(this.animationFrame);
+    document.removeEventListener("keydown", this.handleKeyDown);
     this.controls.dispose();
     this.modalRenderer.dispose();
     this.renderer.dispose();
@@ -141,10 +145,10 @@ export class WavefieldApp {
           </label>
         </section>
         <aside class="pane-host" aria-label="Wavefield shader settings"></aside>
+        <section class="analysis-debug" aria-label="Audio analysis debug" hidden></section>
         <section class="transport" aria-label="Audio transport">
-          <button class="play-toggle" type="button">
+          <button class="play-toggle" type="button" aria-label="Play" title="Play">
             <i class="ph ph-play" aria-hidden="true"></i>
-            <span>Play</span>
           </button>
           <div class="waveform"></div>
           <p class="status-text">Choose a fixture or open an audio file.</p>
@@ -173,14 +177,10 @@ export class WavefieldApp {
     });
 
     this.playButton.addEventListener("click", () => {
-      void this.wavesurfer.playPause().catch((error: unknown) => {
-        this.setStatus(
-          error instanceof Error
-            ? error.message
-            : "Playback was blocked by the browser",
-        );
-      });
+      this.togglePlayback();
     });
+
+    document.addEventListener("keydown", this.handleKeyDown);
 
     this.root.querySelectorAll<HTMLButtonElement>("[data-fixture-url]").forEach((button) => {
       button.addEventListener("click", () => {
@@ -289,6 +289,7 @@ export class WavefieldApp {
 
   private setAnalysis(analysis: AudioAnalysis) {
     this.analysis = analysis;
+    this.analysisPreviewTime = getFirstMeaningfulFrameTime(analysis);
     this.modalEngine.setAnalysis(analysis);
     this.lastModalFieldFrame = EMPTY_MODAL_FIELD_FRAME;
     this.resetVisualState();
@@ -296,12 +297,30 @@ export class WavefieldApp {
 
   private prepareForNewAudio() {
     this.analysis = null;
+    this.analysisPreviewTime = 0;
     this.modalEngine.setAnalysis(null);
     this.lastModalFieldFrame = EMPTY_MODAL_FIELD_FRAME;
     this.ambientSeconds = 0;
     this.setPlayButton(false);
     this.resetVisualState();
   }
+
+  private handleKeyDown = (event: KeyboardEvent) => {
+    if (
+      event.code !== "Space"
+      || event.repeat
+      || event.metaKey
+      || event.ctrlKey
+      || event.altKey
+    ) {
+      return;
+    }
+    if (isEditableKeyboardTarget(event.target)) {
+      return;
+    }
+    event.preventDefault();
+    this.togglePlayback();
+  };
 
   private animate = (now: number) => {
     const deltaSeconds = Math.min(0.1, (now - this.lastFrameTime) / 1_000);
@@ -317,10 +336,19 @@ export class WavefieldApp {
       fieldFrame = createAmbientModalFieldFrame(this.ambientSeconds);
       renderDeltaSeconds = deltaSeconds;
       isIdlePreview = true;
+      this.updateAnalysisDebug(fieldFrame, true);
     } else if (isPlaying) {
       fieldFrame = this.modalEngine.update(time, this.settings, deltaSeconds);
       this.lastModalFieldFrame = fieldFrame;
       renderDeltaSeconds = deltaSeconds;
+      this.updateAnalysisDebug(fieldFrame, false);
+    } else {
+      if (fieldFrame.modes.length === 0) {
+        const previewTime = time > 0.05 ? time : this.analysisPreviewTime;
+        fieldFrame = this.modalEngine.update(previewTime, this.settings, 1 / 60);
+        this.lastModalFieldFrame = fieldFrame;
+      }
+      this.updateAnalysisDebug(fieldFrame, false);
     }
 
     this.modalRenderer.render(
@@ -363,10 +391,22 @@ export class WavefieldApp {
   }
 
   private setPlayButton(isPlaying: boolean) {
+    const label = isPlaying ? "Pause" : "Play";
     this.playButton.innerHTML = `
       <i class="ph ${isPlaying ? "ph-pause" : "ph-play"}" aria-hidden="true"></i>
-      <span>${isPlaying ? "Pause" : "Play"}</span>
     `;
+    this.playButton.setAttribute("aria-label", label);
+    this.playButton.title = label;
+  }
+
+  private togglePlayback() {
+    void this.wavesurfer.playPause().catch((error: unknown) => {
+      this.setStatus(
+        error instanceof Error
+          ? error.message
+          : "Playback was blocked by the browser",
+      );
+    });
   }
 
   private handleSettingsChange() {
@@ -382,6 +422,32 @@ export class WavefieldApp {
   private resetVisualState() {
     this.modalRenderer.requestReset();
   }
+
+  private updateAnalysisDebug(fieldFrame: ModalFieldFrame, isIdlePreview: boolean) {
+    if (!this.analysis && !isIdlePreview) {
+      this.analysisDebug.hidden = true;
+      return;
+    }
+
+    const signals = fieldFrame.signals;
+    this.analysisDebug.hidden = false;
+    this.analysisDebug.innerHTML = `
+      <div class="analysis-debug-row">
+        <span>peaks</span>
+        <strong>${fieldFrame.debug.peakSummary}</strong>
+      </div>
+      <div class="analysis-debug-row">
+        <span>modes</span>
+        <strong>${fieldFrame.modes.length}/${fieldFrame.debug.activeModeCount}</strong>
+      </div>
+      <div class="analysis-debug-meter">
+        <span>S ${formatSignal(signals.structure)}</span>
+        <span>E ${formatSignal(signals.energy)}</span>
+        <span>C ${formatSignal(signals.change)}</span>
+        <span>P ${formatSignal(signals.pulse)}</span>
+      </div>
+    `;
+  }
 }
 
 function formatDuration(duration: number) {
@@ -390,4 +456,29 @@ function formatDuration(duration: number) {
     .toString()
     .padStart(2, "0");
   return `${minutes}:${seconds}`;
+}
+
+function formatSignal(value: number) {
+  return Math.round(value * 100).toString().padStart(2, "0");
+}
+
+function getFirstMeaningfulFrameTime(analysis: AudioAnalysis) {
+  return (
+    analysis.frames.find(
+      (frame) =>
+        frame.peaks.length > 0 ||
+        frame.signals.energy > 0.08 ||
+        frame.signals.structure > 0.08,
+    )?.time ?? 0
+  );
+}
+
+function isEditableKeyboardTarget(target: EventTarget | null) {
+  if (!(target instanceof Element)) {
+    return false;
+  }
+
+  return Boolean(
+    target.closest("input, select, textarea, [contenteditable=''], [contenteditable='true']"),
+  );
 }

@@ -2,9 +2,13 @@ import {
   BAND_COLORS,
   type AudioAnalysis,
   type AudioFeatureFrame,
+  type AudioFeatureSignals,
+  type ChromaProfile,
   type CymaticSettings,
   type FrequencyBand,
+  type SpectralPeak,
 } from "../types";
+import { EMPTY_CHROMA_PROFILE, EMPTY_FEATURE_SIGNALS } from "./featureAnalysis";
 
 export const MAX_MODAL_MODES = 32;
 
@@ -17,6 +21,9 @@ export type ModalSlot = {
   band: FrequencyBand;
   color: [number, number, number];
   colorWeight: number;
+  driver: number;
+  pulse: number;
+  layer: number;
 };
 
 export type ModalFieldFrame = {
@@ -26,6 +33,15 @@ export type ModalFieldFrame = {
   flux: number;
   bands: Record<FrequencyBand, number>;
   onsets: Record<FrequencyBand, number>;
+  peaks: SpectralPeak[];
+  chroma: ChromaProfile;
+  signals: AudioFeatureSignals;
+  debug: {
+    activeModeCount: number;
+    backboneCount: number;
+    detailCount: number;
+    peakSummary: string;
+  };
 };
 
 type ModalAtlasEntry = {
@@ -41,6 +57,17 @@ type ModalState = ModalAtlasEntry & {
   phase: number;
   coherence: number;
   lastDrive: number;
+  driver: number;
+  pulse: number;
+  layer: number;
+};
+
+type ModeDriver = {
+  strength: number;
+  pulse: number;
+  layer: number;
+  frequency: number;
+  harmonicWeight: number;
 };
 
 const BANDS: FrequencyBand[] = ["low", "mid", "high"];
@@ -56,6 +83,7 @@ const BAND_SCALE_KEYS: Record<
 const MIN_FREQUENCY = 70;
 const MAX_FREQUENCY = 7_200;
 const ATLAS_SIZE = 48;
+const HARMONIC_DRIVER_WEIGHTS = [1, 0.66, 0.46, 0.32, 0.22];
 const MODAL_ATLAS = buildModalAtlas();
 const DISPLAY_MODE_INDEXES = buildDisplayModeIndexes(MODAL_ATLAS.length, MAX_MODAL_MODES);
 
@@ -72,6 +100,15 @@ export const EMPTY_MODAL_FIELD_FRAME: ModalFieldFrame = {
   flux: 0,
   bands: EMPTY_BANDS,
   onsets: EMPTY_BANDS,
+  peaks: [],
+  chroma: EMPTY_CHROMA_PROFILE,
+  signals: EMPTY_FEATURE_SIGNALS,
+  debug: {
+    activeModeCount: 0,
+    backboneCount: 0,
+    detailCount: 0,
+    peakSummary: "none",
+  },
 };
 
 export class ModalFieldEngine {
@@ -92,6 +129,9 @@ export class ModalFieldEngine {
       phase: hashMode(entry.indices) * Math.PI * 2,
       coherence: 0,
       lastDrive: 0,
+      driver: 0,
+      pulse: 0,
+      layer: 0,
     }));
   }
 
@@ -107,6 +147,9 @@ export class ModalFieldEngine {
       mode.amplitude = 0;
       mode.coherence = 0;
       mode.lastDrive = 0;
+      mode.driver = 0;
+      mode.pulse = 0;
+      mode.layer = 0;
     }
     this.smoothedRms = 0;
     this.smoothedCentroid = 0;
@@ -173,7 +216,7 @@ export class ModalFieldEngine {
         8,
       );
     }
-    const targetFrequency = frequencyFromCentroid(frame.centroid);
+    const modeDrivers = resolveModeDrivers(frame);
     const sourcePoint = [
       clamp(settings.sourceX, 0.05, 0.95),
       clamp(settings.sourceY, 0.05, 0.95),
@@ -185,21 +228,30 @@ export class ModalFieldEngine {
       const bandScale = settings[BAND_SCALE_KEYS[mode.band]];
       const bandEnergy = this.smoothedBands[mode.band];
       const onset = this.smoothedOnsets[mode.band];
-      const frequencyAffinity = getFrequencyAffinity(
-        mode.naturalFrequency,
-        targetFrequency,
-      );
+      const driver = modeDrivers.get(mode.key);
+      const driverStrength = driver?.strength ?? 0;
+      const driverPulse = driver?.pulse ?? 0;
+      const layer = driver?.layer ?? 0;
+      const frequencyAffinity = driver
+        ? getFrequencyAffinity(mode.naturalFrequency, driver.frequency)
+        : getFrequencyAffinity(mode.naturalFrequency, frequencyFromCentroid(frame.centroid)) * 0.18;
       const sourceWeight = Math.max(
         0.18,
         Math.abs(
           evaluateModeAtPoint(mode.indices, sourcePoint, boundaryMode),
         ),
       );
+      const localPulse = clamp01(
+        driverPulse * 0.76 +
+          frame.signals.pulse * (0.18 + hashMode(mode.indices) * 0.16) +
+          onset * 0.28,
+      );
       const drive = clamp01(
-        (bandEnergy * 1.15 +
-          onset * 1.55 +
-          this.smoothedRms * 0.18 +
-          frequencyAffinity * (0.08 + bandEnergy * 0.46)) *
+        (driverStrength * (1.08 + frame.signals.structure * 0.45) +
+          bandEnergy * (0.18 + layer * 0.18) +
+          localPulse * (0.36 + layer * 0.2) +
+          this.smoothedRms * 0.1 +
+          frequencyAffinity * (0.04 + bandEnergy * 0.18)) *
           settings.gain *
           settings.sensitivity *
           settings.modalDrive *
@@ -208,25 +260,39 @@ export class ModalFieldEngine {
       );
       const decaySeconds =
         settings.modalDecay *
-        (mode.band === "low" ? 1.28 : mode.band === "mid" ? 1 : 0.72);
+        (layer < 0.5 ? 1.52 : 0.72) *
+        (mode.band === "low" ? 1.2 : mode.band === "mid" ? 1 : 0.78);
       const decay = Math.exp(-safeDelta / Math.max(0.08, decaySeconds));
-      const injection = drive * (0.42 + onset * 0.38 + bandEnergy * 0.2);
+      const injection =
+        drive *
+        (0.28 +
+          localPulse * 0.34 +
+          frame.signals.energy * 0.18 +
+          (driver?.harmonicWeight ?? 0) * 0.16);
       const nextAmplitude =
-        mode.amplitude * decay + injection * (1 - mode.amplitude * 0.48);
+        mode.amplitude * decay + injection * (1 - mode.amplitude * 0.42);
       const coherenceTarget = clamp01(
-        frequencyAffinity * 0.48 +
-          bandEnergy * 0.32 +
-          onset * 0.28 +
-          this.smoothedRms * 0.08,
+        driverStrength * 0.5 +
+          frequencyAffinity * 0.26 +
+          frame.signals.structure * 0.22 +
+          bandEnergy * 0.12 +
+          (1 - layer) * 0.14,
       );
 
       mode.amplitude = clamp01(nextAmplitude);
+      mode.driver = smoothAudioValue(mode.driver, driverStrength, safeDelta, 20, 4);
+      mode.pulse = smoothAudioValue(mode.pulse, localPulse, safeDelta, 30, 7);
+      mode.layer = layer;
       mode.coherence +=
         (coherenceTarget - mode.coherence) *
         (1 - Math.exp(-safeDelta * (drive > mode.lastDrive ? 9 : 3.6)));
       mode.phase +=
         safeDelta *
-        (0.08 + mode.frequencyNorm * 0.42 + bandEnergy * 0.84 + onset * 0.56);
+        (0.045 +
+          mode.frequencyNorm * 0.3 +
+          mode.driver * 0.28 +
+          localPulse * (0.44 + hashMode(mode.indices) * 0.28) +
+          layer * 0.18);
       mode.lastDrive = drive;
     }
 
@@ -234,12 +300,7 @@ export class ModalFieldEngine {
     this.lastTime = time;
 
     return {
-      modes: DISPLAY_MODE_INDEXES.slice(
-        0,
-        Math.min(MAX_MODAL_MODES, Math.max(1, settings.modalCount)),
-      )
-        .map((modeIndex) => this.modes[modeIndex])
-        .filter((mode): mode is ModalState => Boolean(mode))
+      modes: this.getDisplayModes(settings.modalCount)
         .map((mode) => ({
           indices: mode.indices,
           amplitude: mode.amplitude,
@@ -247,15 +308,67 @@ export class ModalFieldEngine {
           coherence: mode.coherence,
           frequencyNorm: mode.frequencyNorm,
           band: mode.band,
-          color: createModeColor(mode.naturalFrequency, mode.band),
-          colorWeight: clamp01(mode.amplitude * 0.58 + mode.coherence * 0.42),
+          color: createModeColor(mode.naturalFrequency, mode.band, frame.chroma),
+          colorWeight: clamp01(
+            mode.amplitude * 0.46 +
+              mode.coherence * 0.3 +
+              mode.driver * 0.24,
+          ),
+          driver: mode.driver,
+          pulse: mode.pulse,
+          layer: mode.layer,
         })),
       rms: this.smoothedRms,
       centroid: this.smoothedCentroid,
       flux: this.smoothedFlux,
       bands: { ...this.smoothedBands },
       onsets: { ...this.smoothedOnsets },
+      peaks: frame.peaks,
+      chroma: frame.chroma,
+      signals: frame.signals,
+      debug: {
+        activeModeCount: modeDrivers.size,
+        backboneCount: Array.from(modeDrivers.values()).filter((driver) => driver.layer < 0.5).length,
+        detailCount: Array.from(modeDrivers.values()).filter((driver) => driver.layer >= 0.5).length,
+        peakSummary: formatPeakSummary(frame.peaks),
+      },
     };
+  }
+
+  private getDisplayModes(modalCount: number) {
+    const count = Math.min(MAX_MODAL_MODES, Math.max(1, modalCount));
+    const active = this.modes
+      .map((mode, index) => ({
+        mode,
+        index,
+        score:
+          mode.driver * 1.25 +
+          mode.amplitude * 0.86 +
+          mode.coherence * 0.34 +
+          mode.pulse * 0.22,
+      }))
+      .filter((entry) => entry.score > 0.003)
+      .sort((left, right) => {
+        if (Math.abs(right.score - left.score) > 0.0001) {
+          return right.score - left.score;
+        }
+        return left.mode.naturalFrequency - right.mode.naturalFrequency;
+      });
+    const selected = active.slice(0, count).map((entry) => entry.mode);
+    const used = new Set(selected.map((mode) => mode.key));
+
+    for (const index of DISPLAY_MODE_INDEXES) {
+      if (selected.length >= count) {
+        break;
+      }
+      const mode = this.modes[index];
+      if (mode && !used.has(mode.key)) {
+        selected.push(mode);
+        used.add(mode.key);
+      }
+    }
+
+    return selected.sort((left, right) => left.naturalFrequency - right.naturalFrequency);
   }
 
   private getFrameAt(time: number): AudioFeatureFrame | null {
@@ -301,6 +414,9 @@ export function createAmbientModalFieldFrame(time: number): ModalFieldFrame {
       band: mode.band,
       color: createModeColor(mode.naturalFrequency, mode.band),
       colorWeight: 0.62,
+      driver: 0.32 + wave * 0.16,
+      pulse: 0.08 + wave * 0.08,
+      layer: index % 3 === 0 ? 1 : 0,
     };
   });
 
@@ -314,6 +430,20 @@ export function createAmbientModalFieldFrame(time: number): ModalFieldFrame {
       low: 0.02 + shimmer * 0.01,
       mid: 0.02 + shimmer * 0.01,
       high: 0.02 + shimmer * 0.01,
+    },
+    peaks: [],
+    chroma: EMPTY_CHROMA_PROFILE,
+    signals: {
+      ...EMPTY_FEATURE_SIGNALS,
+      structure: 0.45,
+      energy: 0.22 + shimmer * 0.04,
+      pulse: 0.04,
+    },
+    debug: {
+      activeModeCount: modes.length,
+      backboneCount: modes.filter((mode) => mode.layer < 0.5).length,
+      detailCount: modes.filter((mode) => mode.layer >= 0.5).length,
+      peakSummary: "ambient",
     },
   };
 }
@@ -398,6 +528,116 @@ function buildDisplayModeIndexes(sourceCount: number, displayCount: number) {
   return indexes;
 }
 
+function resolveModeDrivers(frame: AudioFeatureFrame) {
+  const drivers = new Map<string, ModeDriver>();
+  const peaks = frame.peaks.length
+    ? frame.peaks
+    : [
+        {
+          frequency: frequencyFromCentroid(frame.centroid),
+          amplitude: frame.rms,
+          harmonicWeight: frame.signals.harmonicity,
+          band: getBandForFrequency(frequencyFromCentroid(frame.centroid)),
+          bin: 0,
+          pitchClass: 0,
+        },
+      ];
+
+  peaks.slice(0, 6).forEach((peak, peakIndex) => {
+    HARMONIC_DRIVER_WEIGHTS.forEach((harmonicWeight, harmonicIndex) => {
+      const harmonicOrder = harmonicIndex + 1;
+      const targetFrequency = peak.frequency * harmonicOrder;
+      if (targetFrequency > MAX_FREQUENCY * 1.25) {
+        return;
+      }
+
+      const familyCount = harmonicIndex === 0 && peakIndex < 3 ? 2 : 1;
+      const layer = harmonicIndex === 0 && peakIndex < 3 ? 0 : 1;
+      const candidates = getNearestAtlasModes(targetFrequency, familyCount + 1);
+
+      candidates.slice(0, familyCount).forEach((mode, familyIndex) => {
+        const affinity = getFrequencyAffinity(mode.naturalFrequency, targetFrequency);
+        const familyWeight = familyIndex === 0 ? 1 : 0.72;
+        const strength =
+          peak.amplitude *
+          harmonicWeight *
+          familyWeight *
+          affinity *
+          (0.74 + peak.harmonicWeight * 0.36) *
+          (peakIndex === 0 ? 1 : 0.88 / (peakIndex + 1));
+        addModeDriver(drivers, mode, {
+          strength,
+          pulse: clamp01(
+            frame.signals.pulse * (0.26 + harmonicIndex * 0.12) +
+              frame.onsets[mode.band] * 0.48 +
+              frame.signals.change * (layer ? 0.38 : 0.16),
+          ),
+          layer,
+          frequency: targetFrequency,
+          harmonicWeight: peak.harmonicWeight,
+        });
+      });
+    });
+  });
+
+  if (!drivers.size) {
+    const fallbackFrequency = frequencyFromCentroid(frame.centroid);
+    for (const mode of getNearestAtlasModes(fallbackFrequency, 4)) {
+      addModeDriver(drivers, mode, {
+        strength: frame.rms * 0.32,
+        pulse: frame.signals.pulse * 0.4,
+        layer: 0,
+        frequency: fallbackFrequency,
+        harmonicWeight: frame.signals.harmonicity,
+      });
+    }
+  }
+
+  return drivers;
+}
+
+function addModeDriver(
+  drivers: Map<string, ModeDriver>,
+  mode: ModalAtlasEntry,
+  driver: ModeDriver,
+) {
+  if (driver.strength <= 0.0001) {
+    return;
+  }
+
+  const existing = drivers.get(mode.key);
+  if (!existing) {
+    drivers.set(mode.key, {
+      ...driver,
+      strength: clamp01(driver.strength),
+      pulse: clamp01(driver.pulse),
+    });
+    return;
+  }
+
+  existing.strength = clamp01(existing.strength + driver.strength * 0.72);
+  existing.pulse = Math.max(existing.pulse, driver.pulse);
+  existing.harmonicWeight = Math.max(existing.harmonicWeight, driver.harmonicWeight);
+  if (driver.layer < existing.layer || driver.strength > existing.strength * 0.9) {
+    existing.layer = driver.layer;
+    existing.frequency = driver.frequency;
+  }
+}
+
+function getNearestAtlasModes(frequency: number, count: number) {
+  return MODAL_ATLAS.slice()
+    .sort((left, right) => {
+      const leftDistance = Math.abs(Math.log2(left.naturalFrequency / frequency));
+      const rightDistance = Math.abs(Math.log2(right.naturalFrequency / frequency));
+      if (Math.abs(leftDistance - rightDistance) > 0.0001) {
+        return leftDistance - rightDistance;
+      }
+      return left.indices[0] + left.indices[1] + left.indices[2] -
+        (right.indices[0] + right.indices[1] + right.indices[2]);
+    })
+    .slice(0, count);
+}
+
 function getBandForFrequency(frequency: number): FrequencyBand {
   if (frequency < 250) {
     return "low";
@@ -440,19 +680,34 @@ function basis(
   return boundaryMode === "dirichlet" ? Math.sin(argument) : Math.cos(argument);
 }
 
-function createModeColor(frequency: number, band: FrequencyBand): [number, number, number] {
+function formatPeakSummary(peaks: SpectralPeak[]) {
+  if (!peaks.length) {
+    return "none";
+  }
+
+  return peaks
+    .slice(0, 4)
+    .map((peak) => `${Math.round(peak.frequency)}Hz`)
+    .join(" ");
+}
+
+function createModeColor(
+  frequency: number,
+  band: FrequencyBand,
+  chroma?: ChromaProfile,
+): [number, number, number] {
   const pitchClass = mod(Math.round(69 + 12 * Math.log2(frequency / 440)), 12);
   const octave = clamp((Math.log2(frequency / 55) - 1) / 7, 0, 1);
   const hue = pitchClass / 12;
   const saturation = 0.48 + octave * 0.18;
   const value = 0.68 + octave * 0.26;
-  const chroma = hsvToRgb(hue, saturation, value);
+  const baseColor = hsvToRgb(hue, saturation, value);
   const bandColor = BAND_COLORS[band];
 
   return [
-    chroma[0] * 0.78 + bandColor[0] * 0.22,
-    chroma[1] * 0.78 + bandColor[1] * 0.22,
-    chroma[2] * 0.78 + bandColor[2] * 0.22,
+    baseColor[0] * 0.72 + bandColor[0] * 0.2 + (chroma?.color[0] ?? baseColor[0]) * 0.08,
+    baseColor[1] * 0.72 + bandColor[1] * 0.2 + (chroma?.color[1] ?? baseColor[1]) * 0.08,
+    baseColor[2] * 0.72 + bandColor[2] * 0.2 + (chroma?.color[2] ?? baseColor[2]) * 0.08,
   ];
 }
 
