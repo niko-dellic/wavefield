@@ -51,6 +51,7 @@ for (const [label, key] of [
   ["projection", "projectionMode"],
   ["color", "colorMode"],
   ["palette", "heatmapPalette"],
+  ["background", "backgroundColor"],
   ["mono", "monoColor"],
   ["cold", "thermalColdColor"],
   ["hot", "thermalHotColor"],
@@ -321,6 +322,9 @@ export function createControls(
     }
 
     const shader = addPersistentFolder(pane, "folder:Rendering", "Rendering");
+    shader.addBinding(settings, "backgroundColor", {
+      label: "background",
+    });
     Object.values(SHADER_CONTROLS).forEach((control) => {
       if (control.key === "cymaticHarmonicMix") {
         return;

@@ -118,6 +118,7 @@ const FRAGMENT_SHADER = `
   uniform vec4 uFeatureSignals;
   uniform vec4 uChromaProfile;
   uniform float uChromesthesiaMix;
+  uniform vec3 uBackgroundColor;
   uniform vec3 uMonoColor;
   uniform vec3 uThermalColdColor;
   uniform vec3 uThermalHotColor;
@@ -560,7 +561,7 @@ const FRAGMENT_SHADER = `
     float enter = 0.0;
     float exit = 0.0;
     if (!intersectUnitSphere(rayOrigin, rayDirection, enter, exit)) {
-      return vec4(0.0);
+      return uSphereTransparent > 0.5 ? vec4(0.0) : vec4(uBackgroundColor, 1.0);
     }
 
     int steps = clamp(uSphereRaymarchSteps, 1, MAX_SPHERE_RAYMARCH_STEPS);
@@ -654,13 +655,17 @@ const FRAGMENT_SHADER = `
       accumulatedAlpha += (1.0 - accumulatedAlpha) * sampleAlpha;
     }
 
-    float outputAlpha = uSphereTransparent > 0.5
-      ? clamp(accumulatedAlpha * uSurfaceOpacity, 0.0, 1.0)
-      : 1.0;
-    vec3 outputColor = uSphereTransparent > 0.5
-      ? accumulatedColor
-      : mix(vec3(0.0), accumulatedColor, clamp(accumulatedAlpha, 0.0, 1.0));
-    return vec4(clamp(outputColor * uBrightness, 0.0, 1.0), outputAlpha);
+    vec3 litVolumeColor = clamp(accumulatedColor * uBrightness, 0.0, 1.0);
+    if (uSphereTransparent > 0.5) {
+      float outputAlpha = clamp(accumulatedAlpha * uSurfaceOpacity, 0.0, 1.0);
+      return vec4(litVolumeColor, outputAlpha);
+    }
+    vec3 outputColor = mix(
+      uBackgroundColor,
+      litVolumeColor,
+      clamp(accumulatedAlpha, 0.0, 1.0)
+    );
+    return vec4(outputColor, 1.0);
   }
 
   void main() {
@@ -671,14 +676,15 @@ const FRAGMENT_SHADER = `
 
     if (uModeCount <= 0) {
       if (uIdlePreview < 0.5) {
-        gl_FragColor = vec4(vec3(0.0), 1.0);
+        gl_FragColor = vec4(uBackgroundColor, 1.0);
         return;
       }
 
       vec2 p = screenFieldUv(vUv);
       float idleField = chladniValue(3.0, 5.0, p);
       float idleLine = 1.0 - smoothstep(0.008, 0.026, abs(idleField));
-      gl_FragColor = vec4(vec3(0.08, 0.16, 0.2) * idleLine * 0.22, 1.0);
+      vec3 idleColor = uBackgroundColor + vec3(0.08, 0.16, 0.2) * idleLine * 0.22;
+      gl_FragColor = vec4(clamp(idleColor, 0.0, 1.0), 1.0);
       return;
     }
 
@@ -726,7 +732,7 @@ const FRAGMENT_SHADER = `
       ? smoothstep(0.005, 0.04, density + halo)
       : 1.0;
     if (uProjectionMode == 0 && visibleInk <= 0.001) {
-      gl_FragColor = vec4(vec3(0.0), 1.0);
+      gl_FragColor = vec4(uBackgroundColor, 1.0);
       return;
     }
     float alpha = clamp((density + halo) * (0.96 + uRms * 0.22) * uOpacity, 0.0, 1.0);
@@ -762,10 +768,13 @@ const FRAGMENT_SHADER = `
       (0.82 + density * 0.72 + field.energy * 0.24 + audioPulse * 0.16) *
       visibleInk *
       uBrightness;
-    float outputAlpha = uProjectionMode == 1
-      ? (uSphereTransparent > 0.5 ? clamp(alpha * uSurfaceOpacity, 0.02, 1.0) : 1.0)
-      : 1.0;
-    gl_FragColor = vec4(clamp(color * alpha, 0.0, 1.0), outputAlpha);
+    vec3 litColor = clamp(color, 0.0, 1.0);
+    if (uProjectionMode == 1 && uSphereTransparent > 0.5) {
+      float outputAlpha = clamp(alpha * uSurfaceOpacity, 0.02, 1.0);
+      gl_FragColor = vec4(clamp(litColor * alpha, 0.0, 1.0), outputAlpha);
+      return;
+    }
+    gl_FragColor = vec4(mix(uBackgroundColor, litColor, alpha), 1.0);
   }
 `;
 
@@ -837,6 +846,7 @@ export class ModalFieldRenderer {
       uFeatureSignals: { value: new THREE.Vector4() },
       uChromaProfile: { value: new THREE.Vector4(0.86, 0.96, 1, 0) },
       uChromesthesiaMix: { value: 0.82 },
+      uBackgroundColor: { value: new THREE.Color(0x000000) },
       uMonoColor: { value: new THREE.Color(0x60b8db) },
       uThermalColdColor: { value: new THREE.Color(0x145ce6) },
       uThermalHotColor: { value: new THREE.Color(0xff7a2e) },
@@ -921,6 +931,7 @@ export class ModalFieldRenderer {
     const isVolumeSphere = isSphere && settings.sphereFieldMode === "volume";
     const useTransparentBackground =
       isSphere && settings.sphereBackgroundTransparent;
+    setColorUniform(this.opaqueBackground, settings.backgroundColor, 0x000000);
     this.scene.background = useTransparentBackground ? null : this.opaqueBackground;
     this.material.depthTest = isSphere;
     this.material.depthWrite = isSphere && !useTransparentBackground;
@@ -958,7 +969,7 @@ export class ModalFieldRenderer {
     renderer.autoClear = false;
     renderer.setRenderTarget(null);
     renderer.setClearColor(
-      0x000000,
+      this.opaqueBackground,
       useTransparentBackground ? 0 : 1,
     );
     renderer.clear(true, true, true);
@@ -1062,6 +1073,7 @@ export class ModalFieldRenderer {
       settings.projectionMode,
       settings.sphereFieldMode,
       settings.sphereBackgroundTransparent,
+      settings.backgroundColor,
       settings.postProcessingEnabled,
       settings.postAlphaDecayEnabled,
       settings.postEffectOrder.join(">"),
@@ -1227,6 +1239,11 @@ export class ModalFieldRenderer {
       fieldFrame.chroma.confidence,
     );
     this.material.uniforms.uChromesthesiaMix.value = settings.chromesthesiaMix;
+    setColorUniform(
+      this.material.uniforms.uBackgroundColor.value,
+      settings.backgroundColor,
+      0x000000,
+    );
     setColorUniform(
       this.material.uniforms.uMonoColor.value,
       settings.monoColor,

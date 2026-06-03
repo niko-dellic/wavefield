@@ -21,7 +21,12 @@ import {
   ModalFieldRenderer,
   type ScreenViewTransform,
 } from "./webgl/ModalFieldRenderer";
-import type { AudioAnalysis, CymaticSettings, DriveMode } from "./types";
+import type {
+  AudioAnalysis,
+  BoundaryMode,
+  CymaticSettings,
+  DriveMode,
+} from "./types";
 
 const SCREEN_VIEW_MIN_SCALE = 0.05;
 const SCREEN_VIEW_MAX_SCALE = 16;
@@ -40,6 +45,11 @@ const FIXTURES = Object.entries(
   url,
 }));
 const DEFAULT_FIXTURE = FIXTURES[0];
+const BOUNDARY_OPTIONS = [
+  { label: "Free", value: "freePlate" },
+  { label: "Dir", value: "dirichlet" },
+  { label: "Neu", value: "neumann" },
+] satisfies Array<{ label: string; value: BoundaryMode }>;
 
 export class WavefieldApp {
   private readonly settings: CymaticSettings = { ...DEFAULT_SETTINGS };
@@ -59,6 +69,7 @@ export class WavefieldApp {
   private readonly selectedSource: HTMLElement;
   private readonly fullscreenButton: HTMLButtonElement;
   private readonly settingsButton: HTMLButtonElement;
+  private readonly boundaryInputs: HTMLInputElement[];
   private readonly settingsModal: HTMLElement;
   private readonly settingsPanel: HTMLElement;
   private readonly settingsCloseButton: HTMLButtonElement;
@@ -124,6 +135,9 @@ export class WavefieldApp {
     this.selectedSource = this.query<HTMLElement>(".selected-source");
     this.fullscreenButton = this.query<HTMLButtonElement>(".fullscreen-toggle");
     this.settingsButton = this.query<HTMLButtonElement>(".settings-toggle");
+    this.boundaryInputs = Array.from(
+      this.root.querySelectorAll<HTMLInputElement>(".boundary-radio-input"),
+    );
     this.settingsModal = this.query<HTMLElement>(".settings-modal");
     this.settingsPanel = this.query<HTMLElement>(".settings-panel");
     this.settingsCloseButton = this.query<HTMLButtonElement>(".settings-close");
@@ -142,8 +156,9 @@ export class WavefieldApp {
       antialias: true,
       powerPreference: "high-performance",
     });
-    this.renderer.setClearColor(0x000000, 1);
+    this.renderer.setClearColor(DEFAULT_SETTINGS.backgroundColor, 1);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    this.syncBackgroundColor();
 
     this.wavesurfer = WaveSurfer.create({
       container: this.query<HTMLElement>(".waveform"),
@@ -216,6 +231,22 @@ export class WavefieldApp {
           <div class="brand">
             <span class="brand-mark"></span>
             <span>Wavefield</span>
+          </div>
+          <div class="boundary-radio-group" role="radiogroup" aria-label="Boundary type">
+            ${BOUNDARY_OPTIONS.map(
+              (option) => `
+                <label class="boundary-radio-option" title="${formatBoundaryMode(option.value)} boundary">
+                  <input
+                    class="boundary-radio-input"
+                    type="radio"
+                    name="boundary-mode"
+                    value="${option.value}"
+                    ${option.value === this.settings.boundaryMode ? "checked" : ""}
+                  />
+                  <span>${option.label}</span>
+                </label>
+              `,
+            ).join("")}
           </div>
           <button
             class="settings-toggle"
@@ -333,6 +364,14 @@ export class WavefieldApp {
 
     this.driveModeSelect.addEventListener("change", () => {
       void this.setDriveMode(this.driveModeSelect.value as DriveMode);
+    });
+
+    this.boundaryInputs.forEach((input) => {
+      input.addEventListener("change", () => {
+        if (input.checked) {
+          this.setBoundaryMode(input.value as BoundaryMode);
+        }
+      });
     });
 
     this.drivePane.addEventListener("toggle", () => {
@@ -1071,12 +1110,25 @@ export class WavefieldApp {
       this.lastModalFieldFrame = EMPTY_MODAL_FIELD_FRAME;
       this.resetVisualState();
     }
+    this.syncBackgroundColor();
     this.setStatus("Settings updated");
     this.syncHeaderControls();
   }
 
+  private syncBackgroundColor() {
+    const backgroundColor = normalizeHexColor(this.settings.backgroundColor);
+    this.root.style.setProperty("--wavefield-background", backgroundColor);
+    document.documentElement.style.setProperty(
+      "--wavefield-background",
+      backgroundColor,
+    );
+  }
+
   private syncHeaderControls() {
     this.driveModeSelect.value = this.settings.driveMode;
+    this.boundaryInputs.forEach((input) => {
+      input.checked = input.value === this.settings.boundaryMode;
+    });
     this.driveSummaryValue.textContent = formatDriveMode(this.settings.driveMode);
     this.sourcePicker.hidden = this.settings.driveMode !== "audio";
     this.transport.hidden = this.settings.driveMode !== "audio";
@@ -1093,6 +1145,15 @@ export class WavefieldApp {
     this.modalRenderer.requestReset();
   }
 
+  private setBoundaryMode(boundaryMode: BoundaryMode) {
+    if (this.settings.boundaryMode === boundaryMode) {
+      this.syncHeaderControls();
+      return;
+    }
+
+    this.settings.boundaryMode = boundaryMode;
+    this.handleSettingsChange();
+  }
 
   private async setDriveMode(driveMode: DriveMode, announce = true) {
     const shouldRestartLive =
@@ -1218,6 +1279,13 @@ function formatDriveMode(driveMode: DriveMode) {
   return driveMode[0].toUpperCase() + driveMode.slice(1);
 }
 
+function formatBoundaryMode(boundaryMode: BoundaryMode) {
+  return (
+    BOUNDARY_OPTIONS.find((option) => option.value === boundaryMode)?.label ??
+    boundaryMode
+  );
+}
+
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
@@ -1246,7 +1314,7 @@ function getFirstMeaningfulFrameTime(analysis: AudioAnalysis) {
 }
 
 function getFieldSettingsKey(settings: CymaticSettings) {
-  return [settings.driveMode].join(":");
+  return [settings.driveMode, settings.boundaryMode].join(":");
 }
 
 function isEditableKeyboardTarget(target: EventTarget | null) {
@@ -1257,6 +1325,10 @@ function isEditableKeyboardTarget(target: EventTarget | null) {
   return Boolean(
     target.closest("input, select, textarea, [contenteditable=''], [contenteditable='true']"),
   );
+}
+
+function normalizeHexColor(color: string) {
+  return /^#[0-9a-f]{6}$/i.test(color) ? color : DEFAULT_SETTINGS.backgroundColor;
 }
 
 type PlatePoint = {

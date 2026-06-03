@@ -7,13 +7,14 @@ import type {
 
 export const DEFAULT_SETTINGS: CymaticSettings = {
   projectionMode: "screen",
-  boundaryMode: "freePlate",
+  boundaryMode: "dirichlet",
   colorMode: "heatmap",
   sphereFieldMode: "surface",
   sphereProjectionType: "triplanar",
   screenAspectMode: "circle",
   idleMode: "ambient",
   monitorSignal: "frequency",
+  backgroundColor: "#000000",
   heatmapPalette: "turbo",
   monoColor: "#60b8db",
   thermalColdColor: "#145ce6",
@@ -461,6 +462,8 @@ export const SETTING_DESCRIPTIONS: Partial<Record<keyof CymaticSettings, string>
     "How the field is colored: chromesthesia (pitch-mapped hue), mono, frequency-band split, thermal phase, or heatmap.",
   heatmapPalette:
     "Heatmap palette used when color is Heatmap: scientific heat, blackbody, or turbo-style.",
+  backgroundColor:
+    "Visualization backdrop color. This fills empty field regions and can change post-effect contrast.",
   monoColor:
     "Single hue used by Mono mode. The renderer still varies brightness across the field.",
   thermalColdColor:

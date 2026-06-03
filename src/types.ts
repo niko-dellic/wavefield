@@ -100,6 +100,7 @@ export type CymaticSettings = {
   screenAspectMode: ScreenAspectMode;
   idleMode: IdleMode;
   monitorSignal: MonitorSignal;
+  backgroundColor: string;
   heatmapPalette: HeatmapPalette;
   monoColor: string;
   thermalColdColor: string;
