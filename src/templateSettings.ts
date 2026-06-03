@@ -92,6 +92,14 @@ export function cloneCymaticSettings(
   };
 }
 
+export function cloneTemplateSettings(
+  settings: CymaticSettings,
+): Omit<CymaticSettings, "driveMode"> {
+  const { driveMode: _driveMode, ...templateSettings } =
+    cloneCymaticSettings(settings);
+  return templateSettings;
+}
+
 export function coerceCymaticSettings(input: unknown): CymaticSettings {
   const source = isRecord(input) ? input : {};
   const settings = cloneCymaticSettings(DEFAULT_SETTINGS);

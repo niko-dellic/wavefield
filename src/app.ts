@@ -18,7 +18,7 @@ import {
   type MonitorState,
 } from "./ui/controls";
 import {
-  cloneCymaticSettings,
+  cloneTemplateSettings,
   coerceCymaticSettings,
   coerceWavefieldTemplate,
   loadWavefieldTemplates,
@@ -1243,13 +1243,11 @@ export class WavefieldApp {
 
   private applyTemplate(template: WavefieldTemplate) {
     const nextSettings = coerceCymaticSettings(template.settings);
-    const nextDriveMode = nextSettings.driveMode;
     const currentDriveMode = this.settings.driveMode;
 
     Object.assign(this.settings, nextSettings);
     this.settings.driveMode = currentDriveMode;
     this.handleSettingsChange();
-    void this.setDriveMode(nextDriveMode, false);
     this.setStatus(`Template: ${template.name}`);
   }
 
@@ -1289,7 +1287,7 @@ export class WavefieldApp {
       },
       body: JSON.stringify({
         name: trimmedName,
-        settings: cloneCymaticSettings(this.settings),
+        settings: cloneTemplateSettings(this.settings),
       }),
     });
 

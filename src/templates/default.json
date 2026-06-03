@@ -29,7 +29,6 @@
     "gain": 1.2,
     "sensitivity": 1.8,
     "audioResponse": 1.5,
-    "driveMode": "manual",
     "testFrequency": 220,
     "frequencySweep": true,
     "frequencySweepRate": 0.05,
