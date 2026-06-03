@@ -767,19 +767,35 @@ export class WavefieldApp {
     }
 
     const signals = fieldFrame.signals;
+    const peak = fieldFrame.peaks[0];
+    const peakLabel = peak
+      ? `${Math.round(peak.frequency)}Hz`
+      : fieldFrame.debug.peakSummary;
+    const topologyLabel =
+      fieldFrame.debug.topologyFrequency > 0
+        ? `${Math.round(fieldFrame.debug.topologyFrequency)}Hz / ${fieldFrame.debug.topologyMode}`
+        : "none";
     this.analysisDebug.hidden = false;
     this.analysisDebug.innerHTML = `
       <div class="analysis-debug-row">
-        <span>peaks</span>
-        <strong>${fieldFrame.debug.peakSummary}</strong>
+        <span>drive</span>
+        <strong>${formatDriveMode(this.settings.driveMode)}</strong>
+      </div>
+      <div class="analysis-debug-row">
+        <span>peak</span>
+        <strong>${peakLabel}</strong>
+      </div>
+      <div class="analysis-debug-row">
+        <span>base</span>
+        <strong>${topologyLabel}</strong>
       </div>
       <div class="analysis-debug-row">
         <span>modes</span>
         <strong>${fieldFrame.modes.length}/${fieldFrame.debug.activeModeCount}</strong>
       </div>
       <div class="analysis-debug-meter">
-        <span>S ${formatSignal(signals.structure)}</span>
-        <span>E ${formatSignal(signals.energy)}</span>
+        <span>T ${formatSignal(signals.topology)}</span>
+        <span>X ${formatSignal(fieldFrame.debug.excitation)}</span>
         <span>C ${formatSignal(signals.change)}</span>
         <span>P ${formatSignal(signals.pulse)}</span>
       </div>

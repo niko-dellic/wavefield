@@ -226,6 +226,17 @@ export class ModalFieldEngine {
     });
     this.displayModeKeys = displayModes.map((mode) => mode.key);
 
+    const topologyFrequency =
+      settings.driveMode === "manual"
+        ? (frame.peaks[0]?.frequency ?? frequencyFromCentroid(frame.centroid))
+        : this.patternStabilizer.getFrequency();
+    const topologyMode = getAtlasModeForFrequency(topologyFrequency).key;
+    const excitation = clamp01(
+      this.smoothedRms * 0.18 +
+        frame.signals.excitation * 0.52 +
+        this.smoothedFlux * 0.3,
+    );
+
     return {
       modes: createModalSlots(displayModes, frame),
       rms: this.smoothedRms,
@@ -245,6 +256,9 @@ export class ModalFieldEngine {
           (driver) => driver.layer >= 0.5,
         ).length,
         peakSummary: formatPeakSummary(frame.peaks),
+        topologyFrequency,
+        topologyMode,
+        excitation,
       },
     };
   }
@@ -292,6 +306,7 @@ export class ModalFieldEngine {
     for (const [key, driver] of rawDrivers) {
       addModeDriver(targets, getAtlasModeByKey(key), {
         strength: driver.strength * 0.58,
+        topology: driver.topology * 0.86,
         pulse: driver.pulse,
         layer: 1,
         frequency: driver.frequency,
@@ -359,6 +374,12 @@ export class ModalFieldEngine {
       const bandScale = settings[BAND_SCALE_KEYS[mode.band]];
       addModeDriver(targets, mode, {
         strength: baseStrength * weight * bandScale * (index === 0 ? 1 : 0.62),
+        topology:
+          baseStrength *
+          weight *
+          bandScale *
+          frame.signals.topology *
+          (index === 0 ? 1.08 : 0.68),
         pulse: basePulse * (index === 0 ? 0.7 : 0.45),
         layer: index === 0 ? 0 : 0.35,
         frequency,
@@ -369,6 +390,7 @@ export class ModalFieldEngine {
         for (const neighbor of getNearestAtlasModes(frequency, 3).slice(1, 3)) {
           addModeDriver(targets, neighbor, {
             strength: baseStrength * weight * 0.32 * bandScale,
+            topology: baseStrength * weight * 0.22 * bandScale * frame.signals.topology,
             pulse: basePulse * 0.36,
             layer: 0.45,
             frequency,

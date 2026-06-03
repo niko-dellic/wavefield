@@ -1,13 +1,13 @@
-import { fftRadix2 } from "./fft";
+import { fftRadix2 } from "./fft.ts";
 import {
   addTemporalFeatures,
   extractSpectrumFrame,
   type RawAudioFeatureFrame,
-} from "./featureAnalysis";
-import type { AudioAnalysis } from "../types";
+} from "./featureAnalysis.ts";
+import type { AudioAnalysis } from "../types.ts";
 
 export const ANALYSIS_FPS = 60;
-export const FFT_SIZE = 1024;
+export const FFT_SIZE = 2048;
 
 export async function decodeAndAnalyzeAudio(
   arrayBuffer: ArrayBuffer,

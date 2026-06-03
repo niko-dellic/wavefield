@@ -335,7 +335,7 @@ select {
 }
 
 .analysis-debug-row span {
-  flex: 0 0 44px;
+  flex: 0 0 42px;
   color: rgb(238 250 255 / 42%);
   text-transform: uppercase;
 }

@@ -15,6 +15,7 @@ import type {
   CymaticSettings,
   PostEffectId,
   ProjectionMode,
+  SphereFieldMode,
   SphereProjectionType,
 } from "../types";
 import { FisheyeEffect } from "./FisheyeEffect";
@@ -43,6 +44,11 @@ const SPHERE_PROJECTION_TYPE_INDEX: Record<SphereProjectionType, number> = {
   uv: 1,
 };
 
+const SPHERE_FIELD_MODE_INDEX: Record<SphereFieldMode, number> = {
+  surface: 0,
+  volume: 1,
+};
+
 const SPHERE_ROTATION_DAMPING_FACTOR = 0.012;
 const SPHERE_ZOOM_DAMPING_FACTOR = 1;
 
@@ -52,10 +58,12 @@ type TrackballControlsWithInternals = TrackballControls & {
 
 const VERTEX_SHADER = `
   varying vec2 vUv;
+  varying vec3 vLocalPosition;
   varying vec3 vWorldNormal;
 
   void main() {
     vUv = uv;
+    vLocalPosition = position;
     vWorldNormal = normalize(mat3(modelMatrix) * normal);
     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
   }
@@ -63,6 +71,7 @@ const VERTEX_SHADER = `
 
 const FRAGMENT_SHADER = `
   #define MAX_MODAL_MODES ${MAX_MODAL_MODES}
+  #define MAX_SPHERE_RAYMARCH_STEPS 96
   #define PI 3.141592653589793
 
   uniform vec2 uResolution;
@@ -71,10 +80,12 @@ const FRAGMENT_SHADER = `
   uniform int uBoundaryMode;
   uniform int uColorMode;
   uniform int uProjectionMode;
+  uniform int uSphereFieldMode;
   uniform int uSphereProjectionType;
   uniform int uScreenAspectMode;
   uniform vec2 uScreenViewOffset;
   uniform float uScreenViewScale;
+  uniform vec3 uCameraLocal;
   uniform vec4 uModeSlots[MAX_MODAL_MODES];
   uniform vec4 uModeMeta[MAX_MODAL_MODES];
   uniform vec4 uModeColors[MAX_MODAL_MODES];
@@ -99,7 +110,12 @@ const FRAGMENT_SHADER = `
   uniform float uIdlePreview;
   uniform float uSurfaceOpacity;
   uniform float uSphereTransparent;
+  uniform int uSphereRaymarchSteps;
+  uniform float uSphereAbsorption;
+  uniform float uSphereShellBias;
+  uniform float uSphereInteriorGlow;
   varying vec2 vUv;
+  varying vec3 vLocalPosition;
   varying vec3 vWorldNormal;
 
   struct FieldSample {
@@ -205,6 +221,130 @@ const FRAGMENT_SHADER = `
     return vec2(dx, dy);
   }
 
+  float cavityBasisValue(float modeIndex, float coordinate) {
+    float argument = modeIndex * PI * coordinate;
+    if (uBoundaryMode == 1) {
+      return sin(argument);
+    }
+
+    return cos(argument);
+  }
+
+  float cavityBasisDerivative(float modeIndex, float coordinate) {
+    float angularScale = modeIndex * PI;
+    float argument = angularScale * coordinate;
+    if (uBoundaryMode == 1) {
+      return cos(argument) * angularScale;
+    }
+
+    return -sin(argument) * angularScale;
+  }
+
+  void accumulateCavityPermutation(
+    float u,
+    float v,
+    float w,
+    vec3 p,
+    inout float field,
+    inout vec3 gradient
+  ) {
+    float bx = cavityBasisValue(u, p.x);
+    float by = cavityBasisValue(v, p.y);
+    float bz = cavityBasisValue(w, p.z);
+    float dx = cavityBasisDerivative(u, p.x);
+    float dy = cavityBasisDerivative(v, p.y);
+    float dz = cavityBasisDerivative(w, p.z);
+    field += bx * by * bz;
+    gradient += vec3(dx * by * bz, bx * dy * bz, bx * by * dz);
+  }
+
+  FieldSample evaluateCavityField(vec3 p) {
+    FieldSample fieldSample;
+    fieldSample.field = 0.0;
+    fieldSample.grad = 0.0;
+    fieldSample.energy = 0.0;
+    fieldSample.color = vec3(0.0);
+    fieldSample.colorWeight = 0.0;
+
+    for (int index = 0; index < MAX_MODAL_MODES; index++) {
+      if (index >= uModeCount) {
+        continue;
+      }
+
+      vec4 slot = uModeSlots[index];
+      vec4 meta = uModeMeta[index];
+      vec4 dynamics = uModeDynamics[index];
+      float topologyWeight = slot.w;
+      if (topologyWeight <= 0.0001) {
+        continue;
+      }
+
+      float u = max(1.0, slot.x);
+      float v = max(1.0, slot.y);
+      float w = max(1.0, slot.z);
+      float bandEnergy = bandValue(uBandEnergies, meta.w);
+      float bandOnset = bandValue(uBandOnsets, meta.w);
+      float modeExcitation = dynamics.x;
+      float modePulse = dynamics.y;
+      float modeLayer = dynamics.z;
+      float localAudio = clamp(
+        bandEnergy * 1.05 +
+          bandOnset * 0.74 +
+          modeExcitation * 1.78 +
+          modePulse * 1.42 +
+          uFeatureSignals.y * 0.28 +
+          uFeatureSignals.z * (0.18 + modeLayer * 0.26),
+        0.0,
+        3.0
+      );
+      float familyField = 0.0;
+      vec3 familyGradient = vec3(0.0);
+
+      accumulateCavityPermutation(u, v, w, p, familyField, familyGradient);
+      if (abs(u - w) > 0.5) {
+        if (abs(u - v) < 0.5) {
+          accumulateCavityPermutation(u, w, v, p, familyField, familyGradient);
+          accumulateCavityPermutation(w, u, v, p, familyField, familyGradient);
+          familyField *= 0.57735026919;
+          familyGradient *= 0.57735026919;
+        } else if (abs(v - w) < 0.5) {
+          accumulateCavityPermutation(v, u, w, p, familyField, familyGradient);
+          accumulateCavityPermutation(v, w, u, p, familyField, familyGradient);
+          familyField *= 0.57735026919;
+          familyGradient *= 0.57735026919;
+        } else {
+          accumulateCavityPermutation(u, w, v, p, familyField, familyGradient);
+          accumulateCavityPermutation(v, u, w, p, familyField, familyGradient);
+          accumulateCavityPermutation(w, u, v, p, familyField, familyGradient);
+          accumulateCavityPermutation(v, w, u, p, familyField, familyGradient);
+          accumulateCavityPermutation(w, v, u, p, familyField, familyGradient);
+          familyField *= 0.40824829046;
+          familyGradient *= 0.40824829046;
+        }
+      }
+
+      float phaseMotion = cos(
+        meta.x +
+        uTime * (0.035 + meta.z * 0.14 + modeExcitation * 0.1 + modePulse * 0.16) +
+        modePulse * 1.4 +
+        bandOnset * 0.7
+      );
+      float localField = familyField * (0.9 + phaseMotion * 0.1 * meta.y);
+      float localInfluence =
+        topologyWeight *
+        (0.22 + localAudio * 0.24 + abs(localField) * 0.54) *
+        (0.72 + meta.y * 0.34);
+
+      fieldSample.field += localField * topologyWeight * (0.74 + modeExcitation * 0.18);
+      fieldSample.grad += length(familyGradient) * topologyWeight;
+      fieldSample.energy += localInfluence;
+      fieldSample.color += uModeColors[index].rgb * localInfluence * uModeColors[index].a;
+      fieldSample.colorWeight += localInfluence * uModeColors[index].a;
+    }
+
+    return fieldSample;
+  }
+
   FieldSample evaluateChladniField(vec2 uv) {
     FieldSample fieldSample;
     fieldSample.field = 0.0;
@@ -240,8 +380,8 @@ const FRAGMENT_SHADER = `
       vec4 slot = uModeSlots[index];
       vec4 meta = uModeMeta[index];
       vec4 dynamics = uModeDynamics[index];
-      float amplitude = slot.w;
-      if (amplitude <= 0.0001) {
+      float topologyWeight = slot.w;
+      if (topologyWeight <= 0.0001) {
         continue;
       }
 
@@ -249,13 +389,13 @@ const FRAGMENT_SHADER = `
       float n = max(1.0, slot.y);
       float bandEnergy = bandValue(uBandEnergies, meta.w);
       float bandOnset = bandValue(uBandOnsets, meta.w);
-      float modeDriver = dynamics.x;
+      float modeExcitation = dynamics.x;
       float modePulse = dynamics.y;
       float modeLayer = dynamics.z;
       float localAudio = clamp(
         bandEnergy * 1.05 +
           bandOnset * 0.74 +
-          modeDriver * 1.78 +
+          modeExcitation * 1.78 +
           modePulse * 1.42 +
           uFeatureSignals.y * 0.28 +
           uFeatureSignals.z * (0.18 + modeLayer * 0.26),
@@ -272,7 +412,7 @@ const FRAGMENT_SHADER = `
       vec2 gradient = chladniGradient(m, n, p);
       float phaseMotion = cos(
         meta.x +
-        uTime * (0.04 + meta.z * 0.18 + modeDriver * 0.12 + modePulse * 0.18) +
+        uTime * (0.04 + meta.z * 0.18 + modeExcitation * 0.12 + modePulse * 0.18) +
         modePulse * 1.7 +
         bandOnset * 0.8
       );
@@ -281,12 +421,12 @@ const FRAGMENT_SHADER = `
         swappedField * uInterference * 0.28 +
         harmonicField * uHarmonicMix * (0.1 + localAudio * 0.08);
       float localInfluence =
-        amplitude *
+        topologyWeight *
         (0.26 + localAudio * 0.22 + abs(localField) * 0.52) *
         (0.72 + meta.y * 0.34);
 
-      fieldSample.field += localField * amplitude;
-      fieldSample.grad += length(gradient) * amplitude * (0.0016 + localAudio * 0.0009);
+      fieldSample.field += localField * topologyWeight * (0.74 + modeExcitation * 0.18);
+      fieldSample.grad += length(gradient) * topologyWeight * (0.0016 + localAudio * 0.0009);
       fieldSample.energy += localInfluence;
       fieldSample.color += uModeColors[index].rgb * localInfluence * uModeColors[index].a;
       fieldSample.colorWeight += localInfluence * uModeColors[index].a;
@@ -325,7 +465,124 @@ const FRAGMENT_SHADER = `
     return combined;
   }
 
+  bool intersectUnitSphere(vec3 origin, vec3 direction, out float enter, out float exit) {
+    float b = dot(origin, direction);
+    float c = dot(origin, origin) - 1.0;
+    float discriminant = b * b - c;
+    if (discriminant <= 0.0) {
+      return false;
+    }
+
+    float root = sqrt(discriminant);
+    enter = max(0.0, -b - root);
+    exit = -b + root;
+    return exit > enter;
+  }
+
+  vec4 renderSphereVolume() {
+    vec3 rayOrigin = uCameraLocal;
+    vec3 rayDirection = normalize(vLocalPosition - uCameraLocal);
+    float enter = 0.0;
+    float exit = 0.0;
+    if (!intersectUnitSphere(rayOrigin, rayDirection, enter, exit)) {
+      return vec4(0.0);
+    }
+
+    int steps = clamp(uSphereRaymarchSteps, 1, MAX_SPHERE_RAYMARCH_STEPS);
+    float rayLength = exit - enter;
+    float stepSize = rayLength / float(steps);
+    vec3 accumulatedColor = vec3(0.0);
+    float accumulatedAlpha = 0.0;
+
+    for (int stepIndex = 0; stepIndex < MAX_SPHERE_RAYMARCH_STEPS; stepIndex++) {
+      if (stepIndex >= steps || accumulatedAlpha > 0.965) {
+        break;
+      }
+
+      float t = enter + (float(stepIndex) + 0.5) * stepSize;
+      vec3 p = rayOrigin + rayDirection * t;
+      float radialDistance = length(p);
+      if (radialDistance > 1.0) {
+        continue;
+      }
+
+      FieldSample field = evaluateCavityField(p);
+      float modeScale = sqrt(max(1.0, float(uModeCount)));
+      float energyScale = max(0.18, modeScale * 0.15);
+      float normalizedField = field.field / energyScale;
+      float nodeWidth = max(0.00045, uNodeWidth * 0.06);
+      float nodeBand =
+        1.0 - smoothstep(nodeWidth * 0.3, nodeWidth * 1.4, abs(normalizedField));
+      float broadBand =
+        1.0 - smoothstep(nodeWidth * 1.4, nodeWidth * (5.0 + uSoftness * 5.5), abs(normalizedField));
+      float structure = smoothstep(0.03, 0.72 + uEdgeFade * 0.5, field.grad / energyScale);
+      float edgeFade = 1.0 - smoothstep(0.94, 1.0, radialDistance);
+      float shellAccent = smoothstep(0.16, 1.0, radialDistance);
+      float interiorMask = 1.0 - smoothstep(0.42, 0.98, radialDistance);
+      float shellWeight = mix(1.0, shellAccent, clamp(uSphereShellBias, 0.0, 1.5));
+      float bodyDensity =
+        broadBand *
+        interiorMask *
+        uSphereInteriorGlow *
+        (0.08 + field.energy * 0.06);
+      float contourDensity =
+        (pow(nodeBand, 2.2) * 0.88 + broadBand * uSoftness * 0.06) *
+        (0.24 + structure * 0.76) *
+        (0.48 + field.energy * 0.46) *
+        shellWeight;
+      float density = clamp(
+        (contourDensity + bodyDensity) *
+          uDensity *
+          edgeFade *
+          (0.88 + uFeatureSignals.y * 0.24 + uFeatureSignals.w * 0.16),
+        0.0,
+        2.4
+      );
+      if (density <= 0.0001) {
+        continue;
+      }
+
+      vec3 modalColor =
+        field.colorWeight > 0.0001 ? field.color / field.colorWeight : vec3(0.86, 0.96, 1.0);
+      vec3 monoColor = mix(vec3(0.24, 0.62, 0.84), vec3(0.94, 0.98, 1.0), nodeBand);
+      vec3 thermalCold = vec3(0.08, 0.36, 0.9);
+      vec3 thermalHot = vec3(1.0, 0.48, 0.18);
+      vec3 thermalColor = mix(thermalCold, thermalHot, smoothstep(-0.35, 0.35, normalizedField));
+      vec3 bandColor = normalize(uBandEnergies + vec3(0.02)) *
+        vec3(0.38, 0.74, 0.96) +
+        vec3(uBandEnergies.z * 0.9, uBandEnergies.y * 0.42, uBandEnergies.x * 0.32) +
+        uChromaProfile.rgb * uChromaProfile.a * 0.22;
+      vec3 color = monoColor;
+
+      if (uColorMode == 0) {
+        color = mix(monoColor, modalColor, clamp(uChromesthesiaMix, 0.0, 1.0));
+      } else if (uColorMode == 2) {
+        color = mix(monoColor, clamp(bandColor, 0.0, 1.0), 0.72);
+      } else if (uColorMode == 3) {
+        color = mix(monoColor, thermalColor, 0.78);
+      }
+
+      color *= 0.45 + nodeBand * 0.95 + field.energy * 0.18 + shellAccent * 0.18;
+      float sampleAlpha = 1.0 - exp(-density * uSphereAbsorption * stepSize * 2.2);
+      accumulatedColor += (1.0 - accumulatedAlpha) * color * sampleAlpha;
+      accumulatedAlpha += (1.0 - accumulatedAlpha) * sampleAlpha;
+    }
+
+    float outputAlpha = uSphereTransparent > 0.5
+      ? clamp(accumulatedAlpha * uSurfaceOpacity, 0.0, 1.0)
+      : 1.0;
+    vec3 outputColor = uSphereTransparent > 0.5
+      ? accumulatedColor
+      : mix(vec3(0.0), accumulatedColor, clamp(accumulatedAlpha, 0.0, 1.0));
+    return vec4(clamp(outputColor, 0.0, 1.0), outputAlpha);
+  }
+
   void main() {
+    if (uProjectionMode == 1 && uSphereFieldMode == 1 && uModeCount > 0) {
+      gl_FragColor = renderSphereVolume();
+      return;
+    }
+
     if (uModeCount <= 0) {
       if (uIdlePreview < 0.5) {
         gl_FragColor = vec4(vec3(0.0), 1.0);
@@ -340,9 +597,10 @@ const FRAGMENT_SHADER = `
     }
 
     FieldSample field = sampleProjectedField();
+    float modeScale = sqrt(max(1.0, float(uModeCount)));
     float energyScale = uProjectionMode == 0
-      ? max(0.055, sqrt(max(field.energy, 0.0)) * 0.26)
-      : max(0.045, sqrt(max(field.energy, 0.0)) * 0.18);
+      ? max(0.22, modeScale * 0.18)
+      : max(0.18, modeScale * 0.15);
     float normalizedField = field.field / energyScale;
     float audioPulse = clamp(
       uFeatureSignals.w * 0.88 + uFeatureSignals.z * 0.3 + uRms * 0.16,
@@ -451,10 +709,12 @@ export class ModalFieldRenderer {
       uBoundaryMode: { value: BOUNDARY_MODE_INDEX.freePlate },
       uColorMode: { value: COLOR_MODE_INDEX.chromesthesia },
       uProjectionMode: { value: PROJECTION_MODE_INDEX.screen },
+      uSphereFieldMode: { value: SPHERE_FIELD_MODE_INDEX.surface },
       uSphereProjectionType: { value: SPHERE_PROJECTION_TYPE_INDEX.triplanar },
       uScreenAspectMode: { value: 0 },
       uScreenViewOffset: { value: new THREE.Vector2() },
       uScreenViewScale: { value: 1 },
+      uCameraLocal: { value: new THREE.Vector3(0, 0, 3.7) },
       uModeSlots: { value: this.modeSlotUniforms },
       uModeMeta: { value: this.modeMetaUniforms },
       uModeColors: { value: this.modeColorUniforms },
@@ -479,6 +739,10 @@ export class ModalFieldRenderer {
       uIdlePreview: { value: 0 },
       uSurfaceOpacity: { value: 0.64 },
       uSphereTransparent: { value: 0 },
+      uSphereRaymarchSteps: { value: 56 },
+      uSphereAbsorption: { value: 1.35 },
+      uSphereShellBias: { value: 0.65 },
+      uSphereInteriorGlow: { value: 0.35 },
     },
     vertexShader: VERTEX_SHADER,
     fragmentShader: FRAGMENT_SHADER,
@@ -505,6 +769,7 @@ export class ModalFieldRenderer {
   });
   private readonly fisheyeEffect = new FisheyeEffect();
   private readonly terminalContourEffect = new TerminalContourEffect();
+  private readonly cameraLocal = new THREE.Vector3();
   private elapsedSeconds = 0;
 
   constructor() {
@@ -542,16 +807,18 @@ export class ModalFieldRenderer {
     isIdlePreview = false,
   ) {
     this.elapsedSeconds += Math.max(0, deltaSeconds);
-    this.updateUniforms(fieldFrame, settings, screenView, isIdlePreview);
     this.ensureControls(renderer);
 
     const isSphere = settings.projectionMode === "sphere";
+    const isVolumeSphere = isSphere && settings.sphereFieldMode === "volume";
     const useTransparentBackground =
       isSphere && settings.sphereBackgroundTransparent;
     this.scene.background = useTransparentBackground ? null : this.opaqueBackground;
     this.material.depthTest = isSphere;
     this.material.depthWrite = isSphere && !useTransparentBackground;
-    const nextSide = useTransparentBackground
+    const nextSide = isVolumeSphere
+      ? THREE.FrontSide
+      : useTransparentBackground
       ? THREE.DoubleSide
       : THREE.FrontSide;
     if (this.material.side !== nextSide) {
@@ -567,6 +834,7 @@ export class ModalFieldRenderer {
         this.controls.update();
       }
     }
+    this.updateUniforms(fieldFrame, settings, screenView, isIdlePreview);
     const camera = isSphere ? this.sphereCamera : this.screenCamera;
     const enabledPostEffects = this.getEnabledPostEffects(settings);
     if (enabledPostEffects.length > 0) {
@@ -741,8 +1009,8 @@ export class ModalFieldRenderer {
         this.modeSlotUniforms[index].set(
           mode.mode[0],
           mode.mode[1],
-          mode.frequencyNorm,
-          mode.amplitude,
+          mode.sphericalMode[2],
+          mode.topology,
         );
         this.modeMetaUniforms[index].set(
           mode.phase,
@@ -757,7 +1025,7 @@ export class ModalFieldRenderer {
           mode.colorWeight,
         );
         this.modeDynamicsUniforms[index].set(
-          mode.driver,
+          mode.excitation,
           mode.pulse,
           mode.layer,
           fieldFrame.signals.harmonicity,
@@ -777,6 +1045,8 @@ export class ModalFieldRenderer {
     this.material.uniforms.uColorMode.value = COLOR_MODE_INDEX[settings.colorMode];
     this.material.uniforms.uProjectionMode.value =
       PROJECTION_MODE_INDEX[settings.projectionMode];
+    this.material.uniforms.uSphereFieldMode.value =
+      SPHERE_FIELD_MODE_INDEX[settings.sphereFieldMode];
     this.material.uniforms.uSphereProjectionType.value =
       SPHERE_PROJECTION_TYPE_INDEX[settings.sphereProjectionType];
     this.material.uniforms.uScreenAspectMode.value =
@@ -825,6 +1095,18 @@ export class ModalFieldRenderer {
     this.material.uniforms.uSurfaceOpacity.value = settings.sphereSurfaceOpacity;
     this.material.uniforms.uSphereTransparent.value =
       settings.projectionMode === "sphere" && settings.sphereBackgroundTransparent ? 1 : 0;
+    this.material.uniforms.uSphereRaymarchSteps.value =
+      settings.sphereRaymarchSteps;
+    this.material.uniforms.uSphereAbsorption.value = settings.sphereAbsorption;
+    this.material.uniforms.uSphereShellBias.value = settings.sphereShellBias;
+    this.material.uniforms.uSphereInteriorGlow.value = settings.sphereInteriorGlow;
+    if (settings.projectionMode === "sphere") {
+      this.sphereCamera.updateMatrixWorld();
+      this.sphereMesh.updateMatrixWorld();
+      this.cameraLocal.copy(this.sphereCamera.position);
+      this.sphereMesh.worldToLocal(this.cameraLocal);
+      this.material.uniforms.uCameraLocal.value.copy(this.cameraLocal);
+    }
   }
 }
 

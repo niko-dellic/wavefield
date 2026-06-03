@@ -1,10 +1,10 @@
-import { ANALYSIS_FPS, FFT_SIZE, createHannWindow } from "./analyze";
-import { fftRadix2 } from "./fft";
+import { ANALYSIS_FPS, FFT_SIZE, createHannWindow } from "./analyze.ts";
+import { fftRadix2 } from "./fft.ts";
 import {
   AudioTemporalFeatureTracker,
   extractSpectrumFrame,
-} from "./featureAnalysis";
-import type { AudioFeatureFrame } from "../types";
+} from "./featureAnalysis.ts";
+import type { AudioFeatureFrame } from "../types.ts";
 
 export class LiveAudioAnalyzer {
   private context: AudioContext | null = null;

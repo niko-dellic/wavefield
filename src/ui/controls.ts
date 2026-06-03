@@ -68,24 +68,44 @@ export function createControls(
         },
       });
     }
-    addNumericBinding(engine, settings, ENGINE_CONTROLS.modalCount);
-    addNumericBinding(engine, settings, ENGINE_CONTROLS.modalDecay);
-    addNumericBinding(engine, settings, ENGINE_CONTROLS.modalDrive);
-    addNumericBinding(engine, settings, ENGINE_CONTROLS.patternHoldSeconds);
-    addNumericBinding(engine, settings, ENGINE_CONTROLS.morphSeconds);
-    if (settings.colorMode === "chromesthesia") {
-      addNumericBinding(engine, settings, ENGINE_CONTROLS.chromesthesiaMix);
-    }
+    const topology = pane.addFolder({ title: "Topology", expanded: true });
+    addNumericBinding(topology, settings, ENGINE_CONTROLS.modalCount);
+    addNumericBinding(topology, settings, AUDIO_CONTROLS.sensitivity);
+    addNumericBinding(topology, settings, ENGINE_CONTROLS.patternHoldSeconds);
+    addNumericBinding(topology, settings, ENGINE_CONTROLS.morphSeconds);
+    addNumericBinding(topology, settings, SHADER_CONTROLS.cymaticHarmonicMix);
+
+    const excitation = pane.addFolder({ title: "Excitation", expanded: true });
+    addNumericBinding(excitation, settings, AUDIO_CONTROLS.gain);
+    addNumericBinding(excitation, settings, ENGINE_CONTROLS.modalDrive);
+    addNumericBinding(excitation, settings, ENGINE_CONTROLS.modalDecay);
+    addNumericBinding(excitation, settings, AUDIO_CONTROLS.lowScale);
+    addNumericBinding(excitation, settings, AUDIO_CONTROLS.midScale);
+    addNumericBinding(excitation, settings, AUDIO_CONTROLS.highScale);
 
     if (settings.projectionMode === "sphere") {
       const sphere = pane.addFolder({ title: "Sphere", expanded: true });
-      sphere.addBinding(settings, "sphereProjectionType", {
-        label: "mapping",
+      sphere.addBinding(settings, "sphereFieldMode", {
+        label: "field",
         options: {
-          Triplanar: "triplanar",
-          UV: "uv",
+          Surface: "surface",
+          Volume: "volume",
         },
       });
+      if (settings.sphereFieldMode === "surface") {
+        sphere.addBinding(settings, "sphereProjectionType", {
+          label: "mapping",
+          options: {
+            Triplanar: "triplanar",
+            UV: "uv",
+          },
+        });
+      } else {
+        addNumericBinding(sphere, settings, SPHERE_CONTROLS.sphereRaymarchSteps);
+        addNumericBinding(sphere, settings, SPHERE_CONTROLS.sphereAbsorption);
+        addNumericBinding(sphere, settings, SPHERE_CONTROLS.sphereShellBias);
+        addNumericBinding(sphere, settings, SPHERE_CONTROLS.sphereInteriorGlow);
+      }
       sphere.addBinding(settings, "sphereBackgroundTransparent", {
         label: "transparent sphere",
       });
@@ -93,17 +113,16 @@ export function createControls(
       addNumericBinding(sphere, settings, SPHERE_CONTROLS.sphereRadius);
     }
 
-    const shader = pane.addFolder({ title: "Shader", expanded: true });
+    const shader = pane.addFolder({ title: "Rendering", expanded: true });
     Object.values(SHADER_CONTROLS).forEach((control) => {
+      if (control.key === "cymaticHarmonicMix") {
+        return;
+      }
       addNumericBinding(shader, settings, control);
     });
-
-    const response = pane.addFolder({ title: "Response", expanded: true });
-    addNumericBinding(response, settings, AUDIO_CONTROLS.gain);
-    addNumericBinding(response, settings, AUDIO_CONTROLS.sensitivity);
-    addNumericBinding(response, settings, AUDIO_CONTROLS.lowScale);
-    addNumericBinding(response, settings, AUDIO_CONTROLS.midScale);
-    addNumericBinding(response, settings, AUDIO_CONTROLS.highScale);
+    if (settings.colorMode === "chromesthesia") {
+      addNumericBinding(shader, settings, ENGINE_CONTROLS.chromesthesiaMix);
+    }
 
     pane.on("change", onChange);
     postPanes = mountPostPanel(container, settings, onChange);
@@ -135,6 +154,7 @@ export function createControls(
 function getLayoutKey(settings: CymaticSettings) {
   return [
     settings.projectionMode,
+    settings.sphereFieldMode,
     settings.colorMode,
     settings.screenAspectMode,
     settings.postProcessingEnabled,

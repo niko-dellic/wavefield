@@ -30,6 +30,7 @@ export function resolveModeDrivers(
     const mode = getAtlasModeForFrequency(frequency);
     addModeDriver(drivers, mode, {
       strength: 1,
+      topology: 1,
       pulse: 0.38,
       layer: 0,
       frequency,
@@ -44,6 +45,7 @@ export function resolveModeDrivers(
         {
           frequency: frequencyFromCentroid(frame.centroid),
           amplitude: frame.rms,
+          energy: frame.signals.energy,
           harmonicWeight: frame.signals.harmonicity,
           band: getBandForFrequency(frequencyFromCentroid(frame.centroid)),
           bin: 0,
@@ -76,8 +78,10 @@ export function resolveModeDrivers(
           targetFrequency,
         );
         const familyWeight = familyIndex === 0 ? 1 : 0.72;
+        const peakEnergy = peak.energy ?? peak.amplitude;
         const strength =
           peak.amplitude *
+          (0.42 + peakEnergy * 0.58) *
           harmonicWeight *
           familyWeight *
           affinity *
@@ -85,6 +89,7 @@ export function resolveModeDrivers(
           (peakIndex === 0 ? 1 : 0.88 / (peakIndex + 1));
         addModeDriver(drivers, mode, {
           strength,
+          topology: strength * (layer < 0.5 ? 1 : 0.52) * frame.signals.topology,
           pulse: clamp01(
             frame.signals.pulse * (0.26 + harmonicIndex * 0.12) +
               frame.onsets[mode.band] * 0.48 +
@@ -103,6 +108,7 @@ export function resolveModeDrivers(
     for (const mode of getNearestAtlasModes(fallbackFrequency, 4)) {
       addModeDriver(drivers, mode, {
         strength: frame.rms * 0.32,
+        topology: frame.rms * frame.signals.topology * 0.22,
         pulse: frame.signals.pulse * 0.4,
         layer: 0,
         frequency: fallbackFrequency,
@@ -128,12 +134,14 @@ export function addModeDriver(
     drivers.set(mode.key, {
       ...driver,
       strength: clamp01(driver.strength),
+      topology: clamp01(driver.topology),
       pulse: clamp01(driver.pulse),
     });
     return;
   }
 
   existing.strength = clamp01(existing.strength + driver.strength * 0.72);
+  existing.topology = clamp01(existing.topology + driver.topology * 0.78);
   existing.pulse = Math.max(existing.pulse, driver.pulse);
   existing.harmonicWeight = Math.max(
     existing.harmonicWeight,
@@ -213,6 +221,7 @@ export function updatePersistentDrivers({
 
   for (const driver of persistentDrivers.values()) {
     driver.targetStrength = 0;
+    driver.targetTopology = 0;
     driver.pulse *= pulseDecay;
   }
 
@@ -220,9 +229,11 @@ export function updatePersistentDrivers({
     const existing = persistentDrivers.get(key);
     if (!existing) {
       persistentDrivers.set(key, {
-        strength: 0,
-        targetStrength: clamp01(target.strength),
-        pulse: clamp01(target.pulse),
+          strength: 0,
+          targetStrength: clamp01(target.strength),
+          topology: 0,
+          targetTopology: clamp01(target.topology),
+          pulse: clamp01(target.pulse),
         layer: target.layer,
         frequency: target.frequency,
         harmonicWeight: target.harmonicWeight,
@@ -232,6 +243,7 @@ export function updatePersistentDrivers({
     }
 
     existing.targetStrength = clamp01(target.strength);
+    existing.targetTopology = clamp01(target.topology);
     existing.pulse = Math.max(existing.pulse, target.pulse);
     existing.layer = target.layer;
     existing.frequency = target.frequency;
@@ -241,9 +253,12 @@ export function updatePersistentDrivers({
 
   for (const [key, driver] of persistentDrivers) {
     driver.strength += (driver.targetStrength - driver.strength) * morphAlpha;
+    driver.topology += (driver.targetTopology - driver.topology) * morphAlpha;
     if (
       driver.strength < 0.0008 &&
       driver.targetStrength <= 0.0008 &&
+      driver.topology < 0.0008 &&
+      driver.targetTopology <= 0.0008 &&
       time - driver.lastSeen > morphSeconds * 2.5
     ) {
       persistentDrivers.delete(key);
@@ -261,6 +276,7 @@ export function materializePersistentDrivers(
     }
     drivers.set(key, {
       strength: clamp01(driver.strength),
+      topology: clamp01(driver.topology),
       pulse: clamp01(driver.pulse),
       layer: driver.layer,
       frequency: driver.frequency,

@@ -1,5 +1,6 @@
 import { mapFrequencyToChladniMode } from "./chladniModes.ts";
 import { clampFrequencyNorm, getBandForFrequency } from "./modalMath.ts";
+import { deriveSphericalModeFromChladniMode } from "./sphericalModes.ts";
 import {
   ATLAS_SIZE,
   MAX_MODAL_MODES,
@@ -28,9 +29,11 @@ export function buildModalAtlas(): ModalAtlasEntry[] {
       const magnitude = Math.hypot(m, n);
       const naturalFrequency = 220 * Math.pow(magnitude / Math.hypot(3, 5), 2);
       const key = `${m}:${n}`;
+      const mode: [number, number] = [m, n];
       rawCandidates.push({
         key,
-        mode: [m, n],
+        mode,
+        sphericalMode: deriveSphericalModeFromChladniMode(mode),
         naturalFrequency,
         frequencyNorm: clampFrequencyNorm(naturalFrequency),
         band: getBandForFrequency(naturalFrequency),
@@ -90,6 +93,10 @@ export function getAtlasModeForFrequency(frequency: number) {
   return {
     key: `${mapped.m}:${mapped.n}`,
     mode: [mapped.m, mapped.n] as [number, number],
+    sphericalMode: deriveSphericalModeFromChladniMode([
+      mapped.m,
+      mapped.n,
+    ]),
     naturalFrequency: mapped.frequency,
     frequencyNorm: clampFrequencyNorm(mapped.frequency),
     band: getBandForFrequency(mapped.frequency),
@@ -108,6 +115,7 @@ export function getAtlasModeByKey(key: string) {
   return {
     key,
     mode: [m, n] as [number, number],
+    sphericalMode: deriveSphericalModeFromChladniMode([m, n]),
     naturalFrequency,
     frequencyNorm: clampFrequencyNorm(naturalFrequency),
     band: getBandForFrequency(naturalFrequency),

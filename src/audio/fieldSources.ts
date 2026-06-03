@@ -44,8 +44,10 @@ export function createAmbientModalFieldFrame(time: number): ModalFieldFrame {
 
     return {
       mode: mode.mode,
+      sphericalMode: mode.sphericalMode,
       frequency: mode.naturalFrequency,
       amplitude: clamp01((0.1 + bandBias * 0.38) * (0.72 + wave * 0.18)),
+      topology: 0.16 + wave * 0.08,
       phase: hashMode(mode.mode) * Math.PI * 2,
       coherence: 0.42 + mode.frequencyNorm * 0.28,
       frequencyNorm: mode.frequencyNorm,
@@ -53,6 +55,7 @@ export function createAmbientModalFieldFrame(time: number): ModalFieldFrame {
       color: createModeColor(mode.naturalFrequency, mode.band),
       colorWeight: 0.62,
       driver: 0.32 + wave * 0.16,
+      excitation: 0.18 + wave * 0.08,
       pulse: 0.08 + wave * 0.08,
       layer: index % 3 === 0 ? 1 : 0,
     };
@@ -76,12 +79,17 @@ export function createAmbientModalFieldFrame(time: number): ModalFieldFrame {
       structure: 0.45,
       energy: 0.22 + shimmer * 0.04,
       pulse: 0.04,
+      excitation: 0.2 + shimmer * 0.04,
+      topology: 0.32,
     },
     debug: {
       activeModeCount: modes.length,
       backboneCount: modes.filter((mode) => mode.layer < 0.5).length,
       detailCount: modes.filter((mode) => mode.layer >= 0.5).length,
       peakSummary: "ambient",
+      topologyFrequency: 220,
+      topologyMode: "3:5",
+      excitation: 0.2 + shimmer * 0.04,
     },
   };
 }
@@ -115,6 +123,7 @@ export function createManualFeatureFrame(
       {
         frequency,
         amplitude: 1,
+        energy: 1,
         bin: 0,
         band,
         pitchClass: chroma.tonic,
@@ -127,6 +136,8 @@ export function createManualFeatureFrame(
       energy: 0.64,
       change: settings.frequencySweep ? 0.18 : 0.02,
       pulse,
+      excitation: 0.72,
+      topology: 1,
       beat: 0,
       beatConfidence: 0,
       harmonicity: 1,

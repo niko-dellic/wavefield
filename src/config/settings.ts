@@ -4,6 +4,7 @@ export const DEFAULT_SETTINGS: CymaticSettings = {
   projectionMode: "screen",
   boundaryMode: "freePlate",
   colorMode: "chromesthesia",
+  sphereFieldMode: "surface",
   sphereProjectionType: "triplanar",
   screenAspectMode: "circle",
   idleMode: "ambient",
@@ -33,6 +34,10 @@ export const DEFAULT_SETTINGS: CymaticSettings = {
   chromesthesiaMix: 0.82,
   sphereRadius: 1.35,
   sphereSurfaceOpacity: 0.64,
+  sphereRaymarchSteps: 56,
+  sphereAbsorption: 1.35,
+  sphereShellBias: 0.65,
+  sphereInteriorGlow: 0.35,
   sphereBackgroundTransparent: false,
   postProcessingEnabled: true,
   postEffectOrder: ["bloom", "pixelation", "fisheye", "terminal"],
@@ -76,7 +81,7 @@ export const ENGINE_CONTROLS = {
   },
   modalDrive: {
     key: "modalDrive",
-    label: "drive",
+    label: "mode drive",
     min: 0,
     max: 4,
     step: 0.01,
@@ -105,6 +110,34 @@ export const ENGINE_CONTROLS = {
 } satisfies Record<string, NumericControlConfig>;
 
 export const SPHERE_CONTROLS = {
+  sphereRaymarchSteps: {
+    key: "sphereRaymarchSteps",
+    label: "steps",
+    min: 16,
+    max: 96,
+    step: 1,
+  },
+  sphereAbsorption: {
+    key: "sphereAbsorption",
+    label: "absorption",
+    min: 0.1,
+    max: 3,
+    step: 0.01,
+  },
+  sphereShellBias: {
+    key: "sphereShellBias",
+    label: "shell bias",
+    min: 0,
+    max: 1.5,
+    step: 0.01,
+  },
+  sphereInteriorGlow: {
+    key: "sphereInteriorGlow",
+    label: "interior",
+    min: 0,
+    max: 1.5,
+    step: 0.01,
+  },
   sphereSurfaceOpacity: {
     key: "sphereSurfaceOpacity",
     label: "surface alpha",
@@ -124,7 +157,7 @@ export const SPHERE_CONTROLS = {
 export const SHADER_CONTROLS = {
   cymaticHarmonicMix: {
     key: "cymaticHarmonicMix",
-    label: "harmonics",
+    label: "harmonic spread",
     min: 0,
     max: 1,
     step: 0.01,
@@ -204,14 +237,14 @@ export const AUDIO_CONTROLS = {
   },
   gain: {
     key: "gain",
-    label: "gain",
+    label: "excitation gain",
     min: 0.1,
     max: 4,
     step: 0.01,
   },
   sensitivity: {
     key: "sensitivity",
-    label: "sensitivity",
+    label: "topology sensitivity",
     min: 0.05,
     max: 5,
     step: 0.01,

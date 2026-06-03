@@ -24,6 +24,8 @@ export const EMPTY_FEATURE_SIGNALS: AudioFeatureSignals = {
   energy: 0,
   change: 0,
   pulse: 0,
+  excitation: 0,
+  topology: 0,
   beat: 0,
   beatConfidence: 0,
   harmonicity: 0,
@@ -178,9 +180,20 @@ export class AudioTemporalFeatureTracker {
 
     const avgBand = (frame.bands.low + frame.bands.mid + frame.bands.high) / 3;
     const strongestPeak = frame.peaks[0]?.amplitude ?? 0;
+    const strongestPeakEnergy = frame.peaks[0]?.energy ?? 0;
     const harmonicity = clamp01(
-      frame.peaks.reduce((sum, peak) => sum + peak.harmonicWeight * peak.amplitude, 0) /
-        Math.max(EPSILON, frame.peaks.reduce((sum, peak) => sum + peak.amplitude, 0)),
+      frame.peaks.reduce(
+        (sum, peak) =>
+          sum + peak.harmonicWeight * (peak.amplitude * 0.55 + peak.energy * 0.45),
+        0,
+      ) /
+        Math.max(
+          EPSILON,
+          frame.peaks.reduce(
+            (sum, peak) => sum + peak.amplitude * 0.55 + peak.energy * 0.45,
+            0,
+          ),
+        ),
     );
     const tonalStructure = clamp01(
       harmonicity * (0.35 + frame.chroma.confidence * 0.65),
@@ -190,18 +203,28 @@ export class AudioTemporalFeatureTracker {
         spectralFlux * 0.34 +
         (1 - frame.chroma.confidence) * 0.22,
     );
+    const energy = clamp01(frame.rms * 0.42 + avgBand * 0.34 + frame.spectralEnergy * 0.24);
+    const pulse = clamp01(
+      beat * 0.72 +
+        Math.max(onsets.low * 0.32, onsets.mid * 0.42, onsets.high * 0.5) +
+        spectralFlux * 0.22,
+    );
     const signals: AudioFeatureSignals = {
       structure: clamp01(
         tonalStructure * 0.56 +
           frame.chroma.confidence * 0.28 +
-          strongestPeak * (0.12 + tonalStructure * 0.12),
+          strongestPeak * (0.08 + tonalStructure * 0.1) +
+          strongestPeakEnergy * 0.14,
       ),
-      energy: clamp01(frame.rms * 0.42 + avgBand * 0.34 + frame.spectralEnergy * 0.24),
+      energy,
       change: spectralFlux,
-      pulse: clamp01(
-        beat * 0.72 +
-          Math.max(onsets.low * 0.32, onsets.mid * 0.42, onsets.high * 0.5) +
-          spectralFlux * 0.22,
+      pulse,
+      excitation: clamp01(energy * 0.48 + pulse * 0.38 + strongestPeakEnergy * 0.34),
+      topology: clamp01(
+        tonalStructure * 0.46 +
+          frame.chroma.confidence * 0.2 +
+          strongestPeak * 0.18 +
+          strongestPeakEnergy * 0.22,
       ),
       beat,
       beatConfidence,
@@ -270,6 +293,7 @@ export function findSpectralPeaks({
       bin,
       frequency,
       amplitude: clamp01(magnitude / maxMagnitude),
+      energy: clamp01(magnitude * 120),
       band: getBandForFrequency(frequency),
       pitchClass: frequencyToPitchClass(frequency),
       harmonicWeight: 0,

@@ -8,6 +8,7 @@ import {
   EMPTY_CHROMA_PROFILE,
   EMPTY_FEATURE_SIGNALS,
 } from "./featureAnalysis.ts";
+import type { SphericalMode } from "./sphericalModes.ts";
 
 export const MAX_CHLADNI_MODES = 12;
 export const MAX_MODAL_MODES = MAX_CHLADNI_MODES;
@@ -35,8 +36,10 @@ export const EMPTY_BANDS: Record<FrequencyBand, number> = {
 
 export type ChladniMode = {
   mode: [number, number];
+  sphericalMode: SphericalMode;
   frequency: number;
   amplitude: number;
+  topology: number;
   phase: number;
   coherence: number;
   frequencyNorm: number;
@@ -44,6 +47,7 @@ export type ChladniMode = {
   color: [number, number, number];
   colorWeight: number;
   driver: number;
+  excitation: number;
   pulse: number;
   layer: number;
 };
@@ -65,12 +69,16 @@ export type ModalFieldFrame = {
     backboneCount: number;
     detailCount: number;
     peakSummary: string;
+    topologyFrequency: number;
+    topologyMode: string;
+    excitation: number;
   };
 };
 
 export type ModalAtlasEntry = {
   key: string;
   mode: [number, number];
+  sphericalMode: SphericalMode;
   naturalFrequency: number;
   frequencyNorm: number;
   band: FrequencyBand;
@@ -78,16 +86,19 @@ export type ModalAtlasEntry = {
 
 export type ModalState = ModalAtlasEntry & {
   amplitude: number;
+  topology: number;
   phase: number;
   coherence: number;
   lastDrive: number;
   driver: number;
+  excitation: number;
   pulse: number;
   layer: number;
 };
 
 export type ModeDriver = {
   strength: number;
+  topology: number;
   pulse: number;
   layer: number;
   frequency: number;
@@ -97,6 +108,8 @@ export type ModeDriver = {
 export type PersistentDriver = {
   strength: number;
   targetStrength: number;
+  topology: number;
+  targetTopology: number;
   pulse: number;
   layer: number;
   frequency: number;
@@ -119,5 +132,8 @@ export const EMPTY_MODAL_FIELD_FRAME: ModalFieldFrame = {
     backboneCount: 0,
     detailCount: 0,
     peakSummary: "none",
+    topologyFrequency: 0,
+    topologyMode: "none",
+    excitation: 0,
   },
 };

@@ -2,6 +2,7 @@ export type FrequencyBand = "low" | "mid" | "high";
 export type ProjectionMode = "screen" | "sphere";
 export type BoundaryMode = "freePlate" | "dirichlet" | "neumann";
 export type ColorMode = "chromesthesia" | "mono" | "bandSplit" | "thermalPhase";
+export type SphereFieldMode = "surface" | "volume";
 export type SphereProjectionType = "uv" | "triplanar";
 export type ScreenAspectMode = "circle" | "fit";
 export type IdleMode = "ambient";
@@ -11,6 +12,7 @@ export type DriveMode = "audio" | "manual" | "live";
 export type SpectralPeak = {
   frequency: number;
   amplitude: number;
+  energy: number;
   bin: number;
   band: FrequencyBand;
   pitchClass: number;
@@ -29,6 +31,8 @@ export type AudioFeatureSignals = {
   energy: number;
   change: number;
   pulse: number;
+  excitation: number;
+  topology: number;
   beat: number;
   beatConfidence: number;
   harmonicity: number;
@@ -58,6 +62,7 @@ export type CymaticSettings = {
   projectionMode: ProjectionMode;
   boundaryMode: BoundaryMode;
   colorMode: ColorMode;
+  sphereFieldMode: SphereFieldMode;
   sphereProjectionType: SphereProjectionType;
   screenAspectMode: ScreenAspectMode;
   idleMode: IdleMode;
@@ -87,6 +92,10 @@ export type CymaticSettings = {
   chromesthesiaMix: number;
   sphereRadius: number;
   sphereSurfaceOpacity: number;
+  sphereRaymarchSteps: number;
+  sphereAbsorption: number;
+  sphereShellBias: number;
+  sphereInteriorGlow: number;
   sphereBackgroundTransparent: boolean;
   postProcessingEnabled: boolean;
   postEffectOrder: PostEffectId[];
