@@ -1,6 +1,14 @@
-import type { AudioAnalysis, AudioFeatureFrame, CymaticSettings, FrequencyBand } from "../types";
+import type {
+  AudioAnalysis,
+  AudioFeatureFrame,
+  CymaticSettings,
+  FrequencyBand,
+} from "../types.ts";
 import { ChladniPatternStabilizer } from "./chladniStability.ts";
-import { createAmbientModalFieldFrame, createManualFeatureFrame } from "./fieldSources.ts";
+import {
+  createAmbientModalFieldFrame,
+  createManualFeatureFrame,
+} from "./fieldSources.ts";
 import {
   addModeDriver,
   getDominantPatternDriver,
@@ -50,11 +58,7 @@ export {
   createManualFeatureFrame,
 };
 
-export type {
-  ChladniMode,
-  ModalFieldFrame,
-  ModalSlot,
-} from "./modalTypes.ts";
+export type { ChladniMode, ModalFieldFrame, ModalSlot } from "./modalTypes.ts";
 
 export class ModalFieldEngine {
   private analysis: AudioAnalysis | null = null;
@@ -64,8 +68,12 @@ export class ModalFieldEngine {
   private smoothedRms = 0;
   private smoothedCentroid = 0;
   private smoothedFlux = 0;
-  private readonly smoothedBands: Record<FrequencyBand, number> = { ...EMPTY_BANDS };
-  private readonly smoothedOnsets: Record<FrequencyBand, number> = { ...EMPTY_BANDS };
+  private readonly smoothedBands: Record<FrequencyBand, number> = {
+    ...EMPTY_BANDS,
+  };
+  private readonly smoothedOnsets: Record<FrequencyBand, number> = {
+    ...EMPTY_BANDS,
+  };
   private readonly persistentDrivers = new Map<string, PersistentDriver>();
   private readonly patternStabilizer = new ChladniPatternStabilizer();
   private displayModeKeys: string[] = [];
@@ -115,7 +123,7 @@ export class ModalFieldEngine {
     }
 
     const previousFrame =
-      settings.driveMode === "manual" ? frame : this.previousFrame ?? frame;
+      settings.driveMode === "manual" ? frame : (this.previousFrame ?? frame);
     const flux = Math.max(
       0,
       frame.bands.low -
@@ -126,7 +134,13 @@ export class ModalFieldEngine {
         previousFrame.bands.high,
     );
 
-    this.smoothedRms = smoothAudioValue(this.smoothedRms, frame.rms, safeDelta, 18, 5);
+    this.smoothedRms = smoothAudioValue(
+      this.smoothedRms,
+      frame.rms,
+      safeDelta,
+      18,
+      5,
+    );
     this.smoothedCentroid = smoothAudioValue(
       this.smoothedCentroid,
       frame.centroid,
@@ -200,8 +214,12 @@ export class ModalFieldEngine {
       signals: frame.signals,
       debug: {
         activeModeCount: modeDrivers.size,
-        backboneCount: Array.from(modeDrivers.values()).filter((driver) => driver.layer < 0.5).length,
-        detailCount: Array.from(modeDrivers.values()).filter((driver) => driver.layer >= 0.5).length,
+        backboneCount: Array.from(modeDrivers.values()).filter(
+          (driver) => driver.layer < 0.5,
+        ).length,
+        detailCount: Array.from(modeDrivers.values()).filter(
+          (driver) => driver.layer >= 0.5,
+        ).length,
         peakSummary: formatPeakSummary(frame.peaks),
       },
     };
@@ -218,8 +236,12 @@ export class ModalFieldEngine {
       return rawDrivers;
     }
 
-    const targets =
-      this.resolveAudioPatternTargets(rawDrivers, frame, settings, time);
+    const targets = this.resolveAudioPatternTargets(
+      rawDrivers,
+      frame,
+      settings,
+      time,
+    );
 
     updatePersistentDrivers({
       persistentDrivers: this.persistentDrivers,
@@ -292,7 +314,9 @@ export class ModalFieldEngine {
     const basePulse = clamp01(
       frame.signals.pulse * 0.32 +
         this.smoothedFlux * 0.18 +
-        (this.smoothedOnsets.low + this.smoothedOnsets.mid + this.smoothedOnsets.high) *
+        (this.smoothedOnsets.low +
+          this.smoothedOnsets.mid +
+          this.smoothedOnsets.high) *
           0.08,
     );
     const baseStrength =

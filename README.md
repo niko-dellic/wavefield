@@ -25,7 +25,7 @@ npm run preview
 
 ## Sample Audio
 
-Wavefield imports sample MP3 files from `web/src/fixtures/audio/` so Vite can
+Wavefield imports sample MP3 files from `src/fixtures/audio/` so Vite can
 include them in the build asset graph. The in-app fixture buttons use those
 bundled URLs in development, production builds, and preview mode.
 

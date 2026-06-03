@@ -1,4 +1,8 @@
-import type { AudioFeatureFrame, CymaticSettings, FrequencyBand } from "../types";
+import type {
+  AudioFeatureFrame,
+  CymaticSettings,
+  FrequencyBand,
+} from "../types.ts";
 import { DISPLAY_MODE_INDEXES, MODAL_ATLAS } from "./modalAtlas.ts";
 import {
   clamp01,
@@ -69,7 +73,10 @@ export function updateModalStates({
     const layer = driver?.layer ?? 1;
     const frequencyAffinity = driver
       ? getFrequencyAffinity(mode.naturalFrequency, driver.frequency)
-      : getFrequencyAffinity(mode.naturalFrequency, frequencyFromCentroid(frame.centroid)) * 0.18;
+      : getFrequencyAffinity(
+          mode.naturalFrequency,
+          frequencyFromCentroid(frame.centroid),
+        ) * 0.18;
     const localPulse = clamp01(
       driverPulse * 0.76 +
         frame.signals.pulse * (0.18 + hashMode(mode.mode) * 0.16) +
@@ -108,7 +115,13 @@ export function updateModalStates({
     );
 
     mode.amplitude = clamp01(nextAmplitude);
-    mode.driver = smoothAudioValue(mode.driver, driverStrength, safeDelta, 20, 4);
+    mode.driver = smoothAudioValue(
+      mode.driver,
+      driverStrength,
+      safeDelta,
+      20,
+      4,
+    );
     mode.pulse = smoothAudioValue(mode.pulse, localPulse, safeDelta, 30, 7);
     mode.layer = layer;
     mode.coherence +=
@@ -151,7 +164,10 @@ export function selectDisplayModes({
       if (Math.abs(layerDelta) > 0.001) {
         return layerDelta;
       }
-      if (Math.abs(left.mode.naturalFrequency - right.mode.naturalFrequency) > 0.0001) {
+      if (
+        Math.abs(left.mode.naturalFrequency - right.mode.naturalFrequency) >
+        0.0001
+      ) {
         return left.mode.naturalFrequency - right.mode.naturalFrequency;
       }
       return right.score - left.score;
@@ -161,8 +177,9 @@ export function selectDisplayModes({
   );
   const selected = displayModeKeys
     .map((key) => activeByKey.get(key))
-    .filter((entry): entry is { mode: ModalState; index: number; score: number } =>
-      Boolean(entry),
+    .filter(
+      (entry): entry is { mode: ModalState; index: number; score: number } =>
+        Boolean(entry),
     )
     .slice(0, count)
     .map((entry) => entry.mode);
@@ -206,9 +223,7 @@ export function createModalSlots(
     band: mode.band,
     color: createModeColor(mode.naturalFrequency, mode.band, frame.chroma),
     colorWeight: clamp01(
-      mode.amplitude * 0.46 +
-        mode.coherence * 0.3 +
-        mode.driver * 0.24,
+      mode.amplitude * 0.46 + mode.coherence * 0.3 + mode.driver * 0.24,
     ),
     driver: mode.driver,
     pulse: mode.pulse,

@@ -1,4 +1,4 @@
-import type { AudioFeatureFrame, CymaticSettings } from "../types";
+import type { AudioFeatureFrame, CymaticSettings } from "../types.ts";
 import { getManualFrequency } from "./fieldSources.ts";
 import {
   getAtlasModeByKey,
@@ -62,14 +62,19 @@ export function resolveModeDrivers(
       const familyCount = harmonicIndex === 0 && peakIndex < 3 ? 2 : 1;
       const layer = harmonicIndex === 0 && peakIndex < 3 ? 0 : 1;
       const primaryMode = getAtlasModeForFrequency(targetFrequency);
-      const candidates = [primaryMode, ...getNearestAtlasModes(targetFrequency, familyCount + 2)]
-        .filter(
-          (mode, index, modes) =>
-            modes.findIndex((candidate) => candidate.key === mode.key) === index,
-        );
+      const candidates = [
+        primaryMode,
+        ...getNearestAtlasModes(targetFrequency, familyCount + 2),
+      ].filter(
+        (mode, index, modes) =>
+          modes.findIndex((candidate) => candidate.key === mode.key) === index,
+      );
 
       candidates.slice(0, familyCount).forEach((mode, familyIndex) => {
-        const affinity = getFrequencyAffinity(mode.naturalFrequency, targetFrequency);
+        const affinity = getFrequencyAffinity(
+          mode.naturalFrequency,
+          targetFrequency,
+        );
         const familyWeight = familyIndex === 0 ? 1 : 0.72;
         const strength =
           peak.amplitude *
@@ -130,8 +135,14 @@ export function addModeDriver(
 
   existing.strength = clamp01(existing.strength + driver.strength * 0.72);
   existing.pulse = Math.max(existing.pulse, driver.pulse);
-  existing.harmonicWeight = Math.max(existing.harmonicWeight, driver.harmonicWeight);
-  if (driver.layer < existing.layer || driver.strength > existing.strength * 0.9) {
+  existing.harmonicWeight = Math.max(
+    existing.harmonicWeight,
+    driver.harmonicWeight,
+  );
+  if (
+    driver.layer < existing.layer ||
+    driver.strength > existing.strength * 0.9
+  ) {
     existing.layer = driver.layer;
     existing.frequency = driver.frequency;
   }
@@ -141,12 +152,10 @@ export function getDominantPatternDriver(
   drivers: Map<string, ModeDriver>,
   frame: AudioFeatureFrame,
 ) {
-  let best:
-    | {
-        frequency: number;
-        confidence: number;
-      }
-    | null = null;
+  let best: {
+    frequency: number;
+    confidence: number;
+  } | null = null;
 
   for (const driver of drivers.values()) {
     if (driver.layer > 0.5) {
@@ -198,7 +207,9 @@ export function updatePersistentDrivers({
 }) {
   const morphSeconds = Math.max(0.05, settings.morphSeconds);
   const morphAlpha = 1 - Math.exp(-deltaSeconds / morphSeconds);
-  const pulseDecay = Math.exp(-deltaSeconds / Math.max(0.08, morphSeconds * 0.42));
+  const pulseDecay = Math.exp(
+    -deltaSeconds / Math.max(0.08, morphSeconds * 0.42),
+  );
 
   for (const driver of persistentDrivers.values()) {
     driver.targetStrength = 0;

@@ -3,8 +3,11 @@ import type {
   ChromaProfile,
   FrequencyBand,
   SpectralPeak,
-} from "../types";
-import { EMPTY_CHROMA_PROFILE, EMPTY_FEATURE_SIGNALS } from "./featureAnalysis.ts";
+} from "../types.ts";
+import {
+  EMPTY_CHROMA_PROFILE,
+  EMPTY_FEATURE_SIGNALS,
+} from "./featureAnalysis.ts";
 
 export const MAX_CHLADNI_MODES = 12;
 export const MAX_MODAL_MODES = MAX_CHLADNI_MODES;

@@ -1,5 +1,12 @@
-import type { AudioFeatureFrame, CymaticSettings, FrequencyBand } from "../types";
-import { EMPTY_CHROMA_PROFILE, EMPTY_FEATURE_SIGNALS } from "./featureAnalysis.ts";
+import type {
+  AudioFeatureFrame,
+  CymaticSettings,
+  FrequencyBand,
+} from "../types.ts";
+import {
+  EMPTY_CHROMA_PROFILE,
+  EMPTY_FEATURE_SIGNALS,
+} from "./featureAnalysis.ts";
 import { MODAL_ATLAS } from "./modalAtlas.ts";
 import {
   clamp,
@@ -26,8 +33,14 @@ export function createAmbientModalFieldFrame(time: number): ModalFieldFrame {
   };
   const modes = MODAL_ATLAS.slice(4, 4 + MAX_MODAL_MODES).map((mode, index) => {
     const bandBias =
-      mode.band === "low" ? bands.low : mode.band === "mid" ? bands.mid : bands.high;
-    const wave = 0.5 + 0.5 * Math.sin(time * (0.08 + mode.frequencyNorm * 0.18) + index * 0.73);
+      mode.band === "low"
+        ? bands.low
+        : mode.band === "mid"
+          ? bands.mid
+          : bands.high;
+    const wave =
+      0.5 +
+      0.5 * Math.sin(time * (0.08 + mode.frequencyNorm * 0.18) + index * 0.73);
 
     return {
       mode: mode.mode,
@@ -124,11 +137,16 @@ export function createManualFeatureFrame(
 }
 
 export function getManualFrequency(settings: CymaticSettings, time: number) {
-  const baseFrequency = clamp(settings.testFrequency, MIN_FREQUENCY, MAX_FREQUENCY);
+  const baseFrequency = clamp(
+    settings.testFrequency,
+    MIN_FREQUENCY,
+    MAX_FREQUENCY,
+  );
   if (!settings.frequencySweep) {
     return baseFrequency;
   }
 
-  const sweep = 0.5 + 0.5 * Math.sin(time * Math.PI * 2 * settings.frequencySweepRate);
+  const sweep =
+    0.5 + 0.5 * Math.sin(time * Math.PI * 2 * settings.frequencySweepRate);
   return MIN_FREQUENCY * Math.pow(MAX_FREQUENCY / MIN_FREQUENCY, sweep);
 }
