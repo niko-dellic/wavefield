@@ -278,6 +278,10 @@ select {
   display: none;
 }
 
+.mobile-drive-host {
+  display: none;
+}
+
 .settings-panel-header h2 {
   flex: 1;
   margin: 0;
@@ -837,6 +841,35 @@ select {
     padding-right: calc(10px + env(safe-area-inset-right));
     padding-left: calc(12px + env(safe-area-inset-left));
     border-bottom: 1px solid rgb(255 255 255 / 10%);
+  }
+
+  .mobile-drive-host {
+    display: block;
+    padding: 10px calc(10px + env(safe-area-inset-right)) 10px
+      calc(10px + env(safe-area-inset-left));
+    border-bottom: 1px solid rgb(255 255 255 / 10%);
+  }
+
+  .mobile-drive-host .drive-pane {
+    width: 100%;
+    background: rgb(255 255 255 / 4%);
+    backdrop-filter: none;
+  }
+
+  .mobile-drive-host .drive-pane-body {
+    position: static;
+    width: 100%;
+    border: 0;
+    border-top: 1px solid rgb(255 255 255 / 10%);
+    border-radius: 0 0 8px 8px;
+    background: transparent;
+    box-shadow: none;
+    backdrop-filter: none;
+  }
+
+  .mobile-drive-host .source-menu {
+    top: calc(100% + 8px);
+    bottom: auto;
   }
 
   .pane-host {
