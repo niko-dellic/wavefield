@@ -10,8 +10,17 @@ import {
 import { decodeAndAnalyzeAudio } from "./audio/analyze";
 import { DEFAULT_SETTINGS } from "./config/settings";
 import { createControls, type ControlsManager } from "./ui/controls";
-import { ModalFieldRenderer } from "./webgl/ModalFieldRenderer";
+import {
+  ModalFieldRenderer,
+  type ScreenViewTransform,
+} from "./webgl/ModalFieldRenderer";
 import type { AudioAnalysis, CymaticSettings } from "./types";
+
+const SCREEN_VIEW_MIN_SCALE = 0.25;
+const SCREEN_VIEW_MAX_SCALE = 16;
+const SCREEN_WHEEL_ZOOM_SPEED = 0.0015;
+const SCREEN_PAN_DAMPING = 10;
+const SCREEN_ZOOM_DAMPING = 14;
 
 const FIXTURES = Object.entries(
   import.meta.glob<string>("./fixtures/audio/*.mp3", {
@@ -50,6 +59,19 @@ export class WavefieldApp {
   private fieldSettingsKey = "";
   private lastAudibleVolume = 1;
   private lastModalFieldFrame: ModalFieldFrame = EMPTY_MODAL_FIELD_FRAME;
+  private readonly screenView: ScreenViewTransform = {
+    scale: 1,
+    offsetX: 0,
+    offsetY: 0,
+  };
+  private readonly screenViewTarget: ScreenViewTransform = {
+    scale: 1,
+    offsetX: 0,
+    offsetY: 0,
+  };
+  private screenPanPointerId: number | null = null;
+  private screenPanButtonMask = 0;
+  private lastScreenPanPoint: PlatePoint | null = null;
 
   constructor(private readonly root: HTMLElement) {
     this.root.innerHTML = this.renderShell();
@@ -104,6 +126,12 @@ export class WavefieldApp {
 
   dispose() {
     cancelAnimationFrame(this.animationFrame);
+    this.canvas.removeEventListener("wheel", this.handleCanvasWheel);
+    this.canvas.removeEventListener("pointerdown", this.handleCanvasPointerDown);
+    this.canvas.removeEventListener("pointermove", this.handleCanvasPointerMove);
+    this.canvas.removeEventListener("pointerup", this.handleCanvasPointerUp);
+    this.canvas.removeEventListener("pointercancel", this.handleCanvasPointerUp);
+    this.canvas.removeEventListener("contextmenu", this.handleCanvasContextMenu);
     document.removeEventListener("keydown", this.handleKeyDown);
     this.controls.dispose();
     this.modalRenderer.dispose();
@@ -214,6 +242,15 @@ export class WavefieldApp {
     this.volumeSlider.addEventListener("input", () => {
       this.setVolume(Number(this.volumeSlider.value));
     });
+
+    this.canvas.addEventListener("wheel", this.handleCanvasWheel, {
+      passive: false,
+    });
+    this.canvas.addEventListener("pointerdown", this.handleCanvasPointerDown);
+    this.canvas.addEventListener("pointermove", this.handleCanvasPointerMove);
+    this.canvas.addEventListener("pointerup", this.handleCanvasPointerUp);
+    this.canvas.addEventListener("pointercancel", this.handleCanvasPointerUp);
+    this.canvas.addEventListener("contextmenu", this.handleCanvasContextMenu);
 
     document.addEventListener("keydown", this.handleKeyDown);
 
@@ -417,10 +454,12 @@ export class WavefieldApp {
       }
     }
 
+    this.updateScreenViewDamping(deltaSeconds);
     this.modalRenderer.render(
       this.renderer,
       fieldFrame,
       this.settings,
+      this.screenView,
       renderDeltaSeconds,
       isIdlePreview,
     );
@@ -493,6 +532,131 @@ export class WavefieldApp {
     }
     this.wavesurfer.setMuted(isMuted);
     this.syncVolumeControl();
+  }
+
+  private handleCanvasWheel = (event: WheelEvent) => {
+    if (this.settings.projectionMode !== "screen") {
+      return;
+    }
+
+    event.preventDefault();
+    const anchor = this.getTransformedPlatePoint(event.clientX, event.clientY);
+    const deltaY = normalizeWheelDelta(event);
+    const nextScale = clamp(
+      this.screenViewTarget.scale * Math.exp(-deltaY * SCREEN_WHEEL_ZOOM_SPEED),
+      SCREEN_VIEW_MIN_SCALE,
+      SCREEN_VIEW_MAX_SCALE,
+    );
+    if (nextScale === this.screenViewTarget.scale) {
+      return;
+    }
+
+    const platePoint = this.getPlatePoint(event.clientX, event.clientY);
+    this.screenViewTarget.scale = nextScale;
+    this.screenViewTarget.offsetX =
+      anchor.x - ((platePoint.x - 0.5) / nextScale + 0.5);
+    this.screenViewTarget.offsetY =
+      anchor.y - ((platePoint.y - 0.5) / nextScale + 0.5);
+  };
+
+  private handleCanvasPointerDown = (event: PointerEvent) => {
+    if (
+      this.settings.projectionMode !== "screen" ||
+      (event.button !== 0 && event.button !== 2)
+    ) {
+      return;
+    }
+
+    event.preventDefault();
+    this.screenPanPointerId = event.pointerId;
+    this.screenPanButtonMask = event.button === 2 ? 2 : 1;
+    this.lastScreenPanPoint = this.getPlatePoint(event.clientX, event.clientY);
+    this.canvas.classList.add("is-panning-screen");
+    this.canvas.setPointerCapture(event.pointerId);
+  };
+
+  private handleCanvasPointerMove = (event: PointerEvent) => {
+    if (
+      this.settings.projectionMode !== "screen" ||
+      this.screenPanPointerId !== event.pointerId ||
+      !this.lastScreenPanPoint ||
+      (event.buttons & this.screenPanButtonMask) === 0
+    ) {
+      return;
+    }
+
+    event.preventDefault();
+    const nextPoint = this.getPlatePoint(event.clientX, event.clientY);
+    this.screenViewTarget.offsetX -=
+      (nextPoint.x - this.lastScreenPanPoint.x) / this.screenViewTarget.scale;
+    this.screenViewTarget.offsetY -=
+      (nextPoint.y - this.lastScreenPanPoint.y) / this.screenViewTarget.scale;
+    this.lastScreenPanPoint = nextPoint;
+  };
+
+  private handleCanvasPointerUp = (event: PointerEvent) => {
+    if (this.screenPanPointerId !== event.pointerId) {
+      return;
+    }
+
+    this.screenPanPointerId = null;
+    this.screenPanButtonMask = 0;
+    this.lastScreenPanPoint = null;
+    this.canvas.classList.remove("is-panning-screen");
+    if (this.canvas.hasPointerCapture(event.pointerId)) {
+      this.canvas.releasePointerCapture(event.pointerId);
+    }
+  };
+
+  private handleCanvasContextMenu = (event: MouseEvent) => {
+    if (this.settings.projectionMode === "screen") {
+      event.preventDefault();
+    }
+  };
+
+  private getTransformedPlatePoint(clientX: number, clientY: number): PlatePoint {
+    const platePoint = this.getPlatePoint(clientX, clientY);
+    return {
+      x: (platePoint.x - 0.5) / this.screenView.scale + 0.5 + this.screenView.offsetX,
+      y: (platePoint.y - 0.5) / this.screenView.scale + 0.5 + this.screenView.offsetY,
+    };
+  }
+
+  private updateScreenViewDamping(deltaSeconds: number) {
+    if (this.settings.projectionMode !== "screen") {
+      this.screenView.scale = this.screenViewTarget.scale;
+      this.screenView.offsetX = this.screenViewTarget.offsetX;
+      this.screenView.offsetY = this.screenViewTarget.offsetY;
+      return;
+    }
+
+    const safeDeltaSeconds = Math.max(0, deltaSeconds);
+    const panBlend = 1 - Math.exp(-SCREEN_PAN_DAMPING * safeDeltaSeconds);
+    const zoomBlend = 1 - Math.exp(-SCREEN_ZOOM_DAMPING * safeDeltaSeconds);
+    this.screenView.scale +=
+      (this.screenViewTarget.scale - this.screenView.scale) * zoomBlend;
+    this.screenView.offsetX +=
+      (this.screenViewTarget.offsetX - this.screenView.offsetX) * panBlend;
+    this.screenView.offsetY +=
+      (this.screenViewTarget.offsetY - this.screenView.offsetY) * panBlend;
+  }
+
+  private getPlatePoint(clientX: number, clientY: number): PlatePoint {
+    const rect = this.canvas.getBoundingClientRect();
+    const width = Math.max(1, rect.width);
+    const height = Math.max(1, rect.height);
+    const uvX = (clientX - rect.left) / width;
+    const uvY = 1 - (clientY - rect.top) / height;
+
+    if (this.settings.screenAspectMode === "circle") {
+      const aspect = width / height;
+      return {
+        x: (uvX - 0.5) * aspect + 0.5,
+        y: uvY,
+      };
+    }
+
+    return { x: uvX, y: uvY };
   }
 
   private syncVolumeControl() {
@@ -583,6 +747,22 @@ function formatSignal(value: number) {
   return Math.round(value * 100).toString().padStart(2, "0");
 }
 
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function normalizeWheelDelta(event: WheelEvent) {
+  if (event.deltaMode === event.DOM_DELTA_LINE) {
+    return event.deltaY * 16;
+  }
+
+  if (event.deltaMode === event.DOM_DELTA_PAGE) {
+    return event.deltaY * window.innerHeight;
+  }
+
+  return event.deltaY;
+}
+
 function getFirstMeaningfulFrameTime(analysis: AudioAnalysis) {
   return (
     analysis.frames.find(
@@ -612,3 +792,8 @@ function isEditableKeyboardTarget(target: EventTarget | null) {
     target.closest("input, select, textarea, [contenteditable=''], [contenteditable='true']"),
   );
 }
+
+type PlatePoint = {
+  x: number;
+  y: number;
+};

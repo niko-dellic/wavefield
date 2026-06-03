@@ -43,6 +43,13 @@ const SPHERE_PROJECTION_TYPE_INDEX: Record<SphereProjectionType, number> = {
   uv: 1,
 };
 
+const SPHERE_ROTATION_DAMPING_FACTOR = 0.012;
+const SPHERE_ZOOM_DAMPING_FACTOR = 1;
+
+type TrackballControlsWithInternals = TrackballControls & {
+  _zoomCamera: () => void;
+};
+
 const VERTEX_SHADER = `
   varying vec2 vUv;
   varying vec3 vWorldNormal;
@@ -66,6 +73,8 @@ const FRAGMENT_SHADER = `
   uniform int uProjectionMode;
   uniform int uSphereProjectionType;
   uniform int uScreenAspectMode;
+  uniform vec2 uScreenViewOffset;
+  uniform float uScreenViewScale;
   uniform vec4 uModeSlots[MAX_MODAL_MODES];
   uniform vec4 uModeMeta[MAX_MODAL_MODES];
   uniform vec4 uModeColors[MAX_MODAL_MODES];
@@ -149,6 +158,11 @@ const FRAGMENT_SHADER = `
     return uv;
   }
 
+  vec2 screenFieldUv(vec2 uv) {
+    vec2 p = plateUvFromScreen(uv);
+    return (p - 0.5) / max(0.0001, uScreenViewScale) + 0.5 + uScreenViewOffset;
+  }
+
   float chladniValue(float m, float n, vec2 p) {
     if (uBoundaryMode == 1) {
       return sin(m * PI * p.x) * sin(n * PI * p.y);
@@ -207,7 +221,7 @@ const FRAGMENT_SHADER = `
       0.0,
       3.0
     );
-    vec2 p = plateUvFromScreen(uv);
+    vec2 p = uProjectionMode == 0 ? screenFieldUv(uv) : plateUvFromScreen(uv);
     vec2 drift = vec2(
       uTime * (0.013 + uDrift * 0.034 + spectrumShape * 0.012),
       -uTime * (0.011 + uDrift * 0.026 + spectrumShape * 0.009)
@@ -318,7 +332,7 @@ const FRAGMENT_SHADER = `
         return;
       }
 
-      vec2 p = plateUvFromScreen(vUv);
+      vec2 p = screenFieldUv(vUv);
       float idleField = chladniValue(3.0, 5.0, p);
       float idleLine = 1.0 - smoothstep(0.008, 0.026, abs(idleField));
       gl_FragColor = vec4(vec3(0.08, 0.16, 0.2) * idleLine * 0.22, 1.0);
@@ -398,6 +412,12 @@ const FRAGMENT_SHADER = `
   }
 `;
 
+export type ScreenViewTransform = {
+  scale: number;
+  offsetX: number;
+  offsetY: number;
+};
+
 export class ModalFieldRenderer {
   private readonly scene = new THREE.Scene();
   private readonly opaqueBackground = new THREE.Color(0x000000);
@@ -433,6 +453,8 @@ export class ModalFieldRenderer {
       uProjectionMode: { value: PROJECTION_MODE_INDEX.screen },
       uSphereProjectionType: { value: SPHERE_PROJECTION_TYPE_INDEX.triplanar },
       uScreenAspectMode: { value: 0 },
+      uScreenViewOffset: { value: new THREE.Vector2() },
+      uScreenViewScale: { value: 1 },
       uModeSlots: { value: this.modeSlotUniforms },
       uModeMeta: { value: this.modeMetaUniforms },
       uModeColors: { value: this.modeColorUniforms },
@@ -515,11 +537,12 @@ export class ModalFieldRenderer {
     renderer: THREE.WebGLRenderer,
     fieldFrame: ModalFieldFrame,
     settings: CymaticSettings,
+    screenView: ScreenViewTransform,
     deltaSeconds: number,
     isIdlePreview = false,
   ) {
     this.elapsedSeconds += Math.max(0, deltaSeconds);
-    this.updateUniforms(fieldFrame, settings, isIdlePreview);
+    this.updateUniforms(fieldFrame, settings, screenView, isIdlePreview);
     this.ensureControls(renderer);
 
     const isSphere = settings.projectionMode === "sphere";
@@ -587,11 +610,13 @@ export class ModalFieldRenderer {
       return;
     }
 
-    this.controls = new TrackballControls(this.sphereCamera, renderer.domElement);
-    this.controls.dynamicDampingFactor = 0.012;
-    this.controls.noPan = true;
-    this.controls.handleResize();
-    this.controls.enabled = false;
+    const controls = new TrackballControls(this.sphereCamera, renderer.domElement);
+    controls.dynamicDampingFactor = SPHERE_ROTATION_DAMPING_FACTOR;
+    useImmediateZoomDamping(controls);
+    controls.noPan = true;
+    controls.handleResize();
+    controls.enabled = false;
+    this.controls = controls;
   }
 
   private ensureComposer(renderer: THREE.WebGLRenderer, camera: THREE.Camera) {
@@ -706,6 +731,7 @@ export class ModalFieldRenderer {
   private updateUniforms(
     fieldFrame: ModalFieldFrame,
     settings: CymaticSettings,
+    screenView: ScreenViewTransform,
     isIdlePreview: boolean,
   ) {
     const modes = fieldFrame.modes.slice(0, MAX_MODAL_MODES);
@@ -755,6 +781,11 @@ export class ModalFieldRenderer {
       SPHERE_PROJECTION_TYPE_INDEX[settings.sphereProjectionType];
     this.material.uniforms.uScreenAspectMode.value =
       settings.screenAspectMode === "circle" ? 0 : 1;
+    this.material.uniforms.uScreenViewOffset.value.set(
+      screenView.offsetX,
+      screenView.offsetY,
+    );
+    this.material.uniforms.uScreenViewScale.value = screenView.scale;
     this.material.uniforms.uDensity.value = settings.cymaticDensity;
     this.material.uniforms.uHarmonicMix.value = settings.cymaticHarmonicMix;
     this.material.uniforms.uNodeWidth.value = settings.cymaticNodeWidth;
@@ -807,4 +838,16 @@ function getBandIndex(band: string) {
   }
 
   return 2;
+}
+
+function useImmediateZoomDamping(controls: TrackballControls) {
+  const controlsWithInternals = controls as TrackballControlsWithInternals;
+  const zoomCamera = controlsWithInternals._zoomCamera.bind(controls);
+
+  controlsWithInternals._zoomCamera = () => {
+    const rotationDampingFactor = controls.dynamicDampingFactor;
+    controls.dynamicDampingFactor = SPHERE_ZOOM_DAMPING_FACTOR;
+    zoomCamera();
+    controls.dynamicDampingFactor = rotationDampingFactor;
+  };
 }
