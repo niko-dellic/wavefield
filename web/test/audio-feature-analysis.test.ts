@@ -8,8 +8,12 @@ import {
   findSpectralPeaks,
   type RawAudioFeatureFrame,
 } from "../src/audio/featureAnalysis.ts";
+import { createManualFeatureFrame } from "../src/audio/fieldSources.ts";
 import { mapFrequencyToChladniMode } from "../src/audio/chladniModes.ts";
 import { ChladniPatternStabilizer } from "../src/audio/chladniStability.ts";
+import { ModalFieldEngine } from "../src/audio/ModalField.ts";
+import { DEFAULT_SETTINGS } from "../src/config/settings.ts";
+import type { CymaticSettings } from "../src/types.ts";
 
 const SAMPLE_RATE = 48_000;
 const FFT_SIZE = 1024;
@@ -128,6 +132,78 @@ test("chladni frequency mapping clamps extreme frequencies", () => {
   assert.ok(high.n <= 28);
 });
 
+test("manual feature frames synthesize one isolated Chladni source", () => {
+  const settings = createManualSettings({ testFrequency: 220 });
+  const frame = createManualFeatureFrame(settings, 0);
+
+  assert.equal(frame.peaks.length, 1);
+  assert.equal(frame.peaks[0].frequency, 220);
+  assert.equal(frame.peaks[0].band, "low");
+  assert.equal(frame.chroma.confidence, 1);
+  assert.equal(frame.signals.beat, 0);
+  assert.equal(frame.signals.beatConfidence, 0);
+});
+
+test("manual feature frames change source when test frequency changes", () => {
+  const lowFrame = createManualFeatureFrame(
+    createManualSettings({ testFrequency: 220 }),
+    0,
+  );
+  const highFrame = createManualFeatureFrame(
+    createManualSettings({ testFrequency: 880 }),
+    0,
+  );
+
+  assert.notEqual(lowFrame.peaks[0].frequency, highFrame.peaks[0].frequency);
+  assert.notDeepEqual(
+    mapFrequencyToChladniMode(lowFrame.peaks[0].frequency),
+    mapFrequencyToChladniMode(highFrame.peaks[0].frequency),
+  );
+});
+
+test("manual modal engine updates without audio analysis", () => {
+  const engine = new ModalFieldEngine();
+  const frame = engine.update(
+    0,
+    createManualSettings({ testFrequency: 220 }),
+    1 / 60,
+  );
+
+  assert.ok(frame.modes.length > 0);
+  assert.equal(frame.peaks[0].frequency, 220);
+});
+
+test("manual modal engine frequency reset produces a different mode set", () => {
+  const engine = new ModalFieldEngine();
+  const low = engine.update(
+    0,
+    createManualSettings({ testFrequency: 220 }),
+    1 / 60,
+  );
+  engine.reset(0);
+  const high = engine.update(
+    0,
+    createManualSettings({ testFrequency: 880 }),
+    1 / 60,
+  );
+
+  assert.notDeepEqual(
+    low.modes.map((mode) => mode.mode),
+    high.modes.map((mode) => mode.mode),
+  );
+});
+
+test("audio modal engine stays empty without analysis", () => {
+  const engine = new ModalFieldEngine();
+  const frame = engine.update(
+    0,
+    { ...DEFAULT_SETTINGS, driveMode: "audio" },
+    1 / 60,
+  );
+
+  assert.equal(frame.modes.length, 0);
+});
+
 test("chladni pattern stabilizer keeps its base through a brief transient", () => {
   const stabilizer = new ChladniPatternStabilizer();
 
@@ -218,5 +294,16 @@ function createPatternInput({
     change: 0.18,
     beatConfidence: 0.28,
     harmonicity: 0.82,
+  };
+}
+
+function createManualSettings(
+  overrides: Partial<CymaticSettings> = {},
+): CymaticSettings {
+  return {
+    ...DEFAULT_SETTINGS,
+    driveMode: "manual",
+    frequencySweep: false,
+    ...overrides,
   };
 }

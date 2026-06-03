@@ -45,6 +45,7 @@ export class WavefieldApp {
   private animationFrame = 0;
   private lastFrameTime = performance.now();
   private ambientSeconds = 0;
+  private manualSeconds = 0;
   private analysisPreviewTime = 0;
   private fieldSettingsKey = "";
   private lastAudibleVolume = 1;
@@ -344,6 +345,7 @@ export class WavefieldApp {
     this.analysisPreviewTime = getFirstMeaningfulFrameTime(analysis);
     this.modalEngine.setAnalysis(analysis);
     this.lastModalFieldFrame = EMPTY_MODAL_FIELD_FRAME;
+    this.manualSeconds = 0;
     this.resetVisualState();
   }
 
@@ -353,6 +355,7 @@ export class WavefieldApp {
     this.modalEngine.setAnalysis(null);
     this.lastModalFieldFrame = EMPTY_MODAL_FIELD_FRAME;
     this.ambientSeconds = 0;
+    this.manualSeconds = 0;
     this.setPlayButton(false);
     this.resetVisualState();
   }
@@ -379,11 +382,22 @@ export class WavefieldApp {
     this.lastFrameTime = now;
     const time = this.wavesurfer.getCurrentTime();
     const isPlaying = this.wavesurfer.isPlaying();
+    const isManualDrive = this.settings.driveMode === "manual";
     let fieldFrame = this.lastModalFieldFrame;
     let renderDeltaSeconds = 0;
     let isIdlePreview = false;
 
-    if (!this.analysis) {
+    if (isManualDrive) {
+      this.manualSeconds += deltaSeconds;
+      fieldFrame = this.modalEngine.update(
+        this.manualSeconds,
+        this.settings,
+        deltaSeconds || 1 / 60,
+      );
+      this.lastModalFieldFrame = fieldFrame;
+      renderDeltaSeconds = deltaSeconds;
+      this.updateAnalysisDebug(fieldFrame, false);
+    } else if (!this.analysis) {
       this.ambientSeconds += deltaSeconds;
       fieldFrame = createAmbientModalFieldFrame(this.ambientSeconds);
       renderDeltaSeconds = deltaSeconds;
@@ -502,7 +516,12 @@ export class WavefieldApp {
     const nextFieldSettingsKey = getFieldSettingsKey(this.settings);
     if (nextFieldSettingsKey !== this.fieldSettingsKey) {
       this.fieldSettingsKey = nextFieldSettingsKey;
-      this.modalEngine.reset(this.wavesurfer.getCurrentTime());
+      if (this.settings.driveMode === "manual") {
+        this.manualSeconds = 0;
+        this.modalEngine.reset(0);
+      } else {
+        this.modalEngine.reset(this.wavesurfer.getCurrentTime());
+      }
       this.lastModalFieldFrame = EMPTY_MODAL_FIELD_FRAME;
       this.resetVisualState();
     }
@@ -520,7 +539,7 @@ export class WavefieldApp {
   }
 
   private updateAnalysisDebug(fieldFrame: ModalFieldFrame, isIdlePreview: boolean) {
-    if (!this.analysis && !isIdlePreview) {
+    if (!this.analysis && !isIdlePreview && this.settings.driveMode !== "manual") {
       this.analysisDebug.hidden = true;
       return;
     }
