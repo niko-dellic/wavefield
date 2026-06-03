@@ -14,8 +14,6 @@ export const MAX_CHLADNI_MODES = 12;
 export const MAX_MODAL_MODES = MAX_CHLADNI_MODES;
 export const MIN_FREQUENCY = 70;
 export const MAX_FREQUENCY = 7_200;
-export const ATLAS_SIZE = 72;
-export const HARMONIC_DRIVER_WEIGHTS = [1, 0.66, 0.46, 0.32, 0.22];
 
 export const BANDS: FrequencyBand[] = ["low", "mid", "high"];
 
@@ -82,39 +80,6 @@ export type ModalAtlasEntry = {
   naturalFrequency: number;
   frequencyNorm: number;
   band: FrequencyBand;
-};
-
-export type ModalState = ModalAtlasEntry & {
-  amplitude: number;
-  topology: number;
-  phase: number;
-  coherence: number;
-  lastDrive: number;
-  driver: number;
-  excitation: number;
-  pulse: number;
-  layer: number;
-};
-
-export type ModeDriver = {
-  strength: number;
-  topology: number;
-  pulse: number;
-  layer: number;
-  frequency: number;
-  harmonicWeight: number;
-};
-
-export type PersistentDriver = {
-  strength: number;
-  targetStrength: number;
-  topology: number;
-  targetTopology: number;
-  pulse: number;
-  layer: number;
-  frequency: number;
-  harmonicWeight: number;
-  lastSeen: number;
 };
 
 export const EMPTY_MODAL_FIELD_FRAME: ModalFieldFrame = {

@@ -91,6 +91,8 @@ const FRAGMENT_SHADER = `
   uniform vec4 uModeColors[MAX_MODAL_MODES];
   uniform vec4 uModeDynamics[MAX_MODAL_MODES];
   uniform float uDensity;
+  uniform float uBrightness;
+  uniform float uOpacity;
   uniform float uHarmonicMix;
   uniform float uNodeWidth;
   uniform float uSoftness;
@@ -330,13 +332,14 @@ const FRAGMENT_SHADER = `
         bandOnset * 0.7
       );
       float localField = familyField * (0.9 + phaseMotion * 0.1 * meta.y);
+      float modeWeight = topologyWeight * (0.62 + topologyWeight * 0.38);
       float localInfluence =
-        topologyWeight *
-        (0.22 + localAudio * 0.24 + abs(localField) * 0.54) *
+        modeWeight *
+        (0.46 + localAudio * 0.2 + abs(localField) * 0.58) *
         (0.72 + meta.y * 0.34);
 
-      fieldSample.field += localField * topologyWeight * (0.74 + modeExcitation * 0.18);
-      fieldSample.grad += length(familyGradient) * topologyWeight;
+      fieldSample.field += localField * modeWeight * (0.82 + modeExcitation * 0.16);
+      fieldSample.grad += length(familyGradient) * modeWeight;
       fieldSample.energy += localInfluence;
       fieldSample.color += uModeColors[index].rgb * localInfluence * uModeColors[index].a;
       fieldSample.colorWeight += localInfluence * uModeColors[index].a;
@@ -403,30 +406,38 @@ const FRAGMENT_SHADER = `
         3.0
       );
       float baseField = chladniValue(m, n, p);
-      float swappedField = chladniValue(n, m + max(0.0, floor(mod(m + n, 3.0))), p);
+      // Transposed, detuned partner figure — overlapping it with the base mode
+      // produces moiré nodal lines, the classic "interference" lattice.
+      float interferenceField = chladniValue(n, m + 1.0, p);
       float harmonicField = chladniValue(
         max(1.0, floor(m * (1.0 + uHarmonicMix * 0.42))),
         max(1.0, floor(n * (1.0 + uHarmonicMix * 0.34))),
         p
       );
       vec2 gradient = chladniGradient(m, n, p);
+      // Audio feeds motion (phase travel + transient ring), not a flat glow.
       float phaseMotion = cos(
         meta.x +
-        uTime * (0.04 + meta.z * 0.18 + modeExcitation * 0.12 + modePulse * 0.18) +
+        uTime * (0.04 + meta.z * 0.18 + modeExcitation * 0.12 + modePulse * 0.22) +
         modePulse * 1.7 +
         bandOnset * 0.8
       );
+      // Interference and harmonic overtone are independent, user-controlled
+      // textures layered on the dominant figure.
       float localField =
-        baseField * (0.88 + phaseMotion * 0.12 * meta.y) +
-        swappedField * uInterference * 0.28 +
-        harmonicField * uHarmonicMix * (0.1 + localAudio * 0.08);
+        baseField * (0.9 + phaseMotion * 0.1 * meta.y) +
+        interferenceField * uInterference * 0.34 +
+        harmonicField * uHarmonicMix * 0.22;
+      // Emphasise the dominant mode so the strongest figure reads cleanly
+      // instead of every mode averaging into mush.
+      float modeWeight = topologyWeight * (0.62 + topologyWeight * 0.38);
       float localInfluence =
-        topologyWeight *
-        (0.26 + localAudio * 0.22 + abs(localField) * 0.52) *
+        modeWeight *
+        (0.5 + localAudio * 0.2 + abs(localField) * 0.62) *
         (0.72 + meta.y * 0.34);
 
-      fieldSample.field += localField * topologyWeight * (0.74 + modeExcitation * 0.18);
-      fieldSample.grad += length(gradient) * topologyWeight * (0.0016 + localAudio * 0.0009);
+      fieldSample.field += localField * modeWeight * (0.82 + modeExcitation * 0.16);
+      fieldSample.grad += length(gradient) * modeWeight * (0.0018 + localAudio * 0.0007);
       fieldSample.energy += localInfluence;
       fieldSample.color += uModeColors[index].rgb * localInfluence * uModeColors[index].a;
       fieldSample.colorWeight += localInfluence * uModeColors[index].a;
@@ -533,6 +544,7 @@ const FRAGMENT_SHADER = `
       float density = clamp(
         (contourDensity + bodyDensity) *
           uDensity *
+          uOpacity *
           edgeFade *
           (0.88 + uFeatureSignals.y * 0.24 + uFeatureSignals.w * 0.16),
         0.0,
@@ -574,7 +586,7 @@ const FRAGMENT_SHADER = `
     vec3 outputColor = uSphereTransparent > 0.5
       ? accumulatedColor
       : mix(vec3(0.0), accumulatedColor, clamp(accumulatedAlpha, 0.0, 1.0));
-    return vec4(clamp(outputColor, 0.0, 1.0), outputAlpha);
+    return vec4(clamp(outputColor * uBrightness, 0.0, 1.0), outputAlpha);
   }
 
   void main() {
@@ -612,6 +624,7 @@ const FRAGMENT_SHADER = `
           0.00042,
           uNodeWidth *
             0.035 *
+            (0.85 + audioPulse * 0.3) *
             (uBoundaryMode == 1 ? 0.82 : (uBoundaryMode == 2 ? 1.08 : 1.0))
         )
       : max(0.00035, uNodeWidth * 0.055 * (0.82 + audioPulse * 0.34));
@@ -620,26 +633,26 @@ const FRAGMENT_SHADER = `
       1.0 - smoothstep(nodeWidth * 1.4, nodeWidth * (4.2 + uSoftness * 4.0), abs(normalizedField));
     float structure = smoothstep(0.02, 0.28 + uEdgeFade * 0.36, field.grad);
     float density = clamp(
-      (pow(nodeBand, 2.15) * 0.86 + broadBand * uSoftness * 0.045)
-        * (0.22 + structure * 0.72)
-        * (0.48 + field.energy * (uProjectionMode == 0 ? 0.32 : 0.52))
+      (pow(nodeBand, 2.0) * 1.0 + broadBand * uSoftness * 0.06)
+        * (0.4 + structure * 0.6)
+        * (0.66 + field.energy * (uProjectionMode == 0 ? 0.42 : 0.52))
         * uDensity
-        * (0.88 + uFeatureSignals.y * 0.26 + audioPulse * 0.14),
+        * (0.92 + uFeatureSignals.y * 0.26 + audioPulse * 0.14),
       0.0,
       1.0
     );
     float halo = pow(clamp(1.0 - abs(normalizedField), 0.0, 1.0), 4.0) *
       uSoftness *
       field.energy *
-      0.08;
+      0.1;
     float visibleInk = uProjectionMode == 0
-      ? smoothstep(0.018, 0.075, density + halo)
+      ? smoothstep(0.005, 0.04, density + halo)
       : 1.0;
     if (uProjectionMode == 0 && visibleInk <= 0.001) {
       gl_FragColor = vec4(vec3(0.0), 1.0);
       return;
     }
-    float alpha = clamp((density + halo) * (0.92 + uRms * 0.22), 0.0, 0.86);
+    float alpha = clamp((density + halo) * (0.96 + uRms * 0.22) * uOpacity, 0.0, 1.0);
     vec3 modalColor =
       field.colorWeight > 0.0001 ? field.color / field.colorWeight : vec3(0.86, 0.96, 1.0);
     vec3 monoColor = mix(vec3(0.38, 0.72, 0.86), vec3(0.94, 0.98, 1.0), density);
@@ -662,7 +675,8 @@ const FRAGMENT_SHADER = `
 
     color *=
       (0.82 + density * 0.72 + field.energy * 0.24 + audioPulse * 0.16) *
-      visibleInk;
+      visibleInk *
+      uBrightness;
     float outputAlpha = uProjectionMode == 1
       ? (uSphereTransparent > 0.5 ? clamp(alpha * uSurfaceOpacity, 0.02, 1.0) : 1.0)
       : 1.0;
@@ -720,6 +734,8 @@ export class ModalFieldRenderer {
       uModeColors: { value: this.modeColorUniforms },
       uModeDynamics: { value: this.modeDynamicsUniforms },
       uDensity: { value: 0.82 },
+      uBrightness: { value: 1.35 },
+      uOpacity: { value: 1.1 },
       uHarmonicMix: { value: 0.34 },
       uNodeWidth: { value: 0.052 },
       uSoftness: { value: 0.38 },
@@ -1057,6 +1073,8 @@ export class ModalFieldRenderer {
     );
     this.material.uniforms.uScreenViewScale.value = screenView.scale;
     this.material.uniforms.uDensity.value = settings.cymaticDensity;
+    this.material.uniforms.uBrightness.value = settings.cymaticBrightness;
+    this.material.uniforms.uOpacity.value = settings.cymaticOpacity;
     this.material.uniforms.uHarmonicMix.value = settings.cymaticHarmonicMix;
     this.material.uniforms.uNodeWidth.value = settings.cymaticNodeWidth;
     this.material.uniforms.uSoftness.value = settings.cymaticSoftness;

@@ -77,6 +77,7 @@ export function createControls(
 
     const excitation = pane.addFolder({ title: "Excitation", expanded: true });
     addNumericBinding(excitation, settings, AUDIO_CONTROLS.gain);
+    addNumericBinding(excitation, settings, AUDIO_CONTROLS.audioResponse);
     addNumericBinding(excitation, settings, ENGINE_CONTROLS.modalDrive);
     addNumericBinding(excitation, settings, ENGINE_CONTROLS.modalDecay);
     addNumericBinding(excitation, settings, AUDIO_CONTROLS.lowScale);

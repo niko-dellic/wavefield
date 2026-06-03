@@ -7,7 +7,7 @@ import {
   EMPTY_CHROMA_PROFILE,
   EMPTY_FEATURE_SIGNALS,
 } from "./featureAnalysis.ts";
-import { MODAL_ATLAS } from "./modalAtlas.ts";
+import { MODE_ATLAS } from "./modeAtlas.ts";
 import {
   clamp,
   clamp01,
@@ -31,7 +31,7 @@ export function createAmbientModalFieldFrame(time: number): ModalFieldFrame {
     mid: 0.24 + shimmer * 0.04,
     high: 0.12 + shimmer * 0.02,
   };
-  const modes = MODAL_ATLAS.slice(4, 4 + MAX_MODAL_MODES).map((mode, index) => {
+  const modes = MODE_ATLAS.slice(4, 4 + MAX_MODAL_MODES).map((mode, index) => {
     const bandBias =
       mode.band === "low"
         ? bands.low

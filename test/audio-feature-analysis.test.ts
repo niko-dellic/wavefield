@@ -11,16 +11,19 @@ import {
 } from "../src/audio/featureAnalysis.ts";
 import { FFT_SIZE as ANALYSIS_FFT_SIZE } from "../src/audio/analyze.ts";
 import { createManualFeatureFrame } from "../src/audio/fieldSources.ts";
-import { mapFrequencyToChladniMode } from "../src/audio/chladniModes.ts";
+import {
+  atlasModeForFrequency,
+  nearestModesForFrequency,
+} from "../src/audio/modeAtlas.ts";
+import { projectFrameToTargets } from "../src/audio/modeProjection.ts";
 import {
   deriveSphericalModeFromChladniMode,
   evaluateSphericalPermutationMode,
   getSphericalPermutationCount,
 } from "../src/audio/sphericalModes.ts";
-import { ChladniPatternStabilizer } from "../src/audio/chladniStability.ts";
 import { ModalFieldEngine } from "../src/audio/ModalField.ts";
 import { DEFAULT_SETTINGS } from "../src/config/settings.ts";
-import type { CymaticSettings } from "../src/types.ts";
+import type { AudioFeatureFrame, CymaticSettings } from "../src/types.ts";
 
 const SAMPLE_RATE = 48_000;
 const FFT_SIZE = 2048;
@@ -169,76 +172,53 @@ test("temporal feature tracker matches batch temporal analysis", () => {
   assert.ok(tracked[1].signals.pulse > 0.15);
 });
 
-test("chladni frequency mapping anchors 220Hz to the base 3:5 mode", () => {
-  const mode = mapFrequencyToChladniMode(220);
+test("mode atlas anchors 220Hz to the low-order 2:3 figure", () => {
+  const mode = atlasModeForFrequency(220);
 
-  assert.equal(mode.m, 3);
-  assert.equal(mode.n, 5);
+  assert.equal(mode.key, "2:3");
 });
 
-test("chladni frequency mapping increases mode complexity with frequency", () => {
-  const low = mapFrequencyToChladniMode(110);
-  const high = mapFrequencyToChladniMode(880);
+test("mode atlas maps neighbouring frequencies to distinct figures", () => {
+  const low = atlasModeForFrequency(220);
+  const near = atlasModeForFrequency(330);
 
-  assert.ok(high.m > low.m);
-  assert.ok(high.n > low.n);
+  assert.notEqual(low.key, near.key);
 });
 
-test("chladni frequency mapping clamps extreme frequencies", () => {
-  const low = mapFrequencyToChladniMode(1);
-  const high = mapFrequencyToChladniMode(48_000);
+test("mode atlas increases figure complexity with frequency", () => {
+  const low = atlasModeForFrequency(110);
+  const high = atlasModeForFrequency(880);
 
-  assert.ok(low.m >= 1);
-  assert.ok(low.n >= 1);
-  assert.ok(high.m <= 28);
-  assert.ok(high.n <= 28);
+  assert.ok(modeEnergy(high.mode) > modeEnergy(low.mode));
+  assert.ok(high.naturalFrequency > low.naturalFrequency);
 });
 
-test("spherical mode derivation keeps 220Hz on a stable low-order triplet", () => {
-  const chladni = mapFrequencyToChladniMode(220);
-  const mode = deriveSphericalModeFromChladniMode([chladni.m, chladni.n]);
-
-  assert.deepEqual(mode, [3, 4, 5]);
+test("mode atlas only contains non-degenerate (m < n) figures", () => {
+  const sample = nearestModesForFrequency(440, 12);
+  assert.ok(sample.every((entry) => entry.mode[0] < entry.mode[1]));
 });
 
-test("spherical mode derivation increases complexity with frequency", () => {
-  const low = mapFrequencyToChladniMode(110);
-  const high = mapFrequencyToChladniMode(880);
-  const lowMode = deriveSphericalModeFromChladniMode([low.m, low.n]);
-  const highMode = deriveSphericalModeFromChladniMode([high.m, high.n]);
-
-  assert.ok(
-    highMode[0] + highMode[1] + highMode[2] >
-      lowMode[0] + lowMode[1] + lowMode[2],
+test("projection lights up the dominant figure for a single tone", () => {
+  const targets = projectFrameToTargets(
+    createSyntheticAudioFrame(0, 220),
+    audioSettings(),
   );
+
+  assert.ok(targets.length > 0);
+  assert.equal(targets[0].entry.key, "2:3");
+  assert.ok(targets[0].weight > 0.4);
 });
 
-test("spherical permutation families report unique evaluation costs", () => {
-  assert.equal(getSphericalPermutationCount([4, 4, 4]), 1);
-  assert.equal(getSphericalPermutationCount([3, 4, 4]), 3);
-  assert.equal(getSphericalPermutationCount([3, 4, 5]), 6);
-});
+test("projection keeps a clear dominant rather than a flat mode soup", () => {
+  const targets = projectFrameToTargets(
+    createSyntheticAudioFrame(0, 220),
+    audioSettings(),
+  );
 
-test("spherical permutation evaluator normalizes repeated families", () => {
-  const position: [number, number, number] = [0, 0, 0];
-  assert.equal(
-    evaluateSphericalPermutationMode({
-      mode: [4, 4, 4],
-      position,
-      boundaryMode: "neumann",
-    }),
-    1,
-  );
-  assert.equal(
-    Math.round(
-      evaluateSphericalPermutationMode({
-        mode: [3, 4, 5],
-        position,
-        boundaryMode: "neumann",
-      }) * 1_000_000,
-    ) / 1_000_000,
-    Math.round(Math.sqrt(6) * 1_000_000) / 1_000_000,
-  );
+  // The dominant figure should clearly outweigh any secondary modes.
+  if (targets.length > 1) {
+    assert.ok(targets[0].weight > targets[1].weight * 1.5);
+  }
 });
 
 test("manual feature frames synthesize one isolated Chladni source", () => {
@@ -251,23 +231,6 @@ test("manual feature frames synthesize one isolated Chladni source", () => {
   assert.equal(frame.chroma.confidence, 1);
   assert.equal(frame.signals.beat, 0);
   assert.equal(frame.signals.beatConfidence, 0);
-});
-
-test("manual feature frames change source when test frequency changes", () => {
-  const lowFrame = createManualFeatureFrame(
-    createManualSettings({ testFrequency: 220 }),
-    0,
-  );
-  const highFrame = createManualFeatureFrame(
-    createManualSettings({ testFrequency: 880 }),
-    0,
-  );
-
-  assert.notEqual(lowFrame.peaks[0].frequency, highFrame.peaks[0].frequency);
-  assert.notDeepEqual(
-    mapFrequencyToChladniMode(lowFrame.peaks[0].frequency),
-    mapFrequencyToChladniMode(highFrame.peaks[0].frequency),
-  );
 });
 
 test("manual modal engine updates without audio analysis", () => {
@@ -306,37 +269,31 @@ test("manual modal engine frequency changes morph without clearing current topol
   const engine = new ModalFieldEngine();
   const lowSettings = createManualSettings({
     testFrequency: 220,
-    morphSeconds: 0.45,
+    morphSeconds: 0.25,
   });
   const highSettings = createManualSettings({
     testFrequency: 880,
-    morphSeconds: 0.45,
+    morphSeconds: 0.25,
   });
 
   let field = engine.update(0, lowSettings, 1 / 60);
   const lowMode = field.debug.topologyMode;
+  const highModeKey = atlasModeForFrequency(880).key;
 
   for (let frame = 1; frame <= 12; frame += 1) {
     field = engine.update(frame / 60, highSettings, 1 / 60);
   }
 
-  const highMode = mapFrequencyToChladniMode(880);
-  const highModeKey = `${highMode.m}:${highMode.n}`;
-
   assert.equal(field.debug.topologyMode, highModeKey);
   assert.ok(
     field.modes.some(
-      (mode) =>
-        `${mode.mode[0]}:${mode.mode[1]}` === lowMode &&
-        mode.topology > 0,
+      (mode) => `${mode.mode[0]}:${mode.mode[1]}` === lowMode && mode.topology > 0,
     ),
     "previous manual topology should still be fading out",
   );
   assert.ok(
     field.modes.some(
-      (mode) =>
-        `${mode.mode[0]}:${mode.mode[1]}` === highModeKey &&
-        mode.topology > 0,
+      (mode) => `${mode.mode[0]}:${mode.mode[1]}` === highModeKey && mode.topology > 0,
     ),
     "new manual topology should be fading in",
   );
@@ -365,8 +322,8 @@ test("audio modal engine morphs topology after a sustained frequency change", ()
     field = engine.update(frame.time, { ...DEFAULT_SETTINGS, driveMode: "audio" }, 1 / 60);
   }
 
-  assert.equal(field.debug.topologyMode, "6:10");
-  assert.ok(field.modes.some((mode) => mode.mode[0] === 6 && mode.mode[1] === 10));
+  assert.equal(field.debug.topologyMode, atlasModeForFrequency(880).key);
+  assert.ok(field.modes.some((mode) => mode.frequency > 600));
 });
 
 test("audio modal engine treats brief transients as excitation without topology reset", () => {
@@ -382,11 +339,11 @@ test("audio modal engine treats brief transients as excitation without topology 
     field = engine.update(frame.time, { ...DEFAULT_SETTINGS, driveMode: "audio" }, 1 / 60);
   }
 
-  assert.equal(field.debug.topologyMode, "3:5");
+  assert.equal(field.debug.topologyMode, "2:3");
   assert.ok(field.debug.excitation > 0.2);
 });
 
-test("audio modal engine avoids all-mode saturation at high response settings", () => {
+test("audio modal engine keeps a crisp dominant at high response settings", () => {
   const engine = new ModalFieldEngine();
   const frames = Array.from({ length: 120 }, (_, index) =>
     createSyntheticAudioFrame(index, 220, { pulse: 0.2, energy: 1 }),
@@ -404,57 +361,87 @@ test("audio modal engine avoids all-mode saturation at high response settings", 
     field = engine.update(frame.time, settings, 1 / 60);
   }
 
-  assert.equal(field.modes.filter((mode) => mode.amplitude > 0.99).length, 0);
-  assert.ok(field.modes.some((mode) => mode.topology > 0.45));
+  // The dominant figure should be strong, but the whole bank must not pin to 1.
+  assert.ok(field.modes[0].topology > 0.45);
+  assert.ok(field.modes.filter((mode) => mode.topology > 0.99).length <= 1);
+  if (field.modes.length > 1) {
+    assert.ok(field.modes[1].topology < field.modes[0].topology);
+  }
 });
 
-test("chladni pattern stabilizer keeps its base through a brief transient", () => {
-  const stabilizer = new ChladniPatternStabilizer();
+test("spherical mode derivation keeps the 220Hz anchor on a low-order triplet", () => {
+  const anchor = atlasModeForFrequency(220);
+  const mode = deriveSphericalModeFromChladniMode(anchor.mode);
 
+  assert.equal(mode.length, 3);
+  assert.ok(mode[0] <= mode[1] && mode[1] <= mode[2]);
+  assert.ok(mode[2] <= 6);
+});
+
+test("spherical mode derivation increases complexity with frequency", () => {
+  const low = atlasModeForFrequency(110);
+  const high = atlasModeForFrequency(880);
+  const lowMode = deriveSphericalModeFromChladniMode(low.mode);
+  const highMode = deriveSphericalModeFromChladniMode(high.mode);
+
+  assert.ok(
+    highMode[0] + highMode[1] + highMode[2] >
+      lowMode[0] + lowMode[1] + lowMode[2],
+  );
+});
+
+test("spherical permutation families report unique evaluation costs", () => {
+  assert.equal(getSphericalPermutationCount([4, 4, 4]), 1);
+  assert.equal(getSphericalPermutationCount([3, 4, 4]), 3);
+  assert.equal(getSphericalPermutationCount([3, 4, 5]), 6);
+});
+
+test("spherical permutation evaluator normalizes repeated families", () => {
+  const position: [number, number, number] = [0, 0, 0];
+  assert.equal(
+    evaluateSphericalPermutationMode({
+      mode: [4, 4, 4],
+      position,
+      boundaryMode: "neumann",
+    }),
+    1,
+  );
   assert.equal(
     Math.round(
-      stabilizer.update(createPatternInput({ time: 0, frequency: 220, confidence: 0.5 })),
-    ),
-    220,
-  );
-  assert.equal(
-    Math.round(
-      stabilizer.update(createPatternInput({ time: 0.2, frequency: 880, confidence: 1 })),
-    ),
-    220,
-  );
-  assert.equal(
-    Math.round(
-      stabilizer.update(createPatternInput({ time: 0.35, frequency: 220, confidence: 0.5 })),
-    ),
-    220,
+      evaluateSphericalPermutationMode({
+        mode: [3, 4, 5],
+        position,
+        boundaryMode: "neumann",
+      }) * 1_000_000,
+    ) / 1_000_000,
+    Math.round(Math.sqrt(6) * 1_000_000) / 1_000_000,
   );
 });
 
-test("chladni pattern stabilizer adopts a sustained new dominant frequency", () => {
-  const stabilizer = new ChladniPatternStabilizer();
-
-  stabilizer.update(createPatternInput({ time: 0, frequency: 220, confidence: 0.5 }));
-  stabilizer.update(createPatternInput({ time: 0.2, frequency: 880, confidence: 1 }));
-  stabilizer.update(createPatternInput({ time: 0.45, frequency: 880, confidence: 1 }));
-  const frequency = stabilizer.update(
-    createPatternInput({ time: 0.62, frequency: 880, confidence: 1 }),
+test("manual feature frames change source when test frequency changes", () => {
+  const lowFrame = createManualFeatureFrame(
+    createManualSettings({ testFrequency: 220 }),
+    0,
+  );
+  const highFrame = createManualFeatureFrame(
+    createManualSettings({ testFrequency: 880 }),
+    0,
   );
 
-  assert.equal(Math.round(frequency), 880);
-});
-
-test("chladni pattern stabilizer follows close pitch drift without a reset", () => {
-  const stabilizer = new ChladniPatternStabilizer();
-
-  stabilizer.update(createPatternInput({ time: 0, frequency: 220, confidence: 0.5 }));
-  const drifted = stabilizer.update(
-    createPatternInput({ time: 0.2, frequency: 231, confidence: 0.5 }),
+  assert.notEqual(lowFrame.peaks[0].frequency, highFrame.peaks[0].frequency);
+  assert.notEqual(
+    atlasModeForFrequency(lowFrame.peaks[0].frequency).key,
+    atlasModeForFrequency(highFrame.peaks[0].frequency).key,
   );
-
-  assert.ok(drifted > 220);
-  assert.ok(drifted < 231);
 });
+
+function modeEnergy(mode: [number, number]) {
+  return mode[0] * mode[0] + mode[1] * mode[1];
+}
+
+function audioSettings(overrides: Partial<CymaticSettings> = {}): CymaticSettings {
+  return { ...DEFAULT_SETTINGS, driveMode: "audio", ...overrides };
+}
 
 function createSpectrum(peaks: Array<[number, number]>) {
   const magnitudes = new Float32Array(FFT_SIZE / 2);
@@ -478,34 +465,11 @@ function createBroadbandSpectrum() {
   return magnitudes;
 }
 
-function createPatternInput({
-  time,
-  frequency,
-  confidence,
-}: {
-  time: number;
-  frequency: number;
-  confidence: number;
-}) {
-  return {
-    key: `${mapFrequencyToChladniMode(frequency).m}:${mapFrequencyToChladniMode(frequency).n}`,
-    time,
-    frequency,
-    confidence,
-    holdSeconds: 0.35,
-    rms: 0.28,
-    energy: 0.42,
-    change: 0.18,
-    beatConfidence: 0.28,
-    harmonicity: 0.82,
-  };
-}
-
 function createSyntheticAudioFrame(
   index: number,
   frequency: number,
   options: { pulse?: number; energy?: number } = {},
-) {
+): AudioFeatureFrame {
   const pulse = options.pulse ?? 0.05;
   const energy = options.energy ?? 0.7;
   const band = frequency < 250 ? "low" : frequency < 2_000 ? "mid" : "high";

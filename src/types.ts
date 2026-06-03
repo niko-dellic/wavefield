@@ -67,6 +67,8 @@ export type CymaticSettings = {
   screenAspectMode: ScreenAspectMode;
   idleMode: IdleMode;
   cymaticDensity: number;
+  cymaticBrightness: number;
+  cymaticOpacity: number;
   cymaticHarmonicMix: number;
   cymaticNodeWidth: number;
   cymaticSoftness: number;
@@ -77,6 +79,7 @@ export type CymaticSettings = {
   cymaticDrift: number;
   gain: number;
   sensitivity: number;
+  audioResponse: number;
   driveMode: DriveMode;
   testFrequency: number;
   frequencySweep: boolean;
