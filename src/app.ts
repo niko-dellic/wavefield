@@ -28,6 +28,7 @@ const SCREEN_VIEW_MAX_SCALE = 16;
 const SCREEN_WHEEL_ZOOM_SPEED = 0.0015;
 const SCREEN_PAN_DAMPING = 10;
 const SCREEN_ZOOM_DAMPING = 14;
+const MOBILE_SETTINGS_MEDIA = "(max-width: 560px)";
 
 const FIXTURES = Object.entries(
   import.meta.glob<string>("./fixtures/audio/*.mp3", {
@@ -57,15 +58,24 @@ export class WavefieldApp {
   private readonly sourcePicker: HTMLElement;
   private readonly selectedSource: HTMLElement;
   private readonly fullscreenButton: HTMLButtonElement;
+  private readonly settingsButton: HTMLButtonElement;
+  private readonly settingsModal: HTMLElement;
+  private readonly settingsPanel: HTMLElement;
+  private readonly settingsCloseButton: HTMLButtonElement;
+  private readonly desktopDriveHost: HTMLElement;
+  private readonly mobileDriveHost: HTMLElement;
   private readonly drivePane: HTMLDetailsElement;
   private readonly driveSummaryValue: HTMLElement;
   private readonly driveModeSelect: HTMLSelectElement;
   private readonly modeSettingsHost: HTMLElement;
   private readonly transport: HTMLElement;
   private readonly guiHost: HTMLElement;
+  private readonly mobileSettingsMedia = window.matchMedia(MOBILE_SETTINGS_MEDIA);
   private modeSettingsPane: Pane | null = null;
   private modeSettingsLayoutKey = "";
-  private isGuiVisible = false;
+  private isSettingsOpen = false;
+  private isMobileSettings = false;
+  private lastSettingsTrigger: HTMLElement | null = null;
   private analysis: AudioAnalysis | null = null;
   private animationFrame = 0;
   private lastFrameTime = performance.now();
@@ -113,6 +123,12 @@ export class WavefieldApp {
     this.sourcePicker = this.query<HTMLElement>(".source-picker");
     this.selectedSource = this.query<HTMLElement>(".selected-source");
     this.fullscreenButton = this.query<HTMLButtonElement>(".fullscreen-toggle");
+    this.settingsButton = this.query<HTMLButtonElement>(".settings-toggle");
+    this.settingsModal = this.query<HTMLElement>(".settings-modal");
+    this.settingsPanel = this.query<HTMLElement>(".settings-panel");
+    this.settingsCloseButton = this.query<HTMLButtonElement>(".settings-close");
+    this.desktopDriveHost = this.query<HTMLElement>(".desktop-drive-host");
+    this.mobileDriveHost = this.query<HTMLElement>(".mobile-drive-host");
     this.drivePane = this.query<HTMLDetailsElement>(".drive-pane");
     this.driveSummaryValue = this.query<HTMLElement>(".drive-summary-value");
     this.driveModeSelect = this.query<HTMLSelectElement>(".drive-mode-select");
@@ -150,7 +166,8 @@ export class WavefieldApp {
 
     this.bindUi();
     this.syncHeaderControls();
-    this.syncGuiVisibility();
+    this.syncSettingsMode();
+    this.syncSettingsModal();
     this.fieldSettingsKey = getFieldSettingsKey(this.settings);
     this.resize();
   }
@@ -167,7 +184,9 @@ export class WavefieldApp {
     this.canvas.removeEventListener("pointermove", this.handleCanvasPointerMove);
     this.canvas.removeEventListener("pointerup", this.handleCanvasPointerUp);
     this.canvas.removeEventListener("pointercancel", this.handleCanvasPointerUp);
+    this.canvas.removeEventListener("click", this.handleCanvasClick);
     this.canvas.removeEventListener("contextmenu", this.handleCanvasContextMenu);
+    window.removeEventListener("resize", this.resize);
     document.removeEventListener("keydown", this.handleKeyDown);
     document.removeEventListener("fullscreenchange", this.handleFullscreenChange);
     this.controls.dispose();
@@ -198,45 +217,79 @@ export class WavefieldApp {
             <span class="brand-mark"></span>
             <span>Wavefield</span>
           </div>
+          <button
+            class="settings-toggle"
+            type="button"
+            aria-label="Open settings"
+            aria-controls="wavefield-settings-modal"
+            aria-expanded="false"
+            title="Settings"
+          >
+            <i class="ph ph-sliders-horizontal" aria-hidden="true"></i>
+          </button>
         </section>
-        <aside class="pane-host" aria-label="Wavefield shader settings" hidden></aside>
+        <section
+          class="settings-modal"
+          id="wavefield-settings-modal"
+          aria-hidden="true"
+          hidden
+        >
+          <aside
+            class="settings-panel"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="wavefield-settings-title"
+            tabindex="-1"
+          >
+            <header class="settings-panel-header">
+              <h2 id="wavefield-settings-title">Settings</h2>
+              <button class="settings-close" type="button" aria-label="Close settings" title="Close settings">
+                <i class="ph ph-x" aria-hidden="true"></i>
+              </button>
+            </header>
+            <div class="mobile-drive-host" aria-label="Drive settings"></div>
+            <div class="pane-host" aria-label="Wavefield shader settings"></div>
+          </aside>
+        </section>
         <section class="diagnostics-strip" aria-label="Wavefield diagnostics">
-          <details class="drive-pane">
-            <summary class="drive-pane-summary">
-              <span class="drive-pane-title">
-                <i class="ph ph-wave-sine" aria-hidden="true"></i>
-                <span>Drive</span>
-              </span>
-              <span class="drive-summary-value">Manual</span>
-              <i class="ph ph-caret-down drive-pane-caret" aria-hidden="true"></i>
-            </summary>
-            <div class="drive-pane-body">
-              <label class="drive-mode-picker">
-                <span>Mode</span>
-                <select class="drive-mode-select" aria-label="Drive mode">
-                  <option value="audio">Audio</option>
-                  <option value="manual" selected>Manual</option>
-                  <option value="live">Live</option>
-                </select>
-              </label>
-              <div class="source-picker" hidden>
-                <button class="source-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">
-                  <i class="ph ph-music-notes" aria-hidden="true"></i>
-                  <span class="selected-source">Choose audio</span>
-                  <i class="ph ph-caret-down" aria-hidden="true"></i>
-                </button>
-                <div class="source-menu" role="listbox" hidden>
-                  ${fixtureOptions}
-                  <button class="source-option upload-option" type="button" role="option">
-                    <i class="ph ph-upload-simple" aria-hidden="true"></i>
-                    <span>Upload audio...</span>
+          <div class="desktop-drive-host">
+            <details class="drive-pane">
+              <summary class="drive-pane-summary">
+                <span class="drive-pane-title">
+                  <i class="ph ph-wave-sine" aria-hidden="true"></i>
+                  <span>Drive</span>
+                </span>
+                <span class="drive-summary-value">Manual</span>
+                <i class="ph ph-caret-down drive-pane-caret" aria-hidden="true"></i>
+              </summary>
+              <div class="drive-pane-body">
+                <label class="drive-mode-picker">
+                  <span>Mode</span>
+                  <select class="drive-mode-select" aria-label="Drive mode">
+                    <option value="audio">Audio</option>
+                    <option value="manual" selected>Manual</option>
+                    <option value="live">Live</option>
+                  </select>
+                </label>
+                <div class="source-picker" hidden>
+                  <button class="source-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">
+                    <i class="ph ph-music-notes" aria-hidden="true"></i>
+                    <span class="selected-source">Choose audio</span>
+                    <i class="ph ph-caret-down" aria-hidden="true"></i>
                   </button>
+                  <div class="source-menu" role="listbox" hidden>
+                    ${fixtureOptions}
+                    <button class="source-option upload-option" type="button" role="option">
+                      <i class="ph ph-upload-simple" aria-hidden="true"></i>
+                      <span>Upload audio...</span>
+                    </button>
+                  </div>
+                  <input class="audio-file" type="file" accept="audio/*" />
                 </div>
-                <input class="audio-file" type="file" accept="audio/*" />
+                <div class="mode-settings-host" aria-label="Drive mode settings" hidden></div>
               </div>
-              <div class="mode-settings-host" aria-label="Drive mode settings" hidden></div>
-            </div>
-          </details>
+            </details>
+          </div>
         </section>
         <section class="transport" aria-label="Audio transport">
           <button class="play-toggle" type="button" aria-label="Play" title="Play">
@@ -298,6 +351,17 @@ export class WavefieldApp {
       void this.toggleFullscreen();
     });
 
+    this.settingsButton.addEventListener("click", () => {
+      if (!this.isMobileSettings) {
+        return;
+      }
+      this.setSettingsOpen(!this.isSettingsOpen, this.settingsButton);
+    });
+
+    this.settingsCloseButton.addEventListener("click", () => {
+      this.setSettingsOpen(false);
+    });
+
     this.volumeSlider.addEventListener("input", () => {
       this.setVolume(Number(this.volumeSlider.value));
     });
@@ -309,6 +373,7 @@ export class WavefieldApp {
     this.canvas.addEventListener("pointermove", this.handleCanvasPointerMove);
     this.canvas.addEventListener("pointerup", this.handleCanvasPointerUp);
     this.canvas.addEventListener("pointercancel", this.handleCanvasPointerUp);
+    this.canvas.addEventListener("click", this.handleCanvasClick);
     this.canvas.addEventListener("contextmenu", this.handleCanvasContextMenu);
 
     document.addEventListener("keydown", this.handleKeyDown);
@@ -462,16 +527,32 @@ export class WavefieldApp {
     if (event.metaKey || event.ctrlKey || event.altKey) {
       return;
     }
-    if (isEditableKeyboardTarget(event.target)) {
-      return;
-    }
     if (event.repeat) {
       return;
     }
 
+    if (this.isMobileSettings && this.isSettingsOpen) {
+      if (event.code === "Escape") {
+        event.preventDefault();
+        this.setSettingsOpen(false);
+        return;
+      }
+      if (event.code === "Tab") {
+        this.trapSettingsFocus(event);
+      }
+      return;
+    }
+
+    if (isEditableKeyboardTarget(event.target)) {
+      return;
+    }
+
     if (event.code === "Tab") {
+      if (!this.isMobileSettings) {
+        return;
+      }
       event.preventDefault();
-      this.setGuiVisible(!this.isGuiVisible);
+      this.setSettingsOpen(true, this.settingsButton);
       return;
     }
 
@@ -628,6 +709,7 @@ export class WavefieldApp {
     const height = window.innerHeight;
     this.renderer.setSize(width, height, false);
     this.modalRenderer.setSize(this.canvas.width, this.canvas.height);
+    this.syncSettingsMode();
   };
 
   private query<T extends Element>(selector: string) {
@@ -674,25 +756,121 @@ export class WavefieldApp {
     });
   }
 
-  private setGuiVisible(isVisible: boolean) {
-    if (this.isGuiVisible === isVisible) {
+  private setSettingsOpen(isOpen: boolean, trigger: HTMLElement | null = null) {
+    if (!this.isMobileSettings) {
+      isOpen = false;
+    }
+    if (this.isSettingsOpen === isOpen) {
       return;
     }
 
-    this.isGuiVisible = isVisible;
-    this.syncGuiVisibility();
+    this.isSettingsOpen = isOpen;
+    this.lastSettingsTrigger = isOpen ? trigger : this.lastSettingsTrigger;
+    this.syncSettingsModal();
   }
 
-  private syncGuiVisibility() {
-    this.guiHost.hidden = !this.isGuiVisible;
-    this.root.classList.toggle("is-gui-visible", this.isGuiVisible);
+  private syncSettingsMode() {
+    const isMobileSettings = this.mobileSettingsMedia.matches;
+    if (this.isMobileSettings === isMobileSettings) {
+      return;
+    }
+
+    this.isMobileSettings = isMobileSettings;
+    if (!isMobileSettings) {
+      this.isSettingsOpen = false;
+    }
+    this.syncDriveSettingsLocation();
+    this.syncSettingsModal();
+  }
+
+  private syncSettingsModal() {
+    const shouldShowMobileModal = this.isMobileSettings && this.isSettingsOpen;
+    this.settingsModal.hidden = this.isMobileSettings && !this.isSettingsOpen;
+    this.settingsModal.setAttribute(
+      "aria-hidden",
+      String(this.isMobileSettings && !this.isSettingsOpen),
+    );
+    this.settingsPanel.setAttribute(
+      "role",
+      this.isMobileSettings ? "dialog" : "complementary",
+    );
+    if (this.isMobileSettings) {
+      this.settingsPanel.setAttribute("aria-modal", "true");
+    } else {
+      this.settingsPanel.removeAttribute("aria-modal");
+    }
+    this.settingsButton.hidden = !this.isMobileSettings;
+    this.settingsButton.setAttribute("aria-expanded", String(shouldShowMobileModal));
+    this.settingsButton.setAttribute(
+      "aria-label",
+      shouldShowMobileModal ? "Close settings" : "Open settings",
+    );
+    this.root.classList.toggle("is-settings-open", shouldShowMobileModal);
+    this.root.classList.toggle("is-mobile-settings", this.isMobileSettings);
+
+    if (shouldShowMobileModal) {
+      this.controls.refresh();
+      requestAnimationFrame(() => {
+        this.getSettingsFocusableElements()[0]?.focus();
+      });
+      return;
+    }
+
+    if (this.isMobileSettings) {
+      this.lastSettingsTrigger?.focus();
+    }
+  }
+
+  private trapSettingsFocus(event: KeyboardEvent) {
+    const focusableElements = this.getSettingsFocusableElements();
+    if (focusableElements.length === 0) {
+      event.preventDefault();
+      this.settingsPanel.focus();
+      return;
+    }
+
+    const firstElement = focusableElements[0];
+    const lastElement = focusableElements[focusableElements.length - 1];
+    const activeElement = document.activeElement;
+    if (event.shiftKey && activeElement === firstElement) {
+      event.preventDefault();
+      lastElement.focus();
+      return;
+    }
+    if (!event.shiftKey && activeElement === lastElement) {
+      event.preventDefault();
+      firstElement.focus();
+    }
+  }
+
+  private getSettingsFocusableElements() {
+    return Array.from(
+      this.settingsPanel.querySelectorAll<HTMLElement>(
+        'button, summary, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+      ),
+    ).filter(
+      (element) =>
+        !element.hasAttribute("disabled") &&
+        element.getAttribute("aria-hidden") !== "true" &&
+        element.offsetParent !== null,
+    );
+  }
+
+  private syncDriveSettingsLocation() {
+    const targetHost = this.isMobileSettings
+      ? this.mobileDriveHost
+      : this.desktopDriveHost;
+    if (this.drivePane.parentElement !== targetHost) {
+      targetHost.append(this.drivePane);
+    }
   }
 
   private handleFullscreenChange = () => {
-    this.root.classList.toggle(
-      "is-fullscreen",
-      document.fullscreenElement === this.root,
-    );
+    const isFullscreen = document.fullscreenElement === this.root;
+    if (isFullscreen) {
+      this.setSettingsOpen(false);
+    }
+    this.root.classList.toggle("is-fullscreen", isFullscreen);
   };
 
   private async toggleFullscreen() {
@@ -801,6 +979,12 @@ export class WavefieldApp {
     this.canvas.classList.remove("is-panning-screen");
     if (this.canvas.hasPointerCapture(event.pointerId)) {
       this.canvas.releasePointerCapture(event.pointerId);
+    }
+  };
+
+  private handleCanvasClick = () => {
+    if (this.drivePane.open) {
+      this.drivePane.open = false;
     }
   };
 

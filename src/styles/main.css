@@ -58,7 +58,7 @@ select {
   top: 16px;
   left: 16px;
   right: 360px;
-  z-index: 2;
+  z-index: 7;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -70,6 +70,8 @@ select {
 .source-option,
 .drive-mode-picker,
 .fullscreen-toggle,
+.settings-toggle,
+.settings-close,
 .play-toggle,
 .volume-toggle {
   height: 34px;
@@ -118,6 +120,8 @@ select {
 .source-option,
 .drive-mode-picker,
 .fullscreen-toggle,
+.settings-toggle,
+.settings-close,
 .play-toggle,
 .volume-toggle {
   display: inline-flex;
@@ -151,6 +155,8 @@ select {
 .source-option:hover,
 .drive-mode-picker:hover,
 .fullscreen-toggle:hover,
+.settings-toggle:hover,
+.settings-close:hover,
 .play-toggle:hover,
 .volume-toggle:hover {
   border-color: rgb(217 247 255 / 46%);
@@ -235,17 +241,69 @@ select {
   line-height: 1;
 }
 
-.pane-host {
+.settings-toggle {
+  width: 34px;
+  justify-content: center;
+  padding: 0;
+  margin-left: auto;
+}
+
+.settings-toggle[hidden] {
+  display: none;
+}
+
+.settings-modal {
   position: absolute;
   top: 16px;
   right: 16px;
   z-index: 3;
   width: 320px;
   max-height: calc(100vh - 132px);
+}
+
+.settings-modal[hidden] {
+  display: none;
+}
+
+.settings-panel {
+  width: 100%;
+  max-height: inherit;
+}
+
+.settings-panel:focus {
+  outline: none;
+}
+
+.settings-panel-header {
+  display: none;
+}
+
+.settings-panel-header h2 {
+  flex: 1;
+  margin: 0;
+  color: #eefaff;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.settings-close {
+  width: 34px;
+  justify-content: center;
+  padding: 0;
+}
+
+.pane-host {
+  width: 100%;
+  max-height: inherit;
   overflow: auto;
   scrollbar-color: rgb(217 247 255 / 42%) rgb(10 12 16 / 18%);
   scrollbar-gutter: stable;
   scrollbar-width: thin;
+}
+
+.pane-host > .tp-rotv {
+  width: 100%;
 }
 
 .pane-host::-webkit-scrollbar {
@@ -268,14 +326,6 @@ select {
   background: rgb(217 247 255 / 56%);
 }
 
-.pane-host[hidden] {
-  display: none;
-}
-
-#app:not(.is-gui-visible) .topbar {
-  right: 16px;
-}
-
 .fullscreen-toggle {
   width: 34px;
   justify-content: center;
@@ -283,7 +333,7 @@ select {
 }
 
 #app.is-fullscreen .topbar,
-#app.is-fullscreen .pane-host,
+#app.is-fullscreen .settings-modal,
 #app.is-fullscreen .diagnostics-strip,
 #app.is-fullscreen .transport {
   display: none;
@@ -726,19 +776,6 @@ select {
 }
 
 @media (max-width: 900px) {
-  .topbar {
-    right: 16px;
-    flex-wrap: wrap;
-  }
-
-  .pane-host {
-    top: auto;
-    right: 16px;
-    bottom: 112px;
-    width: min(320px, calc(100vw - 32px));
-    max-height: 42vh;
-  }
-
   .diagnostics-strip {
     bottom: 168px;
     align-items: flex-start;
@@ -756,7 +793,58 @@ select {
 
 @media (max-width: 560px) {
   .topbar {
-    align-items: flex-start;
+    right: 16px;
+    align-items: center;
+    flex-wrap: nowrap;
+  }
+
+  .settings-modal {
+    inset: 0;
+    z-index: 6;
+    display: grid;
+    align-items: end;
+    justify-items: stretch;
+    width: auto;
+    max-height: none;
+    padding: calc(56px + env(safe-area-inset-top)) 0 0;
+    pointer-events: none;
+  }
+
+  .settings-panel {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    max-height: calc(100vh - 56px - env(safe-area-inset-top));
+    border-right: 0;
+    border-bottom: 0;
+    border-left: 0;
+    border-radius: 8px 8px 0 0;
+    background: rgb(8 12 14 / 92%);
+    box-shadow: 0 24px 70px rgb(0 0 0 / 52%);
+    overflow: hidden;
+    pointer-events: auto;
+    backdrop-filter: blur(18px);
+  }
+
+  .settings-panel-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding-top: 12px;
+    padding-bottom: 10px;
+    padding-right: calc(10px + env(safe-area-inset-right));
+    padding-left: calc(12px + env(safe-area-inset-left));
+    border-bottom: 1px solid rgb(255 255 255 / 10%);
+  }
+
+  .pane-host {
+    flex: 1 1 auto;
+    min-height: 0;
+    padding-right: calc(10px + env(safe-area-inset-right));
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+    padding-left: calc(10px + env(safe-area-inset-left));
   }
 
   .source-picker {
@@ -768,6 +856,8 @@ select {
   .source-option,
   .drive-mode-picker,
   .fullscreen-toggle,
+  .settings-toggle,
+  .settings-close,
   .play-toggle,
   .volume-toggle {
     height: 32px;
@@ -783,6 +873,8 @@ select {
   .play-toggle,
   .volume-toggle,
   .fullscreen-toggle,
+  .settings-toggle,
+  .settings-close,
   .volume-control {
     width: 32px;
     height: 32px;
