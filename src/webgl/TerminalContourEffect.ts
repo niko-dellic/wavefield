@@ -103,6 +103,6 @@ export class TerminalContourEffect extends Effect {
     this.contourLevelsUniform.value = settings.terminalContourLevels;
     this.contourStrengthUniform.value = settings.terminalContourStrength;
     this.contourThresholdUniform.value = settings.terminalContourThreshold;
-    this.colorPreserveUniform.value = settings.colorMode === "heatmap" ? 0.86 : 0;
+    this.colorPreserveUniform.value = settings.colorMode === "heatmap" ? 0.15 : 0;
   }
 }
