@@ -8,12 +8,15 @@ import {
   type FrequencyBand,
   type SpectralPeak,
 } from "../types";
+import { mapFrequencyToChladniMode } from "./chladniModes";
 import { EMPTY_CHROMA_PROFILE, EMPTY_FEATURE_SIGNALS } from "./featureAnalysis";
 
-export const MAX_MODAL_MODES = 32;
+export const MAX_CHLADNI_MODES = 12;
+export const MAX_MODAL_MODES = MAX_CHLADNI_MODES;
 
-export type ModalSlot = {
-  indices: [number, number, number];
+export type ChladniMode = {
+  mode: [number, number];
+  frequency: number;
   amplitude: number;
   phase: number;
   coherence: number;
@@ -25,6 +28,8 @@ export type ModalSlot = {
   pulse: number;
   layer: number;
 };
+
+export type ModalSlot = ChladniMode;
 
 export type ModalFieldFrame = {
   modes: ModalSlot[];
@@ -46,7 +51,7 @@ export type ModalFieldFrame = {
 
 type ModalAtlasEntry = {
   key: string;
-  indices: [number, number, number];
+  mode: [number, number];
   naturalFrequency: number;
   frequencyNorm: number;
   band: FrequencyBand;
@@ -82,7 +87,7 @@ const BAND_SCALE_KEYS: Record<
 
 const MIN_FREQUENCY = 70;
 const MAX_FREQUENCY = 7_200;
-const ATLAS_SIZE = 48;
+const ATLAS_SIZE = 72;
 const HARMONIC_DRIVER_WEIGHTS = [1, 0.66, 0.46, 0.32, 0.22];
 const MODAL_ATLAS = buildModalAtlas();
 const DISPLAY_MODE_INDEXES = buildDisplayModeIndexes(MODAL_ATLAS.length, MAX_MODAL_MODES);
@@ -126,7 +131,7 @@ export class ModalFieldEngine {
     this.modes = MODAL_ATLAS.map((entry) => ({
       ...entry,
       amplitude: 0,
-      phase: hashMode(entry.indices) * Math.PI * 2,
+      phase: hashMode(entry.mode) * Math.PI * 2,
       coherence: 0,
       lastDrive: 0,
       driver: 0,
@@ -216,13 +221,7 @@ export class ModalFieldEngine {
         8,
       );
     }
-    const modeDrivers = resolveModeDrivers(frame);
-    const sourcePoint = [
-      clamp(settings.sourceX, 0.05, 0.95),
-      clamp(settings.sourceY, 0.05, 0.95),
-      0.5,
-    ] as const;
-    const boundaryMode = settings.boundaryMode;
+    const modeDrivers = resolveModeDrivers(frame, settings, time);
 
     for (const mode of this.modes) {
       const bandScale = settings[BAND_SCALE_KEYS[mode.band]];
@@ -235,15 +234,9 @@ export class ModalFieldEngine {
       const frequencyAffinity = driver
         ? getFrequencyAffinity(mode.naturalFrequency, driver.frequency)
         : getFrequencyAffinity(mode.naturalFrequency, frequencyFromCentroid(frame.centroid)) * 0.18;
-      const sourceWeight = Math.max(
-        0.18,
-        Math.abs(
-          evaluateModeAtPoint(mode.indices, sourcePoint, boundaryMode),
-        ),
-      );
       const localPulse = clamp01(
         driverPulse * 0.76 +
-          frame.signals.pulse * (0.18 + hashMode(mode.indices) * 0.16) +
+          frame.signals.pulse * (0.18 + hashMode(mode.mode) * 0.16) +
           onset * 0.28,
       );
       const drive = clamp01(
@@ -255,8 +248,7 @@ export class ModalFieldEngine {
           settings.gain *
           settings.sensitivity *
           settings.modalDrive *
-          bandScale *
-          sourceWeight,
+          bandScale,
       );
       const decaySeconds =
         settings.modalDecay *
@@ -291,7 +283,7 @@ export class ModalFieldEngine {
         (0.045 +
           mode.frequencyNorm * 0.3 +
           mode.driver * 0.28 +
-          localPulse * (0.44 + hashMode(mode.indices) * 0.28) +
+          localPulse * (0.44 + hashMode(mode.mode) * 0.28) +
           layer * 0.18);
       mode.lastDrive = drive;
     }
@@ -302,7 +294,8 @@ export class ModalFieldEngine {
     return {
       modes: this.getDisplayModes(settings.modalCount)
         .map((mode) => ({
-          indices: mode.indices,
+          mode: mode.mode,
+          frequency: mode.naturalFrequency,
           amplitude: mode.amplitude,
           phase: mode.phase,
           coherence: mode.coherence,
@@ -406,9 +399,10 @@ export function createAmbientModalFieldFrame(time: number): ModalFieldFrame {
     const wave = 0.5 + 0.5 * Math.sin(time * (0.08 + mode.frequencyNorm * 0.18) + index * 0.73);
 
     return {
-      indices: mode.indices,
+      mode: mode.mode,
+      frequency: mode.naturalFrequency,
       amplitude: clamp01((0.1 + bandBias * 0.38) * (0.72 + wave * 0.18)),
-      phase: hashMode(mode.indices) * Math.PI * 2,
+      phase: hashMode(mode.mode) * Math.PI * 2,
       coherence: 0.42 + mode.frequencyNorm * 0.28,
       frequencyNorm: mode.frequencyNorm,
       band: mode.band,
@@ -457,23 +451,18 @@ function buildModalAtlas(): ModalAtlasEntry[] {
   );
   const rawCandidates: ModalAtlasEntry[] = [];
 
-  for (let u = 1; u <= 18; u += 1) {
-    for (let v = 1; v <= 18; v += 1) {
-      for (let w = 1; w <= 6; w += 1) {
-        const magnitude = Math.hypot(u, v, w);
-        const naturalFrequency = 55 * Math.pow(magnitude, 1.38);
-        const key = `${u}:${v}:${w}`;
-        rawCandidates.push({
-          key,
-          indices: [u, v, w],
-          naturalFrequency,
-          frequencyNorm: clamp01(
-            (Math.log2(naturalFrequency) - Math.log2(MIN_FREQUENCY)) /
-              (Math.log2(MAX_FREQUENCY) - Math.log2(MIN_FREQUENCY)),
-          ),
-          band: getBandForFrequency(naturalFrequency),
-        });
-      }
+  for (let m = 1; m <= 28; m += 1) {
+    for (let n = 1; n <= 28; n += 1) {
+      const magnitude = Math.hypot(m, n);
+      const naturalFrequency = 220 * Math.pow(magnitude / Math.hypot(3, 5), 2);
+      const key = `${m}:${n}`;
+      rawCandidates.push({
+        key,
+        mode: [m, n],
+        naturalFrequency,
+        frequencyNorm: clampFrequencyNorm(naturalFrequency),
+        band: getBandForFrequency(naturalFrequency),
+      });
     }
   }
 
@@ -528,8 +517,25 @@ function buildDisplayModeIndexes(sourceCount: number, displayCount: number) {
   return indexes;
 }
 
-function resolveModeDrivers(frame: AudioFeatureFrame) {
+function resolveModeDrivers(
+  frame: AudioFeatureFrame,
+  settings: CymaticSettings,
+  time: number,
+) {
   const drivers = new Map<string, ModeDriver>();
+  if (settings.driveMode === "manual") {
+    const frequency = getManualFrequency(settings, time);
+    const mode = getAtlasModeForFrequency(frequency);
+    addModeDriver(drivers, mode, {
+      strength: 1,
+      pulse: 0.38,
+      layer: 0,
+      frequency,
+      harmonicWeight: 1,
+    });
+    return drivers;
+  }
+
   const peaks = frame.peaks.length
     ? frame.peaks
     : [
@@ -553,7 +559,12 @@ function resolveModeDrivers(frame: AudioFeatureFrame) {
 
       const familyCount = harmonicIndex === 0 && peakIndex < 3 ? 2 : 1;
       const layer = harmonicIndex === 0 && peakIndex < 3 ? 0 : 1;
-      const candidates = getNearestAtlasModes(targetFrequency, familyCount + 1);
+      const primaryMode = getAtlasModeForFrequency(targetFrequency);
+      const candidates = [primaryMode, ...getNearestAtlasModes(targetFrequency, familyCount + 2)]
+        .filter(
+          (mode, index, modes) =>
+            modes.findIndex((candidate) => candidate.key === mode.key) === index,
+        );
 
       candidates.slice(0, familyCount).forEach((mode, familyIndex) => {
         const affinity = getFrequencyAffinity(mode.naturalFrequency, targetFrequency);
@@ -632,10 +643,27 @@ function getNearestAtlasModes(frequency: number, count: number) {
       if (Math.abs(leftDistance - rightDistance) > 0.0001) {
         return leftDistance - rightDistance;
       }
-      return left.indices[0] + left.indices[1] + left.indices[2] -
-        (right.indices[0] + right.indices[1] + right.indices[2]);
+      return left.mode[0] + left.mode[1] - (right.mode[0] + right.mode[1]);
     })
     .slice(0, count);
+}
+
+function getAtlasModeForFrequency(frequency: number) {
+  const mapped = mapFrequencyToChladniMode(frequency);
+  const direct = MODAL_ATLAS.find(
+    (mode) => mode.mode[0] === mapped.m && mode.mode[1] === mapped.n,
+  );
+  if (direct) {
+    return direct;
+  }
+
+  return {
+    key: `${mapped.m}:${mapped.n}`,
+    mode: [mapped.m, mapped.n] as [number, number],
+    naturalFrequency: mapped.frequency,
+    frequencyNorm: clampFrequencyNorm(mapped.frequency),
+    band: getBandForFrequency(mapped.frequency),
+  };
 }
 
 function getBandForFrequency(frequency: number): FrequencyBand {
@@ -654,30 +682,26 @@ function frequencyFromCentroid(centroid: number) {
   return MIN_FREQUENCY * Math.pow(MAX_FREQUENCY / MIN_FREQUENCY, clamp01(centroid));
 }
 
-function getFrequencyAffinity(frequency: number, target: number) {
-  const distance = Math.abs(Math.log2(frequency / Math.max(1, target)));
-  return Math.exp(-distance * 1.55);
+function getManualFrequency(settings: CymaticSettings, time: number) {
+  const baseFrequency = clamp(settings.testFrequency, MIN_FREQUENCY, MAX_FREQUENCY);
+  if (!settings.frequencySweep) {
+    return baseFrequency;
+  }
+
+  const sweep = 0.5 + 0.5 * Math.sin(time * Math.PI * 2 * settings.frequencySweepRate);
+  return MIN_FREQUENCY * Math.pow(MAX_FREQUENCY / MIN_FREQUENCY, sweep);
 }
 
-function evaluateModeAtPoint(
-  indices: [number, number, number],
-  point: readonly [number, number, number],
-  boundaryMode: "dirichlet" | "neumann" | "open",
-) {
-  return (
-    basis(indices[0], point[0], boundaryMode) *
-    basis(indices[1], point[1], boundaryMode) *
-    basis(indices[2], point[2], boundaryMode)
+function clampFrequencyNorm(frequency: number) {
+  return clamp01(
+    (Math.log2(frequency) - Math.log2(MIN_FREQUENCY)) /
+      (Math.log2(MAX_FREQUENCY) - Math.log2(MIN_FREQUENCY)),
   );
 }
 
-function basis(
-  index: number,
-  coordinate: number,
-  boundaryMode: "dirichlet" | "neumann" | "open",
-) {
-  const argument = Math.PI * index * coordinate;
-  return boundaryMode === "dirichlet" ? Math.sin(argument) : Math.cos(argument);
+function getFrequencyAffinity(frequency: number, target: number) {
+  const distance = Math.abs(Math.log2(frequency / Math.max(1, target)));
+  return Math.exp(-distance * 1.55);
 }
 
 function formatPeakSummary(peaks: SpectralPeak[]) {
@@ -735,10 +759,10 @@ function hsvToRgb(hue: number, saturation: number, value: number): [number, numb
   }
 }
 
-function hashMode(indices: [number, number, number]) {
+function hashMode(mode: [number, number]) {
   return (
     Math.abs(
-      Math.sin(indices[0] * 12.9898 + indices[1] * 78.233 + indices[2] * 37.719) *
+      Math.sin(mode[0] * 12.9898 + mode[1] * 78.233) *
         43_758.5453,
     ) % 1
   );

@@ -1,11 +1,12 @@
 export type FrequencyBand = "low" | "mid" | "high";
 export type ProjectionMode = "screen" | "sphere";
-export type BoundaryMode = "dirichlet" | "neumann" | "open";
+export type BoundaryMode = "freePlate" | "dirichlet" | "neumann";
 export type ColorMode = "chromesthesia" | "mono" | "bandSplit" | "thermalPhase";
 export type SphereProjectionType = "uv" | "triplanar";
 export type ScreenAspectMode = "circle" | "fit";
 export type IdleMode = "ambient";
 export type PostEffectId = "bloom" | "pixelation" | "terminal";
+export type DriveMode = "audio" | "manual";
 
 export type SpectralPeak = {
   frequency: number;
@@ -73,14 +74,16 @@ export type CymaticSettings = {
   lightBackgroundMode: boolean;
   gain: number;
   sensitivity: number;
+  driveMode: DriveMode;
+  testFrequency: number;
+  frequencySweep: boolean;
+  frequencySweepRate: number;
   lowScale: number;
   midScale: number;
   highScale: number;
   modalCount: number;
   modalDecay: number;
   modalDrive: number;
-  sourceX: number;
-  sourceY: number;
   chromesthesiaMix: number;
   sphereRadius: number;
   sphereSurfaceOpacity: number;
@@ -100,7 +103,7 @@ export type CymaticSettings = {
 
 export const DEFAULT_SETTINGS: CymaticSettings = {
   projectionMode: "screen",
-  boundaryMode: "open",
+  boundaryMode: "freePlate",
   colorMode: "chromesthesia",
   sphereProjectionType: "triplanar",
   screenAspectMode: "circle",
@@ -118,14 +121,16 @@ export const DEFAULT_SETTINGS: CymaticSettings = {
   lightBackgroundMode: false,
   gain: 1,
   sensitivity: 1,
+  driveMode: "audio",
+  testFrequency: 220,
+  frequencySweep: false,
+  frequencySweepRate: 0.18,
   lowScale: 1,
   midScale: 1,
   highScale: 1,
-  modalCount: 28,
+  modalCount: 12,
   modalDecay: 1.45,
   modalDrive: 1,
-  sourceX: 0.5,
-  sourceY: 0.5,
   chromesthesiaMix: 0.82,
   sphereRadius: 1.35,
   sphereSurfaceOpacity: 0.64,

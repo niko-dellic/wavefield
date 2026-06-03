@@ -35,6 +35,8 @@ export class WavefieldApp {
   private readonly canvas: HTMLCanvasElement;
   private readonly status: HTMLElement;
   private readonly playButton: HTMLButtonElement;
+  private readonly volumeButton: HTMLButtonElement;
+  private readonly volumeSlider: HTMLInputElement;
   private readonly sourceTrigger: HTMLButtonElement;
   private readonly sourceMenu: HTMLElement;
   private readonly selectedSource: HTMLElement;
@@ -45,6 +47,7 @@ export class WavefieldApp {
   private lastFrameTime = performance.now();
   private ambientSeconds = 0;
   private analysisPreviewTime = 0;
+  private lastAudibleVolume = 1;
   private lastModalFieldFrame: ModalFieldFrame = EMPTY_MODAL_FIELD_FRAME;
 
   constructor(private readonly root: HTMLElement) {
@@ -52,6 +55,8 @@ export class WavefieldApp {
     this.canvas = this.query<HTMLCanvasElement>(".wavefield-canvas");
     this.status = this.query<HTMLElement>(".status-text");
     this.playButton = this.query<HTMLButtonElement>(".play-toggle");
+    this.volumeButton = this.query<HTMLButtonElement>(".volume-toggle");
+    this.volumeSlider = this.query<HTMLInputElement>(".volume-slider");
     this.sourceTrigger = this.query<HTMLButtonElement>(".source-trigger");
     this.sourceMenu = this.query<HTMLElement>(".source-menu");
     this.selectedSource = this.query<HTMLElement>(".selected-source");
@@ -145,13 +150,32 @@ export class WavefieldApp {
           </label>
         </section>
         <aside class="pane-host" aria-label="Wavefield shader settings"></aside>
-        <section class="analysis-debug" aria-label="Audio analysis debug" hidden></section>
+        <section class="diagnostics-strip" aria-label="Wavefield diagnostics">
+          <section class="analysis-debug" aria-label="Audio analysis debug" hidden></section>
+          <div class="status-text" role="status">Choose a fixture or open an audio file.</div>
+        </section>
         <section class="transport" aria-label="Audio transport">
           <button class="play-toggle" type="button" aria-label="Play" title="Play">
             <i class="ph ph-play" aria-hidden="true"></i>
           </button>
+          <div class="volume-control">
+            <button class="volume-toggle" type="button" aria-label="Mute" title="Mute">
+              <i class="ph ph-speaker-high" aria-hidden="true"></i>
+            </button>
+            <div class="volume-popover">
+              <input
+                class="volume-slider"
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                value="1"
+                aria-label="Volume"
+                aria-orientation="vertical"
+              />
+            </div>
+          </div>
           <div class="waveform"></div>
-          <p class="status-text">Choose a fixture or open an audio file.</p>
         </section>
       </main>
     `;
@@ -178,6 +202,14 @@ export class WavefieldApp {
 
     this.playButton.addEventListener("click", () => {
       this.togglePlayback();
+    });
+
+    this.volumeButton.addEventListener("click", () => {
+      this.setMuted(!this.wavesurfer.getMuted());
+    });
+
+    this.volumeSlider.addEventListener("input", () => {
+      this.setVolume(Number(this.volumeSlider.value));
     });
 
     document.addEventListener("keydown", this.handleKeyDown);
@@ -250,6 +282,8 @@ export class WavefieldApp {
     this.wavesurfer.on("error", (error) => {
       this.setStatus(error instanceof Error ? error.message : String(error));
     });
+
+    this.syncVolumeControl();
   }
 
   private async loadFixture(url: string, label: string) {
@@ -336,7 +370,7 @@ export class WavefieldApp {
       fieldFrame = createAmbientModalFieldFrame(this.ambientSeconds);
       renderDeltaSeconds = deltaSeconds;
       isIdlePreview = true;
-      this.updateAnalysisDebug(fieldFrame, true);
+      this.analysisDebug.hidden = true;
     } else if (isPlaying) {
       fieldFrame = this.modalEngine.update(time, this.settings, deltaSeconds);
       this.lastModalFieldFrame = fieldFrame;
@@ -347,8 +381,8 @@ export class WavefieldApp {
         const previewTime = time > 0.05 ? time : this.analysisPreviewTime;
         fieldFrame = this.modalEngine.update(previewTime, this.settings, 1 / 60);
         this.lastModalFieldFrame = fieldFrame;
+        this.updateAnalysisDebug(fieldFrame, false);
       }
-      this.updateAnalysisDebug(fieldFrame, false);
     }
 
     this.modalRenderer.render(
@@ -407,6 +441,43 @@ export class WavefieldApp {
           : "Playback was blocked by the browser",
       );
     });
+  }
+
+  private setVolume(volume: number) {
+    const clampedVolume = Math.min(1, Math.max(0, volume));
+    this.wavesurfer.setVolume(clampedVolume);
+    if (clampedVolume > 0) {
+      this.lastAudibleVolume = clampedVolume;
+      this.wavesurfer.setMuted(false);
+    } else {
+      this.wavesurfer.setMuted(true);
+    }
+    this.syncVolumeControl();
+  }
+
+  private setMuted(isMuted: boolean) {
+    if (!isMuted && this.wavesurfer.getVolume() <= 0) {
+      this.wavesurfer.setVolume(this.lastAudibleVolume);
+    }
+    this.wavesurfer.setMuted(isMuted);
+    this.syncVolumeControl();
+  }
+
+  private syncVolumeControl() {
+    const volume = this.wavesurfer.getVolume();
+    const isMuted = this.wavesurfer.getMuted() || volume <= 0;
+    const effectiveVolume = isMuted ? 0 : volume;
+    const icon = isMuted
+      ? "ph-speaker-x"
+      : volume < 0.5
+        ? "ph-speaker-low"
+        : "ph-speaker-high";
+    const label = isMuted ? "Unmute" : "Mute";
+
+    this.volumeSlider.value = String(effectiveVolume);
+    this.volumeButton.innerHTML = `<i class="ph ${icon}" aria-hidden="true"></i>`;
+    this.volumeButton.setAttribute("aria-label", label);
+    this.volumeButton.title = label;
   }
 
   private handleSettingsChange() {

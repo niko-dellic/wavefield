@@ -8,6 +8,7 @@ import {
   findSpectralPeaks,
   type RawAudioFeatureFrame,
 } from "../src/audio/featureAnalysis.ts";
+import { mapFrequencyToChladniMode } from "../src/audio/chladniModes.ts";
 
 const SAMPLE_RATE = 48_000;
 const FFT_SIZE = 1024;
@@ -99,6 +100,31 @@ test("transient band rises produce change and pulse without erasing structure", 
   assert.ok(transient.signals.change > 0.15);
   assert.ok(transient.signals.pulse > 0.15);
   assert.ok(transient.signals.structure > 0.2);
+});
+
+test("chladni frequency mapping anchors 220Hz to the base 3:5 mode", () => {
+  const mode = mapFrequencyToChladniMode(220);
+
+  assert.equal(mode.m, 3);
+  assert.equal(mode.n, 5);
+});
+
+test("chladni frequency mapping increases mode complexity with frequency", () => {
+  const low = mapFrequencyToChladniMode(110);
+  const high = mapFrequencyToChladniMode(880);
+
+  assert.ok(high.m > low.m);
+  assert.ok(high.n > low.n);
+});
+
+test("chladni frequency mapping clamps extreme frequencies", () => {
+  const low = mapFrequencyToChladniMode(1);
+  const high = mapFrequencyToChladniMode(48_000);
+
+  assert.ok(low.m >= 1);
+  assert.ok(low.n >= 1);
+  assert.ok(high.m <= 28);
+  assert.ok(high.n <= 28);
 });
 
 function createSpectrum(peaks: Array<[number, number]>) {

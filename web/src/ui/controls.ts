@@ -45,9 +45,9 @@ export function createControls(
     engine.addBinding(settings, "boundaryMode", {
       label: "boundary",
       options: {
-        Open: "open",
-        Neumann: "neumann",
+        "Free plate": "freePlate",
         Dirichlet: "dirichlet",
+        Neumann: "neumann",
       },
     });
     if (settings.projectionMode === "screen") {
@@ -61,8 +61,8 @@ export function createControls(
     }
     engine.addBinding(settings, "modalCount", {
       label: "modes",
-      min: 4,
-      max: 32,
+      min: 1,
+      max: 12,
       step: 1,
     });
     engine.addBinding(settings, "modalDecay", {
@@ -76,18 +76,6 @@ export function createControls(
       min: 0,
       max: 3,
       step: 0.01,
-    });
-    engine.addBinding(settings, "sourceX", {
-      label: "source x",
-      min: 0.05,
-      max: 0.95,
-      step: 0.001,
-    });
-    engine.addBinding(settings, "sourceY", {
-      label: "source y",
-      min: 0.05,
-      max: 0.95,
-      step: 0.001,
     });
     if (settings.colorMode === "chromesthesia") {
       engine.addBinding(settings, "chromesthesiaMix", {
@@ -187,6 +175,32 @@ export function createControls(
     });
 
     const audio = pane.addFolder({ title: "Audio", expanded: true });
+    audio.addBinding(settings, "driveMode", {
+      label: "drive mode",
+      options: {
+        Audio: "audio",
+        Manual: "manual",
+      },
+    });
+    if (settings.driveMode === "manual") {
+      audio.addBinding(settings, "testFrequency", {
+        label: "test Hz",
+        min: 70,
+        max: 7200,
+        step: 1,
+      });
+      audio.addBinding(settings, "frequencySweep", {
+        label: "sweep",
+      });
+      if (settings.frequencySweep) {
+        audio.addBinding(settings, "frequencySweepRate", {
+          label: "sweep rate",
+          min: 0.02,
+          max: 1.2,
+          step: 0.01,
+        });
+      }
+    }
     audio.addBinding(settings, "gain", {
       label: "gain",
       min: 0.1,
@@ -250,6 +264,8 @@ function getLayoutKey(settings: CymaticSettings) {
     settings.projectionMode,
     settings.colorMode,
     settings.screenAspectMode,
+    settings.driveMode,
+    settings.frequencySweep,
     settings.postProcessingEnabled,
     settings.postBloomEnabled,
     settings.postPixelationEnabled,
