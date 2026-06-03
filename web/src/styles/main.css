@@ -1,0 +1,296 @@
+:root {
+  color: #f5fbff;
+  background: #000;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  overflow: hidden;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+.wavefield {
+  position: fixed;
+  inset: 0;
+  background: #000;
+  overflow: hidden;
+}
+
+.wavefield-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.topbar {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  right: 360px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.brand,
+.source-trigger,
+.source-option,
+.mode-picker,
+.play-toggle {
+  height: 34px;
+  border: 1px solid rgb(255 255 255 / 15%);
+  background: rgb(10 16 18 / 72%);
+  color: #eefaff;
+  backdrop-filter: blur(14px);
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.brand-mark {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #dffbff;
+  box-shadow:
+    0 0 8px #dffbff,
+    0 0 20px #3bd6ff;
+}
+
+.source-picker {
+  position: relative;
+  min-width: min(280px, 38vw);
+}
+
+.source-trigger,
+.source-option,
+.mode-picker,
+.play-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 6px;
+  padding: 0 12px;
+  cursor: pointer;
+}
+
+.source-trigger,
+.source-option {
+  width: 100%;
+}
+
+.source-trigger {
+  justify-content: space-between;
+}
+
+.selected-source {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.source-trigger[aria-expanded="true"],
+.source-trigger:hover,
+.source-option:hover,
+.mode-picker:hover,
+.play-toggle:hover {
+  border-color: rgb(217 247 255 / 46%);
+  background: rgb(20 38 44 / 78%);
+}
+
+.source-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 5;
+  width: 100%;
+  min-width: 240px;
+  padding: 6px;
+  border: 1px solid rgb(255 255 255 / 14%);
+  border-radius: 8px;
+  background: rgb(8 12 14 / 92%);
+  box-shadow: 0 16px 44px rgb(0 0 0 / 42%);
+  backdrop-filter: blur(18px);
+}
+
+.source-menu[hidden] {
+  display: none;
+}
+
+.source-option {
+  justify-content: flex-start;
+  border-color: transparent;
+  background: transparent;
+  color: #eefaff;
+  text-align: left;
+}
+
+.source-option + .source-option {
+  margin-top: 2px;
+}
+
+.upload-option {
+  border-top: 1px solid rgb(255 255 255 / 10%);
+  border-radius: 0 0 6px 6px;
+  margin-top: 6px;
+  padding-top: 8px;
+}
+
+.audio-file {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.mode-picker {
+  gap: 8px;
+  cursor: default;
+}
+
+.origin-mode-select {
+  width: 76px;
+  min-width: 76px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #eefaff;
+  cursor: pointer;
+}
+
+.origin-mode-select option {
+  color: #11181c;
+}
+
+.ph {
+  flex: 0 0 auto;
+  font-size: 17px;
+  line-height: 1;
+}
+
+.pane-host {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 3;
+  width: 320px;
+  max-height: calc(100vh - 132px);
+  overflow: auto;
+}
+
+.transport {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 16px;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) minmax(160px, 280px);
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid rgb(255 255 255 / 12%);
+  border-radius: 8px;
+  background: rgb(0 0 0 / 66%);
+  backdrop-filter: blur(18px);
+}
+
+.waveform {
+  min-width: 0;
+}
+
+.status-text {
+  margin: 0;
+  color: rgb(245 251 255 / 74%);
+  font-size: 13px;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.is-dragging .wavefield::after,
+#app.is-dragging .wavefield::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  border: 2px solid rgb(217 247 255 / 62%);
+  background: rgb(25 140 180 / 10%);
+  pointer-events: none;
+}
+
+@media (max-width: 900px) {
+  .topbar {
+    right: 16px;
+    flex-wrap: wrap;
+  }
+
+  .pane-host {
+    top: auto;
+    right: 16px;
+    bottom: 112px;
+    width: min(320px, calc(100vw - 32px));
+    max-height: 42vh;
+  }
+
+  .transport {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .status-text {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 560px) {
+  .topbar {
+    align-items: flex-start;
+  }
+
+  .source-picker {
+    min-width: min(260px, calc(100vw - 32px));
+  }
+
+  .brand,
+  .source-trigger,
+  .source-option,
+  .mode-picker,
+  .play-toggle {
+    height: 32px;
+    padding: 0 10px;
+    font-size: 13px;
+  }
+}

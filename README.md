@@ -1,34 +1,37 @@
 # Wavefield
 
-Wavefield is a terminal cymatic audio visualizer. It reads an audio file, detects onset energy, and renders cymatic pulse fields directly in the terminal.
+Wavefield is a cymatic audio visualization playground with two implementations:
 
-The first renderer is deliberately portable: ANSI truecolor plus half-block cells. Higher fidelity terminal graphics backends can be added later without replacing the audio analysis or pulse simulation.
+- `terminal/`: Rust CLI renderer for ANSI and Kitty-compatible terminals.
+- `web/`: Vite + TypeScript + Three.js visual instrument with GPU shader rendering.
 
-## Usage
+Shared audio fixtures live in `fixtures/audio/`.
 
-```sh
-cargo run -- path/to/song.mp3
-cargo run -- path/to/song.mp3 --no-audio
-cargo run -- path/to/song.mp3 --no-audio --frames 120
-cargo run -- path/to/song.mp3 --backend kitty
-cargo run --release -- path/to/song.mp3 --backend kitty --quality medium --fps 15
-cargo run --release -- path/to/song.mp3 --backend kitty --quality high --fps 12
-```
+## Web Visualizer
 
-Local fixtures live in `fixtures/audio/`:
+The web app is the preferred high-FPS renderer. It uses Wavesurfer for waveform playback and scrubbing, Tweakpane for live controls, and a standalone Three.js cymatic accumulation pass adapted from the original Three.js pulse shader reference.
 
 ```sh
-cargo run -- "fixtures/audio/music for inst mix ab oz.mp3"
-cargo run -- "fixtures/audio/music for inst mix ab oz.wav" --no-audio
-cargo run -- "fixtures/audio/contradictions inst mix ab oz.mp3" --no-audio --frames 120
-cargo run -- "fixtures/audio/music for inst mix ab oz.mp3" --backend kitty
-cargo run --release -- "fixtures/audio/music for inst mix ab oz.mp3" --backend kitty --quality medium --fps 15
-cargo run --release -- "fixtures/audio/music for inst mix ab oz.mp3" --backend kitty --quality ultra --fps 8
+cd web
+npm install
+npm run dev
+npm run build
+npm run preview
 ```
 
-`--backend ansi` is portable but cell-based. `--backend kitty` uses the Kitty terminal graphics protocol and is the preferred visual backend in terminals that support it, including Kitty-compatible terminals.
+The dev and preview servers expose root fixtures at `/fixtures/audio/*`, so the fixture buttons work without duplicating audio files into `web/public`.
 
-Kitty rendering sends PNG-compressed raster frames through the terminal. `--quality medium` targets up to `960x540` and is the recommended starting point; try `--quality high` or `--quality ultra` for sharper output, and lower `--fps` if the terminal starts to lag.
+## Terminal Visualizer
+
+```sh
+cargo run -p wavefield -- "fixtures/audio/music for inst mix ab oz.mp3"
+cargo run -p wavefield -- "fixtures/audio/music for inst mix ab oz.wav" --no-audio
+cargo run -p wavefield -- "fixtures/audio/contradictions inst mix ab oz.mp3" --no-audio --frames 120
+cargo run -p wavefield -- "fixtures/audio/music for inst mix ab oz.mp3" --backend kitty --quality medium --fps 15
+cargo run -p wavefield -- "fixtures/audio/music for inst mix ab oz.mp3" --backend kitty --quality ultra --fps 8
+```
+
+`--backend ansi` is portable but cell-based. `--backend kitty` sends PNG-compressed raster frames through the terminal and is the preferred terminal backend in Kitty-compatible terminals.
 
 Runtime keys:
 
@@ -36,6 +39,13 @@ Runtime keys:
 - `[` / `]`: lower or raise sensitivity
 - `-` / `=`: lower or raise gain
 - `q`, `Esc`, or `Ctrl-C`: quit
+
+## Tests
+
+```sh
+cargo test -p wavefield
+cd web && npm run build
+```
 
 ## Reference Material
 
