@@ -1012,12 +1012,7 @@ function getFirstMeaningfulFrameTime(analysis: AudioAnalysis) {
 }
 
 function getFieldSettingsKey(settings: CymaticSettings) {
-  return [
-    settings.driveMode,
-    settings.testFrequency,
-    settings.frequencySweep,
-    settings.frequencySweepRate,
-  ].join(":");
+  return [settings.driveMode].join(":");
 }
 
 function isEditableKeyboardTarget(target: EventTarget | null) {

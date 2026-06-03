@@ -271,7 +271,15 @@ export class ModalFieldEngine {
     deltaSeconds: number,
   ) {
     if (settings.driveMode === "manual") {
-      return rawDrivers;
+      updatePersistentDrivers({
+        persistentDrivers: this.persistentDrivers,
+        targets: rawDrivers,
+        settings,
+        time,
+        deltaSeconds,
+      });
+
+      return materializePersistentDrivers(this.persistentDrivers);
     }
 
     const targets = this.resolveAudioPatternTargets(

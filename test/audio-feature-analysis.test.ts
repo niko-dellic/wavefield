@@ -302,6 +302,46 @@ test("manual modal engine frequency reset produces a different mode set", () => 
   );
 });
 
+test("manual modal engine frequency changes morph without clearing current topology", () => {
+  const engine = new ModalFieldEngine();
+  const lowSettings = createManualSettings({
+    testFrequency: 220,
+    morphSeconds: 0.45,
+  });
+  const highSettings = createManualSettings({
+    testFrequency: 880,
+    morphSeconds: 0.45,
+  });
+
+  let field = engine.update(0, lowSettings, 1 / 60);
+  const lowMode = field.debug.topologyMode;
+
+  for (let frame = 1; frame <= 12; frame += 1) {
+    field = engine.update(frame / 60, highSettings, 1 / 60);
+  }
+
+  const highMode = mapFrequencyToChladniMode(880);
+  const highModeKey = `${highMode.m}:${highMode.n}`;
+
+  assert.equal(field.debug.topologyMode, highModeKey);
+  assert.ok(
+    field.modes.some(
+      (mode) =>
+        `${mode.mode[0]}:${mode.mode[1]}` === lowMode &&
+        mode.topology > 0,
+    ),
+    "previous manual topology should still be fading out",
+  );
+  assert.ok(
+    field.modes.some(
+      (mode) =>
+        `${mode.mode[0]}:${mode.mode[1]}` === highModeKey &&
+        mode.topology > 0,
+    ),
+    "new manual topology should be fading in",
+  );
+});
+
 test("audio modal engine stays empty without analysis", () => {
   const engine = new ModalFieldEngine();
   const frame = engine.update(

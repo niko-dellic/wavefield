@@ -169,23 +169,38 @@ export function selectDisplayModes({
   modalCount: number;
 }) {
   const count = Math.min(MAX_MODAL_MODES, Math.max(1, modalCount));
+  const previousOrder = new Map(
+    displayModeKeys.map((key, index) => [key, index]),
+  );
   const activeEntries = modes
-    .map((mode, index) => ({
-      mode,
-      index,
-      score:
-        mode.topology * 1.65 +
-        mode.driver * 0.9 +
-        mode.excitation * 0.42 +
-        mode.amplitude * 0.3 +
-        mode.coherence * 0.34 +
-        mode.pulse * 0.22,
-    }))
+    .map((mode, index) => {
+      const previousIndex = previousOrder.get(mode.key);
+      const retainedScore =
+        previousIndex === undefined
+          ? 0
+          : 0.18 * (1 - previousIndex / Math.max(1, displayModeKeys.length));
+      return {
+        mode,
+        index,
+        previousIndex,
+        score:
+          mode.topology * 1.65 +
+          mode.driver * 0.9 +
+          mode.excitation * 0.42 +
+          mode.amplitude * 0.3 +
+          mode.coherence * 0.34 +
+          mode.pulse * 0.22 +
+          retainedScore,
+      };
+    })
     .filter((entry) => entry.score > 0.003)
     .sort((left, right) => {
       const layerDelta = left.mode.layer - right.mode.layer;
       if (Math.abs(layerDelta) > 0.001) {
         return layerDelta;
+      }
+      if (Math.abs(right.score - left.score) > 0.0001) {
+        return right.score - left.score;
       }
       if (
         Math.abs(left.mode.naturalFrequency - right.mode.naturalFrequency) >
@@ -193,20 +208,16 @@ export function selectDisplayModes({
       ) {
         return left.mode.naturalFrequency - right.mode.naturalFrequency;
       }
-      return right.score - left.score;
+      if (
+        left.previousIndex !== undefined &&
+        right.previousIndex !== undefined
+      ) {
+        return left.previousIndex - right.previousIndex;
+      }
+      return left.index - right.index;
     });
-  const activeByKey = new Map(
-    activeEntries.map((entry) => [entry.mode.key, entry]),
-  );
-  const selected = displayModeKeys
-    .map((key) => activeByKey.get(key))
-    .filter(
-      (entry): entry is { mode: ModalState; index: number; score: number } =>
-        Boolean(entry),
-    )
-    .slice(0, count)
-    .map((entry) => entry.mode);
-  const used = new Set(selected.map((mode) => mode.key));
+  const selected: ModalState[] = [];
+  const used = new Set<string>();
 
   for (const entry of activeEntries) {
     if (selected.length >= count) {
