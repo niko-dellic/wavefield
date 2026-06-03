@@ -570,15 +570,9 @@ export class WavefieldApp {
       return;
     }
 
-    if (this.isMobileSettings && this.isSettingsOpen) {
-      if (event.code === "Escape") {
-        event.preventDefault();
-        this.setSettingsOpen(false);
-        return;
-      }
-      if (event.code === "Tab") {
-        this.trapSettingsFocus(event);
-      }
+    if (this.isSettingsOpen && event.code === "Escape") {
+      event.preventDefault();
+      this.setSettingsOpen(false);
       return;
     }
 
@@ -587,11 +581,8 @@ export class WavefieldApp {
     }
 
     if (event.code === "Tab") {
-      if (!this.isMobileSettings) {
-        return;
-      }
       event.preventDefault();
-      this.setSettingsOpen(true, this.settingsButton);
+      this.setSettingsOpen(!this.isSettingsOpen, this.settingsButton);
       return;
     }
 
@@ -796,9 +787,6 @@ export class WavefieldApp {
   }
 
   private setSettingsOpen(isOpen: boolean, trigger: HTMLElement | null = null) {
-    if (!this.isMobileSettings) {
-      isOpen = false;
-    }
     if (this.isSettingsOpen === isOpen) {
       return;
     }
@@ -815,19 +803,16 @@ export class WavefieldApp {
     }
 
     this.isMobileSettings = isMobileSettings;
-    if (!isMobileSettings) {
-      this.isSettingsOpen = false;
-    }
     this.syncDriveSettingsLocation();
     this.syncSettingsModal();
   }
 
   private syncSettingsModal() {
     const shouldShowMobileModal = this.isMobileSettings && this.isSettingsOpen;
-    this.settingsModal.hidden = this.isMobileSettings && !this.isSettingsOpen;
+    this.settingsModal.hidden = !this.isSettingsOpen;
     this.settingsModal.setAttribute(
       "aria-hidden",
-      String(this.isMobileSettings && !this.isSettingsOpen),
+      String(!this.isSettingsOpen),
     );
     this.settingsPanel.setAttribute(
       "role",
@@ -844,41 +829,21 @@ export class WavefieldApp {
       "aria-label",
       shouldShowMobileModal ? "Close settings" : "Open settings",
     );
-    this.root.classList.toggle("is-settings-open", shouldShowMobileModal);
+    this.root.classList.toggle("is-settings-open", this.isSettingsOpen);
     this.root.classList.toggle("is-mobile-settings", this.isMobileSettings);
 
-    if (shouldShowMobileModal) {
+    if (this.isSettingsOpen) {
       this.controls.refresh();
-      requestAnimationFrame(() => {
-        this.getSettingsFocusableElements()[0]?.focus();
-      });
+      if (this.isMobileSettings) {
+        requestAnimationFrame(() => {
+          this.getSettingsFocusableElements()[0]?.focus();
+        });
+      }
       return;
     }
 
     if (this.isMobileSettings) {
       this.lastSettingsTrigger?.focus();
-    }
-  }
-
-  private trapSettingsFocus(event: KeyboardEvent) {
-    const focusableElements = this.getSettingsFocusableElements();
-    if (focusableElements.length === 0) {
-      event.preventDefault();
-      this.settingsPanel.focus();
-      return;
-    }
-
-    const firstElement = focusableElements[0];
-    const lastElement = focusableElements[focusableElements.length - 1];
-    const activeElement = document.activeElement;
-    if (event.shiftKey && activeElement === firstElement) {
-      event.preventDefault();
-      lastElement.focus();
-      return;
-    }
-    if (!event.shiftKey && activeElement === lastElement) {
-      event.preventDefault();
-      firstElement.focus();
     }
   }
 

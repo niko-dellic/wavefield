@@ -320,6 +320,10 @@ select {
   display: none;
 }
 
+#app:not(.is-settings-open) .topbar {
+  right: 16px;
+}
+
 .settings-panel {
   width: 100%;
   max-height: inherit;

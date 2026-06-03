@@ -7,7 +7,7 @@ import type {
 
 export const DEFAULT_SETTINGS: CymaticSettings = {
   projectionMode: "screen",
-  boundaryMode: "dirichlet",
+  boundaryMode: "freePlate",
   colorMode: "heatmap",
   sphereFieldMode: "surface",
   sphereProjectionType: "triplanar",
