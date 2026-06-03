@@ -31,6 +31,7 @@ import type {
 const SCREEN_VIEW_MIN_SCALE = 0.05;
 const SCREEN_VIEW_MAX_SCALE = 16;
 const SCREEN_WHEEL_ZOOM_SPEED = 0.0015;
+const SCREEN_PINCH_MIN_DISTANCE = 8;
 const SCREEN_PAN_DAMPING = 10;
 const SCREEN_ZOOM_DAMPING = 14;
 const MOBILE_SETTINGS_MEDIA = "(max-width: 560px)";
@@ -119,9 +120,11 @@ export class WavefieldApp {
     offsetX: 0,
     offsetY: 0,
   };
+  private readonly screenTouchPointers = new Map<number, ScreenPointer>();
   private screenPanPointerId: number | null = null;
   private screenPanButtonMask = 0;
   private lastScreenPanPoint: PlatePoint | null = null;
+  private screenPinchGesture: ScreenPinchGesture | null = null;
 
   constructor(private readonly root: HTMLElement) {
     this.root.innerHTML = this.renderShell();
@@ -929,19 +932,39 @@ export class WavefieldApp {
       return;
     }
 
-    const platePoint = this.getPlatePoint(event.clientX, event.clientY);
-    this.screenViewTarget.scale = nextScale;
-    this.screenViewTarget.offsetX =
-      anchor.x - ((platePoint.x - 0.5) / nextScale + 0.5);
-    this.screenViewTarget.offsetY =
-      anchor.y - ((platePoint.y - 0.5) / nextScale + 0.5);
+    this.setScreenViewTargetAtAnchor(nextScale, event.clientX, event.clientY, anchor);
   };
 
   private handleCanvasPointerDown = (event: PointerEvent) => {
-    if (
-      this.settings.projectionMode !== "screen" ||
-      (event.button !== 0 && event.button !== 2)
-    ) {
+    if (this.settings.projectionMode !== "screen") {
+      return;
+    }
+
+    if (event.pointerType === "touch") {
+      if (event.button !== 0) {
+        return;
+      }
+
+      event.preventDefault();
+      this.screenTouchPointers.set(event.pointerId, {
+        clientX: event.clientX,
+        clientY: event.clientY,
+      });
+      this.screenPanPointerId = null;
+      this.screenPanButtonMask = 0;
+      this.lastScreenPanPoint =
+        this.screenTouchPointers.size === 1
+          ? this.getPlatePoint(event.clientX, event.clientY)
+          : null;
+      this.canvas.classList.add("is-panning-screen");
+      this.canvas.setPointerCapture(event.pointerId);
+      if (this.screenTouchPointers.size >= 2) {
+        this.resetScreenPinchGesture();
+      }
+      return;
+    }
+
+    if (event.button !== 0 && event.button !== 2) {
       return;
     }
 
@@ -954,6 +977,36 @@ export class WavefieldApp {
   };
 
   private handleCanvasPointerMove = (event: PointerEvent) => {
+    if (event.pointerType === "touch") {
+      if (
+        this.settings.projectionMode !== "screen" ||
+        !this.screenTouchPointers.has(event.pointerId)
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      this.screenTouchPointers.set(event.pointerId, {
+        clientX: event.clientX,
+        clientY: event.clientY,
+      });
+
+      if (this.screenTouchPointers.size >= 2) {
+        this.applyScreenPinchGesture();
+        return;
+      }
+
+      if (!this.lastScreenPanPoint) {
+        this.lastScreenPanPoint = this.getPlatePoint(event.clientX, event.clientY);
+        return;
+      }
+
+      const nextPoint = this.getPlatePoint(event.clientX, event.clientY);
+      this.panScreenViewTarget(nextPoint, this.lastScreenPanPoint);
+      this.lastScreenPanPoint = nextPoint;
+      return;
+    }
+
     if (
       this.settings.projectionMode !== "screen" ||
       this.screenPanPointerId !== event.pointerId ||
@@ -965,14 +1018,37 @@ export class WavefieldApp {
 
     event.preventDefault();
     const nextPoint = this.getPlatePoint(event.clientX, event.clientY);
-    this.screenViewTarget.offsetX -=
-      (nextPoint.x - this.lastScreenPanPoint.x) / this.screenViewTarget.scale;
-    this.screenViewTarget.offsetY -=
-      (nextPoint.y - this.lastScreenPanPoint.y) / this.screenViewTarget.scale;
+    this.panScreenViewTarget(nextPoint, this.lastScreenPanPoint);
     this.lastScreenPanPoint = nextPoint;
   };
 
   private handleCanvasPointerUp = (event: PointerEvent) => {
+    if (event.pointerType === "touch") {
+      if (!this.screenTouchPointers.has(event.pointerId)) {
+        return;
+      }
+
+      this.screenTouchPointers.delete(event.pointerId);
+      if (this.canvas.hasPointerCapture(event.pointerId)) {
+        this.canvas.releasePointerCapture(event.pointerId);
+      }
+
+      if (this.screenTouchPointers.size >= 2) {
+        this.resetScreenPinchGesture();
+        return;
+      }
+
+      this.screenPinchGesture = null;
+      const remainingTouch = this.screenTouchPointers.values().next().value;
+      this.lastScreenPanPoint = remainingTouch
+        ? this.getPlatePoint(remainingTouch.clientX, remainingTouch.clientY)
+        : null;
+      if (!remainingTouch) {
+        this.canvas.classList.remove("is-panning-screen");
+      }
+      return;
+    }
+
     if (this.screenPanPointerId !== event.pointerId) {
       return;
     }
@@ -1003,6 +1079,87 @@ export class WavefieldApp {
     return {
       x: (platePoint.x - 0.5) / this.screenView.scale + 0.5 + this.screenView.offsetX,
       y: (platePoint.y - 0.5) / this.screenView.scale + 0.5 + this.screenView.offsetY,
+    };
+  }
+
+  private setScreenViewTargetAtAnchor(
+    scale: number,
+    clientX: number,
+    clientY: number,
+    anchor: PlatePoint,
+  ) {
+    const platePoint = this.getPlatePoint(clientX, clientY);
+    this.screenViewTarget.scale = scale;
+    this.screenViewTarget.offsetX =
+      anchor.x - ((platePoint.x - 0.5) / scale + 0.5);
+    this.screenViewTarget.offsetY =
+      anchor.y - ((platePoint.y - 0.5) / scale + 0.5);
+  }
+
+  private panScreenViewTarget(nextPoint: PlatePoint, previousPoint: PlatePoint) {
+    this.screenViewTarget.offsetX -=
+      (nextPoint.x - previousPoint.x) / this.screenViewTarget.scale;
+    this.screenViewTarget.offsetY -=
+      (nextPoint.y - previousPoint.y) / this.screenViewTarget.scale;
+  }
+
+  private resetScreenPinchGesture() {
+    const pinch = this.getScreenPinchSnapshot();
+    if (!pinch) {
+      this.screenPinchGesture = null;
+      return;
+    }
+
+    this.screenPinchGesture = {
+      distance: pinch.distance,
+      scale: this.screenViewTarget.scale,
+      anchor: this.getTransformedPlatePoint(pinch.midpointX, pinch.midpointY),
+    };
+  }
+
+  private applyScreenPinchGesture() {
+    const pinch = this.getScreenPinchSnapshot();
+    if (!pinch) {
+      return;
+    }
+
+    if (!this.screenPinchGesture) {
+      this.resetScreenPinchGesture();
+      return;
+    }
+
+    const nextScale = clamp(
+      this.screenPinchGesture.scale *
+        (pinch.distance / this.screenPinchGesture.distance),
+      SCREEN_VIEW_MIN_SCALE,
+      SCREEN_VIEW_MAX_SCALE,
+    );
+    this.setScreenViewTargetAtAnchor(
+      nextScale,
+      pinch.midpointX,
+      pinch.midpointY,
+      this.screenPinchGesture.anchor,
+    );
+  }
+
+  private getScreenPinchSnapshot(): ScreenPinchSnapshot | null {
+    const pointers = Array.from(this.screenTouchPointers.values());
+    if (pointers.length < 2) {
+      return null;
+    }
+
+    const [first, second] = pointers;
+    const deltaX = second.clientX - first.clientX;
+    const deltaY = second.clientY - first.clientY;
+    const distance = Math.hypot(deltaX, deltaY);
+    if (distance < SCREEN_PINCH_MIN_DISTANCE) {
+      return null;
+    }
+
+    return {
+      distance,
+      midpointX: (first.clientX + second.clientX) * 0.5,
+      midpointY: (first.clientY + second.clientY) * 0.5,
     };
   }
 
@@ -1299,4 +1456,21 @@ function normalizeHexColor(color: string) {
 type PlatePoint = {
   x: number;
   y: number;
+};
+
+type ScreenPointer = {
+  clientX: number;
+  clientY: number;
+};
+
+type ScreenPinchGesture = {
+  distance: number;
+  scale: number;
+  anchor: PlatePoint;
+};
+
+type ScreenPinchSnapshot = {
+  distance: number;
+  midpointX: number;
+  midpointY: number;
 };

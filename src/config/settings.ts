@@ -8,7 +8,7 @@ import type {
 export const DEFAULT_SETTINGS: CymaticSettings = {
   projectionMode: "screen",
   boundaryMode: "freePlate",
-  colorMode: "heatmap",
+  colorMode: "chromesthesia",
   sphereFieldMode: "surface",
   sphereProjectionType: "triplanar",
   screenAspectMode: "circle",
