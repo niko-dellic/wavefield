@@ -113,45 +113,67 @@ export function extractSpectrumFrame({
   };
 }
 
-export function addTemporalFeatures(rawFrames: RawAudioFeatureFrame[]): AudioFeatureFrame[] {
-  const previousBands: Record<FrequencyBand, number> = { low: 0, mid: 0, high: 0 };
-  const adaptiveFlux: Record<FrequencyBand, number> = {
+export class AudioTemporalFeatureTracker {
+  private previousBands: Record<FrequencyBand, number> = {
+    low: 0,
+    mid: 0,
+    high: 0,
+  };
+  private adaptiveFlux: Record<FrequencyBand, number> = {
     low: EPSILON,
     mid: EPSILON,
     high: EPSILON,
   };
-  let previousFrame: RawAudioFeatureFrame | null = null;
-  let beatThreshold = 0.025;
-  let previousBeatTime = Number.NEGATIVE_INFINITY;
+  private previousFrame: RawAudioFeatureFrame | null = null;
+  private beatThreshold = 0.025;
+  private previousBeatTime = Number.NEGATIVE_INFINITY;
 
-  return rawFrames.map((frame) => {
+  reset() {
+    this.previousBands = { low: 0, mid: 0, high: 0 };
+    this.adaptiveFlux = {
+      low: EPSILON,
+      mid: EPSILON,
+      high: EPSILON,
+    };
+    this.previousFrame = null;
+    this.beatThreshold = 0.025;
+    this.previousBeatTime = Number.NEGATIVE_INFINITY;
+  }
+
+  update(frame: RawAudioFeatureFrame): AudioFeatureFrame {
     const onsets: Record<FrequencyBand, number> = { low: 0, mid: 0, high: 0 };
     let bandRise = 0;
 
     for (const band of Object.keys(AUDIO_BANDS) as FrequencyBand[]) {
-      const flux = Math.max(0, frame.bands[band] - previousBands[band]);
-      adaptiveFlux[band] = adaptiveFlux[band] * 0.94 + flux * 0.06;
+      const flux = Math.max(0, frame.bands[band] - this.previousBands[band]);
+      this.adaptiveFlux[band] = this.adaptiveFlux[band] * 0.94 + flux * 0.06;
       onsets[band] = clamp01(
-        (flux - adaptiveFlux[band] * 1.35) / (adaptiveFlux[band] * 3.2 + EPSILON),
+        (flux - this.adaptiveFlux[band] * 1.35) /
+          (this.adaptiveFlux[band] * 3.2 + EPSILON),
       );
       bandRise += flux;
-      previousBands[band] = frame.bands[band];
+      this.previousBands[band] = frame.bands[band];
     }
 
-    const peakRise = previousFrame ? getPeakRise(frame.peaks, previousFrame.peaks) : 0;
+    const peakRise = this.previousFrame
+      ? getPeakRise(frame.peaks, this.previousFrame.peaks)
+      : 0;
     const spectralFlux = clamp01(bandRise * 1.25 + peakRise * 1.7);
     const beatDriver =
-      Math.max(0, frame.bands.low - (previousFrame?.bands.low ?? 0)) * 0.72 +
-      Math.max(0, frame.bands.mid - (previousFrame?.bands.mid ?? 0)) * 0.28 +
+      Math.max(0, frame.bands.low - (this.previousFrame?.bands.low ?? 0)) *
+        0.72 +
+      Math.max(0, frame.bands.mid - (this.previousFrame?.bands.mid ?? 0)) *
+        0.28 +
       spectralFlux * 0.22;
-    beatThreshold = beatThreshold * 0.92 + beatDriver * 0.08;
-    const beatCooldown = frame.time - previousBeatTime > 0.18;
+    this.beatThreshold = this.beatThreshold * 0.92 + beatDriver * 0.08;
+    const beatCooldown = frame.time - this.previousBeatTime > 0.18;
     const beatConfidence = clamp01(
-      (beatDriver - beatThreshold * 1.18) / (beatThreshold * 2.2 + EPSILON),
+      (beatDriver - this.beatThreshold * 1.18) /
+        (this.beatThreshold * 2.2 + EPSILON),
     );
     const beat = beatCooldown && beatConfidence > 0.16 ? beatConfidence : 0;
     if (beat > 0) {
-      previousBeatTime = frame.time;
+      this.previousBeatTime = frame.time;
     }
 
     const avgBand = (frame.bands.low + frame.bands.mid + frame.bands.high) / 3;
@@ -186,7 +208,7 @@ export function addTemporalFeatures(rawFrames: RawAudioFeatureFrame[]): AudioFea
       harmonicity,
       texture,
     };
-    previousFrame = frame;
+    this.previousFrame = frame;
 
     return {
       index: frame.index,
@@ -200,7 +222,12 @@ export function addTemporalFeatures(rawFrames: RawAudioFeatureFrame[]): AudioFea
       signals,
       spectralFlux,
     };
-  });
+  }
+}
+
+export function addTemporalFeatures(rawFrames: RawAudioFeatureFrame[]): AudioFeatureFrame[] {
+  const tracker = new AudioTemporalFeatureTracker();
+  return rawFrames.map((frame) => tracker.update(frame));
 }
 
 export function findSpectralPeaks({

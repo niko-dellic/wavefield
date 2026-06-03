@@ -6,7 +6,7 @@ export type SphereProjectionType = "uv" | "triplanar";
 export type ScreenAspectMode = "circle" | "fit";
 export type IdleMode = "ambient";
 export type PostEffectId = "bloom" | "pixelation" | "fisheye" | "terminal";
-export type DriveMode = "audio" | "manual";
+export type DriveMode = "audio" | "manual" | "live";
 
 export type SpectralPeak = {
   frequency: number;

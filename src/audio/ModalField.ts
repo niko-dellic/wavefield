@@ -112,7 +112,6 @@ export class ModalFieldEngine {
       this.reset(time);
     }
 
-    const safeDelta = clamp(deltaSeconds, 0, 0.1);
     const frame =
       settings.driveMode === "manual"
         ? createManualFeatureFrame(settings, time)
@@ -122,6 +121,31 @@ export class ModalFieldEngine {
       return EMPTY_MODAL_FIELD_FRAME;
     }
 
+    return this.updateWithFrame(frame, settings, time, deltaSeconds);
+  }
+
+  updateFromFeatureFrame(
+    frame: AudioFeatureFrame,
+    settings: CymaticSettings,
+    deltaSeconds: number,
+  ): ModalFieldFrame {
+    if (
+      frame.time + 0.05 < this.lastTime ||
+      Math.abs(frame.time - this.lastTime) > 1.25
+    ) {
+      this.reset(frame.time);
+    }
+
+    return this.updateWithFrame(frame, settings, frame.time, deltaSeconds);
+  }
+
+  private updateWithFrame(
+    frame: AudioFeatureFrame,
+    settings: CymaticSettings,
+    time: number,
+    deltaSeconds: number,
+  ): ModalFieldFrame {
+    const safeDelta = clamp(deltaSeconds, 0, 0.1);
     const previousFrame =
       settings.driveMode === "manual" ? frame : (this.previousFrame ?? frame);
     const flux = Math.max(

@@ -69,6 +69,8 @@ select {
 .source-trigger,
 .source-option,
 .mode-picker,
+.drive-mode-picker,
+.mode-settings-host,
 .play-toggle,
 .volume-toggle {
   height: 34px;
@@ -105,6 +107,8 @@ select {
 .source-trigger,
 .source-option,
 .mode-picker,
+.drive-mode-picker,
+.mode-settings-host,
 .play-toggle,
 .volume-toggle {
   display: inline-flex;
@@ -137,6 +141,7 @@ select {
 .source-trigger:hover,
 .source-option:hover,
 .mode-picker:hover,
+.drive-mode-picker:hover,
 .play-toggle:hover,
 .volume-toggle:hover {
   border-color: rgb(217 247 255 / 46%);
@@ -189,12 +194,14 @@ select {
   pointer-events: none;
 }
 
-.mode-picker {
+.mode-picker,
+.drive-mode-picker {
   gap: 8px;
   cursor: default;
 }
 
-.mode-picker select {
+.mode-picker select,
+.drive-mode-picker select {
   width: auto;
   min-width: 74px;
   border: 0;
@@ -204,7 +211,8 @@ select {
   cursor: pointer;
 }
 
-.mode-picker select option {
+.mode-picker select option,
+.drive-mode-picker select option {
   color: #11181c;
 }
 
@@ -243,8 +251,60 @@ select {
   pointer-events: none;
 }
 
-.analysis-debug,
-.status-text {
+#app:not(.is-audio-drive) .diagnostics-strip {
+  bottom: 16px;
+}
+
+.drive-mode-picker {
+  pointer-events: auto;
+}
+
+.mode-settings-host {
+  --tp-base-background-color: transparent;
+  --tp-container-background-color: transparent;
+  --tp-container-background-color-active: rgb(255 255 255 / 8%);
+  --tp-container-background-color-focus: rgb(255 255 255 / 8%);
+  --tp-container-background-color-hover: rgb(255 255 255 / 6%);
+  --tp-container-foreground-color: rgb(245 251 255 / 74%);
+  --tp-groove-foreground-color: rgb(217 247 255 / 38%);
+  --tp-input-background-color: rgb(255 255 255 / 6%);
+  --tp-input-background-color-active: rgb(255 255 255 / 12%);
+  --tp-input-background-color-focus: rgb(255 255 255 / 12%);
+  --tp-input-background-color-hover: rgb(255 255 255 / 10%);
+  --tp-input-foreground-color: rgb(245 251 255 / 72%);
+  --tp-label-foreground-color: rgb(245 251 255 / 68%);
+  --tp-monitor-background-color: rgb(0 0 0 / 18%);
+  --tp-monitor-foreground-color: rgb(245 251 255 / 54%);
+  pointer-events: auto;
+  width: 330px;
+  height: auto;
+  min-height: 34px;
+  padding: 3px 6px;
+}
+
+.mode-settings-host[hidden] {
+  display: none;
+}
+
+.mode-settings-host > .tp-rotv {
+  width: 100%;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+.mode-settings-host .tp-lblv {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.mode-settings-host .tp-lblv_v {
+  min-width: 0;
+}
+
+.analysis-debug {
   pointer-events: auto;
   padding: 9px 10px;
   border: 1px solid rgb(255 255 255 / 11%);
@@ -507,6 +567,10 @@ select {
   backdrop-filter: blur(18px);
 }
 
+.transport[hidden] {
+  display: none;
+}
+
 .waveform {
   min-width: 0;
 }
@@ -556,19 +620,6 @@ select {
   transform: translate(-50%, -50%) rotate(-90deg);
 }
 
-.status-text {
-  width: min(280px, calc(100vw - 32px));
-  color: rgb(245 251 255 / 74%);
-  font-family:
-    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
-    sans-serif;
-  font-size: 13px;
-  line-height: 1.35;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .is-dragging .wavefield::after,
 #app.is-dragging .wavefield::after {
   content: "";
@@ -600,6 +651,10 @@ select {
     flex-direction: column;
   }
 
+  #app:not(.is-audio-drive) .diagnostics-strip {
+    bottom: 16px;
+  }
+
   .transport {
     grid-template-columns: auto auto minmax(0, 1fr);
   }
@@ -618,6 +673,8 @@ select {
   .source-trigger,
   .source-option,
   .mode-picker,
+  .drive-mode-picker,
+  .mode-settings-host,
   .play-toggle,
   .volume-toggle {
     height: 32px;

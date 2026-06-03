@@ -98,28 +98,12 @@ export function createControls(
       addNumericBinding(shader, settings, control);
     });
 
-    const audio = pane.addFolder({ title: "Audio", expanded: true });
-    audio.addBinding(settings, "driveMode", {
-      label: "drive mode",
-      options: {
-        Audio: "audio",
-        Manual: "manual",
-      },
-    });
-    if (settings.driveMode === "manual") {
-      addNumericBinding(audio, settings, AUDIO_CONTROLS.testFrequency);
-      audio.addBinding(settings, "frequencySweep", {
-        label: "sweep",
-      });
-      if (settings.frequencySweep) {
-        addNumericBinding(audio, settings, AUDIO_CONTROLS.frequencySweepRate);
-      }
-    }
-    addNumericBinding(audio, settings, AUDIO_CONTROLS.gain);
-    addNumericBinding(audio, settings, AUDIO_CONTROLS.sensitivity);
-    addNumericBinding(audio, settings, AUDIO_CONTROLS.lowScale);
-    addNumericBinding(audio, settings, AUDIO_CONTROLS.midScale);
-    addNumericBinding(audio, settings, AUDIO_CONTROLS.highScale);
+    const response = pane.addFolder({ title: "Response", expanded: true });
+    addNumericBinding(response, settings, AUDIO_CONTROLS.gain);
+    addNumericBinding(response, settings, AUDIO_CONTROLS.sensitivity);
+    addNumericBinding(response, settings, AUDIO_CONTROLS.lowScale);
+    addNumericBinding(response, settings, AUDIO_CONTROLS.midScale);
+    addNumericBinding(response, settings, AUDIO_CONTROLS.highScale);
 
     pane.on("change", onChange);
     postPanes = mountPostPanel(container, settings, onChange);
@@ -153,8 +137,6 @@ function getLayoutKey(settings: CymaticSettings) {
     settings.projectionMode,
     settings.colorMode,
     settings.screenAspectMode,
-    settings.driveMode,
-    settings.frequencySweep,
     settings.postProcessingEnabled,
     settings.postBloomEnabled,
     settings.postPixelationEnabled,

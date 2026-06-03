@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { Pane } from "tweakpane";
 import WaveSurfer from "wavesurfer.js";
 
 import {
@@ -8,13 +9,14 @@ import {
   type ModalFieldFrame,
 } from "./audio/ModalField";
 import { decodeAndAnalyzeAudio } from "./audio/analyze";
-import { DEFAULT_SETTINGS } from "./config/settings";
+import { LiveAudioAnalyzer } from "./audio/liveAnalysis";
+import { AUDIO_CONTROLS, DEFAULT_SETTINGS } from "./config/settings";
 import { createControls, type ControlsManager } from "./ui/controls";
 import {
   ModalFieldRenderer,
   type ScreenViewTransform,
 } from "./webgl/ModalFieldRenderer";
-import type { AudioAnalysis, CymaticSettings } from "./types";
+import type { AudioAnalysis, CymaticSettings, DriveMode } from "./types";
 
 const SCREEN_VIEW_MIN_SCALE = 0.05;
 const SCREEN_VIEW_MAX_SCALE = 16;
@@ -36,12 +38,12 @@ const DEFAULT_FIXTURE = FIXTURES[0];
 export class WavefieldApp {
   private readonly settings: CymaticSettings = { ...DEFAULT_SETTINGS };
   private readonly modalEngine = new ModalFieldEngine();
+  private readonly liveAnalyzer = new LiveAudioAnalyzer();
   private readonly renderer: THREE.WebGLRenderer;
   private readonly modalRenderer = new ModalFieldRenderer();
   private readonly wavesurfer: WaveSurfer;
   private readonly controls: ControlsManager;
   private readonly canvas: HTMLCanvasElement;
-  private readonly status: HTMLElement;
   private readonly playButton: HTMLButtonElement;
   private readonly volumeButton: HTMLButtonElement;
   private readonly volumeSlider: HTMLInputElement;
@@ -49,12 +51,18 @@ export class WavefieldApp {
   private readonly sourceMenu: HTMLElement;
   private readonly selectedSource: HTMLElement;
   private readonly projectionSelect: HTMLSelectElement;
+  private readonly driveModeSelect: HTMLSelectElement;
+  private readonly modeSettingsHost: HTMLElement;
   private readonly analysisDebug: HTMLElement;
+  private readonly transport: HTMLElement;
+  private modeSettingsPane: Pane | null = null;
+  private modeSettingsLayoutKey = "";
   private analysis: AudioAnalysis | null = null;
   private animationFrame = 0;
   private lastFrameTime = performance.now();
   private ambientSeconds = 0;
   private manualSeconds = 0;
+  private liveSeconds = 0;
   private analysisPreviewTime = 0;
   private fieldSettingsKey = "";
   private lastAudibleVolume = 1;
@@ -76,7 +84,6 @@ export class WavefieldApp {
   constructor(private readonly root: HTMLElement) {
     this.root.innerHTML = this.renderShell();
     this.canvas = this.query<HTMLCanvasElement>(".wavefield-canvas");
-    this.status = this.query<HTMLElement>(".status-text");
     this.playButton = this.query<HTMLButtonElement>(".play-toggle");
     this.volumeButton = this.query<HTMLButtonElement>(".volume-toggle");
     this.volumeSlider = this.query<HTMLInputElement>(".volume-slider");
@@ -84,7 +91,10 @@ export class WavefieldApp {
     this.sourceMenu = this.query<HTMLElement>(".source-menu");
     this.selectedSource = this.query<HTMLElement>(".selected-source");
     this.projectionSelect = this.query<HTMLSelectElement>(".projection-mode-select");
+    this.driveModeSelect = this.query<HTMLSelectElement>(".drive-mode-select");
+    this.modeSettingsHost = this.query<HTMLElement>(".mode-settings-host");
     this.analysisDebug = this.query<HTMLElement>(".analysis-debug");
+    this.transport = this.query<HTMLElement>(".transport");
 
     this.renderer = new THREE.WebGLRenderer({
       canvas: this.canvas,
@@ -134,6 +144,8 @@ export class WavefieldApp {
     this.canvas.removeEventListener("contextmenu", this.handleCanvasContextMenu);
     document.removeEventListener("keydown", this.handleKeyDown);
     this.controls.dispose();
+    this.disposeModeSettingsPane();
+    this.liveAnalyzer.stop();
     this.modalRenderer.dispose();
     this.renderer.dispose();
     this.wavesurfer.destroy();
@@ -182,8 +194,17 @@ export class WavefieldApp {
         </section>
         <aside class="pane-host" aria-label="Wavefield shader settings"></aside>
         <section class="diagnostics-strip" aria-label="Wavefield diagnostics">
+          <label class="drive-mode-picker">
+            <i class="ph ph-wave-sine" aria-hidden="true"></i>
+            <span>Drive</span>
+            <select class="drive-mode-select" aria-label="Drive mode">
+              <option value="audio" selected>Audio</option>
+              <option value="manual">Manual</option>
+              <option value="live">Live</option>
+            </select>
+          </label>
+          <div class="mode-settings-host" aria-label="Drive mode settings" hidden></div>
           <section class="analysis-debug" aria-label="Audio analysis debug" hidden></section>
-          <div class="status-text" role="status">Choose a fixture or open an audio file.</div>
         </section>
         <section class="transport" aria-label="Audio transport">
           <button class="play-toggle" type="button" aria-label="Play" title="Play">
@@ -229,6 +250,10 @@ export class WavefieldApp {
       this.settings.projectionMode = this.projectionSelect.value as CymaticSettings["projectionMode"];
       this.syncHeaderControls();
       this.setStatus(`Projection: ${this.projectionSelect.selectedOptions[0].text}`);
+    });
+
+    this.driveModeSelect.addEventListener("change", () => {
+      void this.setDriveMode(this.driveModeSelect.value as DriveMode);
     });
 
     this.playButton.addEventListener("click", () => {
@@ -327,6 +352,7 @@ export class WavefieldApp {
   }
 
   private async loadFixture(url: string, label: string) {
+    await this.setDriveMode("audio", false);
     this.setStatus(`Loading ${label}...`);
     this.updateSelectedSource(label);
     this.prepareForNewAudio();
@@ -363,6 +389,7 @@ export class WavefieldApp {
   }
 
   private async loadFile(file: File) {
+    await this.setDriveMode("audio", false);
     this.setStatus(`Loading ${file.name}...`);
     this.updateSelectedSource(file.name);
     this.prepareForNewAudio();
@@ -393,6 +420,7 @@ export class WavefieldApp {
     this.lastModalFieldFrame = EMPTY_MODAL_FIELD_FRAME;
     this.ambientSeconds = 0;
     this.manualSeconds = 0;
+    this.liveSeconds = 0;
     this.setPlayButton(false);
     this.resetVisualState();
   }
@@ -420,6 +448,7 @@ export class WavefieldApp {
     const time = this.wavesurfer.getCurrentTime();
     const isPlaying = this.wavesurfer.isPlaying();
     const isManualDrive = this.settings.driveMode === "manual";
+    const isLiveDrive = this.settings.driveMode === "live";
     let fieldFrame = this.lastModalFieldFrame;
     let renderDeltaSeconds = 0;
     let isIdlePreview = false;
@@ -434,6 +463,25 @@ export class WavefieldApp {
       this.lastModalFieldFrame = fieldFrame;
       renderDeltaSeconds = deltaSeconds;
       this.updateAnalysisDebug(fieldFrame, false);
+    } else if (isLiveDrive) {
+      this.liveSeconds += deltaSeconds;
+      const liveFrame = this.liveAnalyzer.getFrame(this.liveSeconds);
+      if (liveFrame) {
+        fieldFrame = this.modalEngine.updateFromFeatureFrame(
+          liveFrame,
+          this.settings,
+          deltaSeconds || 1 / 60,
+        );
+        this.lastModalFieldFrame = fieldFrame;
+        renderDeltaSeconds = deltaSeconds;
+        this.updateAnalysisDebug(fieldFrame, false);
+      } else {
+        this.ambientSeconds += deltaSeconds;
+        fieldFrame = createAmbientModalFieldFrame(this.ambientSeconds);
+        renderDeltaSeconds = deltaSeconds;
+        isIdlePreview = true;
+        this.analysisDebug.hidden = true;
+      }
     } else if (!this.analysis) {
       this.ambientSeconds += deltaSeconds;
       fieldFrame = createAmbientModalFieldFrame(this.ambientSeconds);
@@ -482,8 +530,8 @@ export class WavefieldApp {
     return element;
   }
 
-  private setStatus(message: string) {
-    this.status.textContent = message;
+  private setStatus(_message: string) {
+    // Status messages are intentionally non-visual; the diagnostics strip is reserved for controls.
   }
 
   private setSourceMenuOpen(isOpen: boolean) {
@@ -505,6 +553,10 @@ export class WavefieldApp {
   }
 
   private togglePlayback() {
+    if (this.settings.driveMode !== "audio") {
+      return;
+    }
+
     void this.wavesurfer.playPause().catch((error: unknown) => {
       this.setStatus(
         error instanceof Error
@@ -683,6 +735,8 @@ export class WavefieldApp {
       if (this.settings.driveMode === "manual") {
         this.manualSeconds = 0;
         this.modalEngine.reset(0);
+      } else if (this.settings.driveMode === "live") {
+        this.modalEngine.reset(this.liveSeconds);
       } else {
         this.modalEngine.reset(this.wavesurfer.getCurrentTime());
       }
@@ -695,6 +749,10 @@ export class WavefieldApp {
 
   private syncHeaderControls() {
     this.projectionSelect.value = this.settings.projectionMode;
+    this.driveModeSelect.value = this.settings.driveMode;
+    this.transport.hidden = this.settings.driveMode !== "audio";
+    this.root.classList.toggle("is-audio-drive", this.settings.driveMode === "audio");
+    this.syncModeSettingsPane();
     this.controls.refresh();
   }
 
@@ -703,7 +761,7 @@ export class WavefieldApp {
   }
 
   private updateAnalysisDebug(fieldFrame: ModalFieldFrame, isIdlePreview: boolean) {
-    if (!this.analysis && !isIdlePreview && this.settings.driveMode !== "manual") {
+    if (!this.analysis && !isIdlePreview && this.settings.driveMode === "audio") {
       this.analysisDebug.hidden = true;
       return;
     }
@@ -727,6 +785,101 @@ export class WavefieldApp {
       </div>
     `;
   }
+
+  private async setDriveMode(driveMode: DriveMode, announce = true) {
+    const shouldRestartLive =
+      driveMode === "live" &&
+      (this.settings.driveMode !== "live" || !this.liveAnalyzer.isActive);
+
+    if (this.settings.driveMode === driveMode && !shouldRestartLive) {
+      this.syncHeaderControls();
+      return;
+    }
+
+    this.settings.driveMode = driveMode;
+    if (driveMode !== "audio") {
+      this.wavesurfer.pause();
+      this.setPlayButton(false);
+    }
+    if (driveMode !== "live") {
+      this.liveAnalyzer.stop();
+    }
+
+    this.ambientSeconds = 0;
+    this.manualSeconds = 0;
+    this.liveSeconds = 0;
+    this.lastModalFieldFrame = EMPTY_MODAL_FIELD_FRAME;
+    this.analysisDebug.hidden = true;
+    this.modalEngine.reset(driveMode === "audio" ? this.wavesurfer.getCurrentTime() : 0);
+    this.fieldSettingsKey = getFieldSettingsKey(this.settings);
+    this.resetVisualState();
+    this.syncHeaderControls();
+
+    if (driveMode === "live") {
+      try {
+        await this.liveAnalyzer.start();
+      } catch (error) {
+        this.liveAnalyzer.stop();
+        this.setStatus(
+          error instanceof Error
+            ? error.message
+            : "Microphone input could not be started",
+        );
+      }
+      return;
+    }
+
+    if (announce) {
+      this.setStatus(`Drive: ${formatDriveMode(driveMode)}`);
+    }
+  }
+
+  private syncModeSettingsPane() {
+    if (this.settings.driveMode !== "manual") {
+      this.modeSettingsHost.hidden = true;
+      this.disposeModeSettingsPane();
+      return;
+    }
+
+    this.modeSettingsHost.hidden = false;
+    const nextLayoutKey = `manual:${this.settings.frequencySweep}`;
+    if (this.modeSettingsPane && nextLayoutKey === this.modeSettingsLayoutKey) {
+      this.modeSettingsPane.refresh();
+      return;
+    }
+
+    this.disposeModeSettingsPane();
+    this.modeSettingsLayoutKey = nextLayoutKey;
+    this.modeSettingsPane = new Pane({
+      container: this.modeSettingsHost,
+    });
+    this.modeSettingsPane.addBinding(this.settings, "testFrequency", {
+      label: AUDIO_CONTROLS.testFrequency.label,
+      min: AUDIO_CONTROLS.testFrequency.min,
+      max: AUDIO_CONTROLS.testFrequency.max,
+      step: AUDIO_CONTROLS.testFrequency.step,
+    });
+    this.modeSettingsPane.addBinding(this.settings, "frequencySweep", {
+      label: "sweep",
+    });
+    if (this.settings.frequencySweep) {
+      this.modeSettingsPane.addBinding(this.settings, "frequencySweepRate", {
+        label: AUDIO_CONTROLS.frequencySweepRate.label,
+        min: AUDIO_CONTROLS.frequencySweepRate.min,
+        max: AUDIO_CONTROLS.frequencySweepRate.max,
+        step: AUDIO_CONTROLS.frequencySweepRate.step,
+      });
+    }
+    this.modeSettingsPane.on("change", () => {
+      this.handleSettingsChange();
+    });
+  }
+
+  private disposeModeSettingsPane() {
+    this.modeSettingsPane?.dispose();
+    this.modeSettingsPane = null;
+    this.modeSettingsLayoutKey = "";
+  }
 }
 
 function formatDuration(duration: number) {
@@ -745,6 +898,10 @@ function formatFixtureLabel(path: string) {
 
 function formatSignal(value: number) {
   return Math.round(value * 100).toString().padStart(2, "0");
+}
+
+function formatDriveMode(driveMode: DriveMode) {
+  return driveMode[0].toUpperCase() + driveMode.slice(1);
 }
 
 function clamp(value: number, min: number, max: number) {

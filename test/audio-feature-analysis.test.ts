@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  AudioTemporalFeatureTracker,
   addTemporalFeatures,
   buildChromaProfile,
   extractSpectrumFrame,
@@ -105,6 +106,37 @@ test("transient band rises produce change and pulse without erasing structure", 
   assert.ok(transient.signals.change > 0.15);
   assert.ok(transient.signals.pulse > 0.15);
   assert.ok(transient.signals.structure > 0.2);
+});
+
+test("temporal feature tracker matches batch temporal analysis", () => {
+  const frames: RawAudioFeatureFrame[] = [
+    extractSpectrumFrame({
+      index: 0,
+      time: 0,
+      rms: 0.1,
+      magnitudes: createSpectrum([[220, 0.3]]),
+      sampleRate: SAMPLE_RATE,
+      fftSize: FFT_SIZE,
+    }),
+    extractSpectrumFrame({
+      index: 1,
+      time: 1 / 60,
+      rms: 0.34,
+      magnitudes: createSpectrum([
+        [220, 1],
+        [440, 0.7],
+        [880, 0.34],
+      ]),
+      sampleRate: SAMPLE_RATE,
+      fftSize: FFT_SIZE,
+    }),
+  ];
+  const tracker = new AudioTemporalFeatureTracker();
+  const tracked = frames.map((frame) => tracker.update(frame));
+
+  assert.deepEqual(tracked, addTemporalFeatures(frames));
+  assert.ok(tracked[1].signals.change > 0.15);
+  assert.ok(tracked[1].signals.pulse > 0.15);
 });
 
 test("chladni frequency mapping anchors 220Hz to the base 3:5 mode", () => {

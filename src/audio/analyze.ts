@@ -6,8 +6,8 @@ import {
 } from "./featureAnalysis";
 import type { AudioAnalysis } from "../types";
 
-const ANALYSIS_FPS = 60;
-const FFT_SIZE = 1024;
+export const ANALYSIS_FPS = 60;
+export const FFT_SIZE = 1024;
 
 export async function decodeAndAnalyzeAudio(
   arrayBuffer: ArrayBuffer,
@@ -92,7 +92,7 @@ function downmixToMono(audioBuffer: AudioBuffer) {
   return mono;
 }
 
-function createHannWindow(size: number) {
+export function createHannWindow(size: number) {
   const window = new Float32Array(size);
   for (let index = 0; index < size; index += 1) {
     window[index] = 0.5 - 0.5 * Math.cos((2 * Math.PI * index) / (size - 1));
