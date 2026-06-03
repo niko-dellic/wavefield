@@ -1,4 +1,0 @@
-[workspace]
-members = ["terminal"]
-default-members = ["terminal"]
-resolver = "3"

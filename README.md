@@ -1,61 +1,52 @@
 # Wavefield
 
-Wavefield is a cymatic audio visualization playground with two implementations:
+Wavefield is a web-based cymatic audio visualization playground. It listens to
+music, maps audio features into Chladni-style modal patterns, and renders the
+result as an interactive GPU-driven field with Three.js.
 
-- `terminal/`: Rust CLI renderer for ANSI and Kitty-compatible terminals.
-- `web/`: Vite + TypeScript + Three.js visual instrument with GPU shader rendering.
+The app is built with Vite, TypeScript, Three.js, Wavesurfer, and Tweakpane. It
+includes bundled sample tracks, waveform playback and scrubbing, live rendering
+controls, and post-processing effects for shaping the visual instrument.
 
-Shared audio fixtures live in `fixtures/audio/`. The web app imports the MP3
-fixtures from `web/src/fixtures/audio/` so Vite can include them in the build
-asset graph.
-
-## Web Visualizer
-
-The web app is the preferred high-FPS renderer. It uses Wavesurfer for waveform playback and scrubbing, Tweakpane for live controls, and a standalone Three.js cymatic accumulation pass adapted from the original Three.js pulse shader reference.
+## Run Locally
 
 ```sh
 cd web
 npm install
 npm run dev
+```
+
+Build and preview the production bundle:
+
+```sh
 npm run build
 npm run preview
 ```
 
-The fixture buttons use normal Vite static asset imports from `web/src`, so dev,
-build, and preview all resolve the same bundled audio URLs.
+## Sample Audio
 
-## Terminal Visualizer
+Wavefield imports sample MP3 files from `web/src/fixtures/audio/` so Vite can
+include them in the build asset graph. The in-app fixture buttons use those
+bundled URLs in development, production builds, and preview mode.
 
-```sh
-cargo run -p wavefield -- "fixtures/audio/music for inst mix ab oz.mp3"
-cargo run -p wavefield -- "fixtures/audio/music for inst mix ab oz.wav" --no-audio
-cargo run -p wavefield -- "fixtures/audio/contradictions inst mix ab oz.mp3" --no-audio --frames 120
-cargo run -p wavefield -- "fixtures/audio/music for inst mix ab oz.mp3" --backend kitty --quality medium --fps 15
-cargo run -p wavefield -- "fixtures/audio/music for inst mix ab oz.mp3" --backend kitty --quality ultra --fps 8
-```
-
-`--backend ansi` is portable but cell-based. `--backend kitty` sends PNG-compressed raster frames through the terminal and is the preferred terminal backend in Kitty-compatible terminals.
-
-Runtime keys:
-
-- `Space`: pause or resume
-- `[` / `]`: lower or raise sensitivity
-- `-` / `=`: lower or raise gain
-- `q`, `Esc`, or `Ctrl-C`: quit
+You can add your own MP3 files to that directory to expose more bundled sample
+tracks in the app.
 
 ## Tests
 
 ```sh
-cargo test -p wavefield
-cd web && npm run build
+cd web
+npm run build
+npm run test:analysis
 ```
 
-## Reference Material
+## Visualization Model
 
-This project ports ideas from local shader experiments, but does not depend on them at runtime:
-
-- `../dotfiles/ghostty/shaders/cymatic_cursor.glsl`
-- `../feel_the_agi_dataviz/src/lib/three/CymaticPulsePass.ts`
+Wavefield focuses on cymatic motion: frequency analysis drives a modal field
+that favors standing-wave, nodal-line behavior over generic audio-reactive
+ripples. The renderer supports both screen-space and sphere projections, with
+controls for modal density, harmonic mix, chromesthesia, post-processing, and
+audio sensitivity.
 
 ## License
 
