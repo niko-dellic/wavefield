@@ -1,0 +1,321 @@
+import type { CymaticSettings, PostEffectId } from "../types";
+
+export const DEFAULT_SETTINGS: CymaticSettings = {
+  projectionMode: "screen",
+  boundaryMode: "freePlate",
+  colorMode: "chromesthesia",
+  sphereProjectionType: "triplanar",
+  screenAspectMode: "circle",
+  idleMode: "ambient",
+  cymaticDensity: 0.92,
+  cymaticHarmonicMix: 0.42,
+  cymaticNodeWidth: 0.058,
+  cymaticSoftness: 0.42,
+  cymaticInterference: 0.74,
+  cymaticEdgeFade: 0.12,
+  cymaticWarp: 0.38,
+  cymaticWarpScale: 0.78,
+  cymaticDrift: 0.18,
+  gain: 1.2,
+  sensitivity: 1.55,
+  driveMode: "audio",
+  testFrequency: 220,
+  frequencySweep: false,
+  frequencySweepRate: 0.18,
+  lowScale: 1.18,
+  midScale: 1.12,
+  highScale: 1.08,
+  patternHoldSeconds: 0.42,
+  morphSeconds: 0.32,
+  modalCount: 12,
+  modalDecay: 1.25,
+  modalDrive: 1.45,
+  chromesthesiaMix: 0.82,
+  sphereRadius: 1.35,
+  sphereSurfaceOpacity: 0.64,
+  sphereBackgroundTransparent: false,
+  postProcessingEnabled: true,
+  postEffectOrder: ["bloom", "pixelation", "fisheye", "terminal"],
+  postBloomEnabled: false,
+  postBloomIntensity: 0.72,
+  postPixelationEnabled: false,
+  postPixelSize: 6,
+  postFisheyeEnabled: false,
+  postFisheyeK1: 0.35,
+  postFisheyeK2: 0.08,
+  postFisheyeStrength: 1,
+  terminalContourEnabled: true,
+  terminalCellSize: 9,
+  terminalContourLevels: 8,
+  terminalContourStrength: 1,
+  terminalContourThreshold: 0.09,
+};
+
+export type NumericControlConfig = {
+  key: keyof CymaticSettings;
+  label: string;
+  min: number;
+  max: number;
+  step: number;
+};
+
+export const ENGINE_CONTROLS = {
+  modalCount: {
+    key: "modalCount",
+    label: "modes",
+    min: 1,
+    max: 12,
+    step: 1,
+  },
+  modalDecay: {
+    key: "modalDecay",
+    label: "modal decay",
+    min: 0.12,
+    max: 5,
+    step: 0.01,
+  },
+  modalDrive: {
+    key: "modalDrive",
+    label: "drive",
+    min: 0,
+    max: 4,
+    step: 0.01,
+  },
+  patternHoldSeconds: {
+    key: "patternHoldSeconds",
+    label: "pattern hold",
+    min: 0,
+    max: 2,
+    step: 0.01,
+  },
+  morphSeconds: {
+    key: "morphSeconds",
+    label: "morph speed",
+    min: 0.05,
+    max: 2,
+    step: 0.01,
+  },
+  chromesthesiaMix: {
+    key: "chromesthesiaMix",
+    label: "chroma mix",
+    min: 0,
+    max: 1,
+    step: 0.01,
+  },
+} satisfies Record<string, NumericControlConfig>;
+
+export const SPHERE_CONTROLS = {
+  sphereSurfaceOpacity: {
+    key: "sphereSurfaceOpacity",
+    label: "surface alpha",
+    min: 0.08,
+    max: 1,
+    step: 0.01,
+  },
+  sphereRadius: {
+    key: "sphereRadius",
+    label: "size",
+    min: 0.4,
+    max: 2.4,
+    step: 0.01,
+  },
+} satisfies Record<string, NumericControlConfig>;
+
+export const SHADER_CONTROLS = {
+  cymaticHarmonicMix: {
+    key: "cymaticHarmonicMix",
+    label: "harmonics",
+    min: 0,
+    max: 1,
+    step: 0.01,
+  },
+  cymaticDensity: {
+    key: "cymaticDensity",
+    label: "density",
+    min: 0,
+    max: 1.5,
+    step: 0.01,
+  },
+  cymaticNodeWidth: {
+    key: "cymaticNodeWidth",
+    label: "node width",
+    min: 0.005,
+    max: 0.18,
+    step: 0.001,
+  },
+  cymaticSoftness: {
+    key: "cymaticSoftness",
+    label: "softness",
+    min: 0,
+    max: 1,
+    step: 0.01,
+  },
+  cymaticInterference: {
+    key: "cymaticInterference",
+    label: "interference",
+    min: 0,
+    max: 1.5,
+    step: 0.01,
+  },
+  cymaticEdgeFade: {
+    key: "cymaticEdgeFade",
+    label: "edge fade",
+    min: 0,
+    max: 1,
+    step: 0.01,
+  },
+  cymaticWarp: {
+    key: "cymaticWarp",
+    label: "warp",
+    min: 0,
+    max: 1.2,
+    step: 0.01,
+  },
+  cymaticWarpScale: {
+    key: "cymaticWarpScale",
+    label: "warp scale",
+    min: 0,
+    max: 2,
+    step: 0.01,
+  },
+  cymaticDrift: {
+    key: "cymaticDrift",
+    label: "drift",
+    min: 0,
+    max: 1,
+    step: 0.01,
+  },
+} satisfies Record<string, NumericControlConfig>;
+
+export const AUDIO_CONTROLS = {
+  testFrequency: {
+    key: "testFrequency",
+    label: "test Hz",
+    min: 70,
+    max: 7_200,
+    step: 1,
+  },
+  frequencySweepRate: {
+    key: "frequencySweepRate",
+    label: "sweep rate",
+    min: 0.02,
+    max: 1.2,
+    step: 0.01,
+  },
+  gain: {
+    key: "gain",
+    label: "gain",
+    min: 0.1,
+    max: 4,
+    step: 0.01,
+  },
+  sensitivity: {
+    key: "sensitivity",
+    label: "sensitivity",
+    min: 0.05,
+    max: 5,
+    step: 0.01,
+  },
+  lowScale: {
+    key: "lowScale",
+    label: "low",
+    min: 0,
+    max: 4,
+    step: 0.01,
+  },
+  midScale: {
+    key: "midScale",
+    label: "mid",
+    min: 0,
+    max: 4,
+    step: 0.01,
+  },
+  highScale: {
+    key: "highScale",
+    label: "high",
+    min: 0,
+    max: 4,
+    step: 0.01,
+  },
+} satisfies Record<string, NumericControlConfig>;
+
+export const POST_EFFECT_LABELS: Record<PostEffectId, string> = {
+  bloom: "Bloom",
+  pixelation: "Pixelation",
+  fisheye: "Fisheye",
+  terminal: "Terminal contours",
+};
+
+export const POST_EFFECT_CONTROLS: Record<PostEffectId, NumericControlConfig[]> = {
+  bloom: [
+    {
+      key: "postBloomIntensity",
+      label: "Power",
+      min: 0,
+      max: 3,
+      step: 0.01,
+    },
+  ],
+  pixelation: [
+    {
+      key: "postPixelSize",
+      label: "Pixel size",
+      min: 2,
+      max: 40,
+      step: 1,
+    },
+  ],
+  fisheye: [
+    {
+      key: "postFisheyeK1",
+      label: "K1",
+      min: -1,
+      max: 1,
+      step: 0.01,
+    },
+    {
+      key: "postFisheyeK2",
+      label: "K2",
+      min: -1,
+      max: 1,
+      step: 0.01,
+    },
+    {
+      key: "postFisheyeStrength",
+      label: "Strength",
+      min: 0,
+      max: 2,
+      step: 0.01,
+    },
+  ],
+  terminal: [
+    {
+      key: "terminalCellSize",
+      label: "Cell size",
+      min: 4,
+      max: 24,
+      step: 1,
+    },
+    {
+      key: "terminalContourLevels",
+      label: "Contours",
+      min: 2,
+      max: 18,
+      step: 1,
+    },
+    {
+      key: "terminalContourStrength",
+      label: "Line power",
+      min: 0.1,
+      max: 3,
+      step: 0.01,
+    },
+    {
+      key: "terminalContourThreshold",
+      label: "Threshold",
+      min: 0.01,
+      max: 0.4,
+      step: 0.001,
+    },
+  ],
+};

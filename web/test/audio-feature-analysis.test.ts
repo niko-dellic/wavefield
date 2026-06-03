@@ -208,6 +208,7 @@ function createPatternInput({
   confidence: number;
 }) {
   return {
+    key: `${mapFrequencyToChladniMode(frequency).m}:${mapFrequencyToChladniMode(frequency).n}`,
     time,
     frequency,
     confidence,

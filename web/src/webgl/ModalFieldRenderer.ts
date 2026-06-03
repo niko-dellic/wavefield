@@ -17,6 +17,7 @@ import type {
   ProjectionMode,
   SphereProjectionType,
 } from "../types";
+import { FisheyeEffect } from "./FisheyeEffect";
 import { TerminalContourEffect } from "./TerminalContourEffect";
 
 const BOUNDARY_MODE_INDEX: Record<BoundaryMode, number> = {
@@ -70,7 +71,6 @@ const FRAGMENT_SHADER = `
   uniform vec4 uModeColors[MAX_MODAL_MODES];
   uniform vec4 uModeDynamics[MAX_MODAL_MODES];
   uniform float uDensity;
-  uniform float uSymmetry;
   uniform float uHarmonicMix;
   uniform float uNodeWidth;
   uniform float uSoftness;
@@ -438,7 +438,6 @@ export class ModalFieldRenderer {
       uModeColors: { value: this.modeColorUniforms },
       uModeDynamics: { value: this.modeDynamicsUniforms },
       uDensity: { value: 0.82 },
-      uSymmetry: { value: 6 },
       uHarmonicMix: { value: 0.34 },
       uNodeWidth: { value: 0.052 },
       uSoftness: { value: 0.38 },
@@ -471,6 +470,7 @@ export class ModalFieldRenderer {
   private renderPass: RenderPass | null = null;
   private pixelationPass: EffectPass | null = null;
   private bloomPass: EffectPass | null = null;
+  private fisheyePass: EffectPass | null = null;
   private terminalPass: EffectPass | null = null;
   private postPipelineKey = "";
   private readonly pixelationEffect = new PixelationEffect(6);
@@ -481,6 +481,7 @@ export class ModalFieldRenderer {
     mipmapBlur: true,
     radius: 0.72,
   });
+  private readonly fisheyeEffect = new FisheyeEffect();
   private readonly terminalContourEffect = new TerminalContourEffect();
   private elapsedSeconds = 0;
 
@@ -502,6 +503,7 @@ export class ModalFieldRenderer {
     this.sphereCamera.updateProjectionMatrix();
     this.controls?.handleResize();
     this.composer?.setSize(targetWidth, targetHeight, false);
+    this.fisheyeEffect.setSize(targetWidth, targetHeight);
     this.terminalContourEffect.setSize(targetWidth, targetHeight);
   }
 
@@ -604,6 +606,7 @@ export class ModalFieldRenderer {
     this.renderPass = new RenderPass(this.scene, camera);
     this.pixelationPass = new EffectPass(camera, this.pixelationEffect);
     this.bloomPass = new EffectPass(camera, this.bloomEffect);
+    this.fisheyePass = new EffectPass(camera, this.fisheyeEffect);
     this.terminalPass = new EffectPass(camera, this.terminalContourEffect);
   }
 
@@ -631,6 +634,10 @@ export class ModalFieldRenderer {
       this.bloomPass.mainCamera = camera;
       this.bloomPass.enabled = true;
     }
+    if (this.fisheyePass) {
+      this.fisheyePass.mainCamera = camera;
+      this.fisheyePass.enabled = true;
+    }
     if (this.terminalPass) {
       this.terminalPass.mainCamera = camera;
       this.terminalPass.enabled = true;
@@ -638,6 +645,7 @@ export class ModalFieldRenderer {
 
     this.pixelationEffect.granularity = settings.postPixelSize;
     this.bloomEffect.intensity = settings.postBloomIntensity;
+    this.fisheyeEffect.updateSettings(settings);
     this.terminalContourEffect.updateSettings(settings);
     this.rebuildPostPipeline(enabledPostEffects);
   }
@@ -669,6 +677,8 @@ export class ModalFieldRenderer {
         return this.bloomPass;
       case "pixelation":
         return this.pixelationPass;
+      case "fisheye":
+        return this.fisheyePass;
       case "terminal":
         return this.terminalPass;
     }
@@ -685,6 +695,8 @@ export class ModalFieldRenderer {
           return settings.postBloomEnabled;
         case "pixelation":
           return settings.postPixelationEnabled;
+        case "fisheye":
+          return settings.postFisheyeEnabled;
         case "terminal":
           return settings.terminalContourEnabled;
       }
@@ -744,7 +756,6 @@ export class ModalFieldRenderer {
     this.material.uniforms.uScreenAspectMode.value =
       settings.screenAspectMode === "circle" ? 0 : 1;
     this.material.uniforms.uDensity.value = settings.cymaticDensity;
-    this.material.uniforms.uSymmetry.value = settings.cymaticSymmetry;
     this.material.uniforms.uHarmonicMix.value = settings.cymaticHarmonicMix;
     this.material.uniforms.uNodeWidth.value = settings.cymaticNodeWidth;
     this.material.uniforms.uSoftness.value = settings.cymaticSoftness;

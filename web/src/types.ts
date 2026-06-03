@@ -5,7 +5,7 @@ export type ColorMode = "chromesthesia" | "mono" | "bandSplit" | "thermalPhase";
 export type SphereProjectionType = "uv" | "triplanar";
 export type ScreenAspectMode = "circle" | "fit";
 export type IdleMode = "ambient";
-export type PostEffectId = "bloom" | "pixelation" | "terminal";
+export type PostEffectId = "bloom" | "pixelation" | "fisheye" | "terminal";
 export type DriveMode = "audio" | "manual";
 
 export type SpectralPeak = {
@@ -94,6 +94,10 @@ export type CymaticSettings = {
   postBloomIntensity: number;
   postPixelationEnabled: boolean;
   postPixelSize: number;
+  postFisheyeEnabled: boolean;
+  postFisheyeK1: number;
+  postFisheyeK2: number;
+  postFisheyeStrength: number;
   terminalContourEnabled: boolean;
   terminalCellSize: number;
   terminalContourLevels: number;

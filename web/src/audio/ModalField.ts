@@ -264,10 +264,10 @@ export class ModalFieldEngine {
           onset * 0.28,
       );
       const drive = clamp01(
-        (driverStrength * (1.08 + frame.signals.structure * 0.45) +
+        (driverStrength * (1.36 + frame.signals.structure * 0.52) +
           bandEnergy * (0.18 + layer * 0.18) +
-          localPulse * (0.36 + layer * 0.2) +
-          this.smoothedRms * 0.1 +
+          localPulse * (0.55 + layer * 0.26) +
+          this.smoothedRms * 0.18 +
           frequencyAffinity * (0.04 + bandEnergy * 0.18)) *
           settings.gain *
           settings.sensitivity *
@@ -281,10 +281,10 @@ export class ModalFieldEngine {
       const decay = Math.exp(-safeDelta / Math.max(0.08, decaySeconds));
       const injection =
         drive *
-        (0.28 +
-          localPulse * 0.34 +
-          frame.signals.energy * 0.18 +
-          (driver?.harmonicWeight ?? 0) * 0.16);
+        (0.38 +
+          localPulse * 0.52 +
+          frame.signals.energy * 0.28 +
+          (driver?.harmonicWeight ?? 0) * 0.18);
       const nextAmplitude =
         mode.amplitude * decay + injection * (1 - mode.amplitude * 0.42);
       const coherenceTarget = clamp01(
@@ -396,7 +396,7 @@ export class ModalFieldEngine {
 
     for (const [key, driver] of rawDrivers) {
       addModeDriver(targets, getAtlasModeByKey(key), {
-        strength: driver.strength * 0.32,
+        strength: driver.strength * 0.58,
         pulse: driver.pulse,
         layer: 1,
         frequency: driver.frequency,
@@ -414,8 +414,11 @@ export class ModalFieldEngine {
     time: number,
   ) {
     const dominant = getDominantPatternDriver(rawDrivers, frame);
+    const dominantFrequency =
+      dominant?.frequency ?? frequencyFromCentroid(frame.centroid);
     this.patternStabilizer.update({
-      frequency: dominant?.frequency ?? frequencyFromCentroid(frame.centroid),
+      key: getAtlasModeForFrequency(dominantFrequency).key,
+      frequency: dominantFrequency,
       confidence: dominant?.confidence ?? frame.rms * 0.22,
       time,
       holdSeconds: settings.patternHoldSeconds,
@@ -444,7 +447,7 @@ export class ModalFieldEngine {
           0.08,
     );
     const baseStrength =
-      (0.13 + baseEnergy * 0.82) *
+      (0.16 + baseEnergy * 1.05) *
       settings.gain *
       settings.sensitivity *
       settings.modalDrive;

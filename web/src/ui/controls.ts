@@ -1,5 +1,14 @@
-import { Pane } from "tweakpane";
+import { Pane, type FolderApi } from "tweakpane";
 
+import {
+  AUDIO_CONTROLS,
+  ENGINE_CONTROLS,
+  POST_EFFECT_CONTROLS,
+  POST_EFFECT_LABELS,
+  SHADER_CONTROLS,
+  SPHERE_CONTROLS,
+  type NumericControlConfig,
+} from "../config/settings";
 import type { CymaticSettings, PostEffectId } from "../types";
 
 export type ControlsManager = {
@@ -59,43 +68,13 @@ export function createControls(
         },
       });
     }
-    engine.addBinding(settings, "modalCount", {
-      label: "modes",
-      min: 1,
-      max: 12,
-      step: 1,
-    });
-    engine.addBinding(settings, "modalDecay", {
-      label: "modal decay",
-      min: 0.12,
-      max: 5,
-      step: 0.01,
-    });
-    engine.addBinding(settings, "modalDrive", {
-      label: "drive",
-      min: 0,
-      max: 3,
-      step: 0.01,
-    });
-    engine.addBinding(settings, "patternHoldSeconds", {
-      label: "pattern hold",
-      min: 0,
-      max: 3,
-      step: 0.01,
-    });
-    engine.addBinding(settings, "morphSeconds", {
-      label: "morph speed",
-      min: 0.05,
-      max: 2,
-      step: 0.01,
-    });
+    addNumericBinding(engine, settings, ENGINE_CONTROLS.modalCount);
+    addNumericBinding(engine, settings, ENGINE_CONTROLS.modalDecay);
+    addNumericBinding(engine, settings, ENGINE_CONTROLS.modalDrive);
+    addNumericBinding(engine, settings, ENGINE_CONTROLS.patternHoldSeconds);
+    addNumericBinding(engine, settings, ENGINE_CONTROLS.morphSeconds);
     if (settings.colorMode === "chromesthesia") {
-      engine.addBinding(settings, "chromesthesiaMix", {
-        label: "chroma mix",
-        min: 0,
-        max: 1,
-        step: 0.01,
-      });
+      addNumericBinding(engine, settings, ENGINE_CONTROLS.chromesthesiaMix);
     }
 
     if (settings.projectionMode === "sphere") {
@@ -110,80 +89,13 @@ export function createControls(
       sphere.addBinding(settings, "sphereBackgroundTransparent", {
         label: "transparent sphere",
       });
-      sphere.addBinding(settings, "sphereSurfaceOpacity", {
-        label: "surface alpha",
-        min: 0.08,
-        max: 1,
-        step: 0.01,
-      });
-      sphere.addBinding(settings, "sphereRadius", {
-        label: "size",
-        min: 0.4,
-        max: 2.4,
-        step: 0.01,
-      });
+      addNumericBinding(sphere, settings, SPHERE_CONTROLS.sphereSurfaceOpacity);
+      addNumericBinding(sphere, settings, SPHERE_CONTROLS.sphereRadius);
     }
 
     const shader = pane.addFolder({ title: "Shader", expanded: true });
-    shader.addBinding(settings, "cymaticSymmetry", {
-      label: "symmetry",
-      min: 1,
-      max: 16,
-      step: 1,
-    });
-    shader.addBinding(settings, "cymaticHarmonicMix", {
-      label: "harmonics",
-      min: 0,
-      max: 1,
-      step: 0.01,
-    });
-    shader.addBinding(settings, "cymaticDensity", {
-      label: "density",
-      min: 0,
-      max: 1.5,
-      step: 0.01,
-    });
-    shader.addBinding(settings, "cymaticNodeWidth", {
-      label: "node width",
-      min: 0.005,
-      max: 0.18,
-      step: 0.001,
-    });
-    shader.addBinding(settings, "cymaticSoftness", {
-      label: "softness",
-      min: 0,
-      max: 1,
-      step: 0.01,
-    });
-    shader.addBinding(settings, "cymaticInterference", {
-      label: "interference",
-      min: 0,
-      max: 1.5,
-      step: 0.01,
-    });
-    shader.addBinding(settings, "cymaticEdgeFade", {
-      label: "edge fade",
-      min: 0,
-      max: 1,
-      step: 0.01,
-    });
-    shader.addBinding(settings, "cymaticWarp", {
-      label: "warp",
-      min: 0,
-      max: 1.2,
-      step: 0.01,
-    });
-    shader.addBinding(settings, "cymaticWarpScale", {
-      label: "warp scale",
-      min: 0,
-      max: 2,
-      step: 0.01,
-    });
-    shader.addBinding(settings, "cymaticDrift", {
-      label: "drift",
-      min: 0,
-      max: 1,
-      step: 0.01,
+    Object.values(SHADER_CONTROLS).forEach((control) => {
+      addNumericBinding(shader, settings, control);
     });
 
     const audio = pane.addFolder({ title: "Audio", expanded: true });
@@ -195,54 +107,19 @@ export function createControls(
       },
     });
     if (settings.driveMode === "manual") {
-      audio.addBinding(settings, "testFrequency", {
-        label: "test Hz",
-        min: 70,
-        max: 7200,
-        step: 1,
-      });
+      addNumericBinding(audio, settings, AUDIO_CONTROLS.testFrequency);
       audio.addBinding(settings, "frequencySweep", {
         label: "sweep",
       });
       if (settings.frequencySweep) {
-        audio.addBinding(settings, "frequencySweepRate", {
-          label: "sweep rate",
-          min: 0.02,
-          max: 1.2,
-          step: 0.01,
-        });
+        addNumericBinding(audio, settings, AUDIO_CONTROLS.frequencySweepRate);
       }
     }
-    audio.addBinding(settings, "gain", {
-      label: "gain",
-      min: 0.1,
-      max: 4,
-      step: 0.01,
-    });
-    audio.addBinding(settings, "sensitivity", {
-      label: "sensitivity",
-      min: 0.05,
-      max: 4,
-      step: 0.01,
-    });
-    audio.addBinding(settings, "lowScale", {
-      label: "low",
-      min: 0,
-      max: 3,
-      step: 0.01,
-    });
-    audio.addBinding(settings, "midScale", {
-      label: "mid",
-      min: 0,
-      max: 3,
-      step: 0.01,
-    });
-    audio.addBinding(settings, "highScale", {
-      label: "high",
-      min: 0,
-      max: 3,
-      step: 0.01,
-    });
+    addNumericBinding(audio, settings, AUDIO_CONTROLS.gain);
+    addNumericBinding(audio, settings, AUDIO_CONTROLS.sensitivity);
+    addNumericBinding(audio, settings, AUDIO_CONTROLS.lowScale);
+    addNumericBinding(audio, settings, AUDIO_CONTROLS.midScale);
+    addNumericBinding(audio, settings, AUDIO_CONTROLS.highScale);
 
     pane.on("change", onChange);
     postPanes = mountPostPanel(container, settings, onChange);
@@ -281,83 +158,35 @@ function getLayoutKey(settings: CymaticSettings) {
     settings.postProcessingEnabled,
     settings.postBloomEnabled,
     settings.postPixelationEnabled,
+    settings.postFisheyeEnabled,
     settings.terminalContourEnabled,
     settings.postEffectOrder.join(","),
   ].join(":");
 }
 
-const POST_EFFECT_LABELS: Record<PostEffectId, string> = {
-  bloom: "Bloom",
-  pixelation: "Pixelation",
-  terminal: "Terminal contours",
-};
-
-const POST_EFFECT_CONTROLS: Record<
-  PostEffectId,
-  Array<{
-    key: keyof CymaticSettings;
-    label: string;
-    min: number;
-    max: number;
-    step: number;
-  }>
-> = {
-  bloom: [
-    {
-      key: "postBloomIntensity",
-      label: "Power",
-      min: 0,
-      max: 3,
-      step: 0.01,
-    },
-  ],
-  pixelation: [
-    {
-      key: "postPixelSize",
-      label: "Pixel size",
-      min: 2,
-      max: 40,
-      step: 1,
-    },
-  ],
-  terminal: [
-    {
-      key: "terminalCellSize",
-      label: "Cell size",
-      min: 4,
-      max: 24,
-      step: 1,
-    },
-    {
-      key: "terminalContourLevels",
-      label: "Contours",
-      min: 3,
-      max: 18,
-      step: 1,
-    },
-    {
-      key: "terminalContourStrength",
-      label: "Line power",
-      min: 0.2,
-      max: 3,
-      step: 0.01,
-    },
-    {
-      key: "terminalContourThreshold",
-      label: "Threshold",
-      min: 0.01,
-      max: 0.35,
-      step: 0.001,
-    },
-  ],
-};
+function addNumericBinding(
+  pane: Pane | FolderApi,
+  settings: CymaticSettings,
+  control: NumericControlConfig,
+) {
+  pane.addBinding(settings, control.key, {
+    label: control.label,
+    min: control.min,
+    max: control.max,
+    step: control.step,
+  });
+}
 
 const POST_EFFECT_ENABLED_KEYS: Record<
   PostEffectId,
-  "postBloomEnabled" | "postPixelationEnabled" | "terminalContourEnabled"
+  | "postBloomEnabled"
+  | "postPixelationEnabled"
+  | "postFisheyeEnabled"
+  | "terminalContourEnabled"
 > = {
   bloom: "postBloomEnabled",
   pixelation: "postPixelationEnabled",
+  fisheye: "postFisheyeEnabled",
   terminal: "terminalContourEnabled",
 };
 

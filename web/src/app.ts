@@ -8,22 +8,20 @@ import {
   type ModalFieldFrame,
 } from "./audio/ModalField";
 import { decodeAndAnalyzeAudio } from "./audio/analyze";
-import contradictionsUrl from "./fixtures/audio/contradictions inst mix ab oz.mp3";
-import musicForUrl from "./fixtures/audio/music for inst mix ab oz.mp3";
+import { DEFAULT_SETTINGS } from "./config/settings";
 import { createControls, type ControlsManager } from "./ui/controls";
 import { ModalFieldRenderer } from "./webgl/ModalFieldRenderer";
-import { DEFAULT_SETTINGS, type AudioAnalysis, type CymaticSettings } from "./types";
+import type { AudioAnalysis, CymaticSettings } from "./types";
 
-const FIXTURES = [
-  {
-    label: "Music For",
-    url: musicForUrl,
-  },
-  {
-    label: "Contradictions",
-    url: contradictionsUrl,
-  },
-];
+const FIXTURES = Object.entries(
+  import.meta.glob<string>("./fixtures/audio/*.mp3", {
+    eager: true,
+    import: "default",
+  }),
+).map(([path, url]) => ({
+  label: formatFixtureLabel(path),
+  url,
+}));
 const DEFAULT_FIXTURE = FIXTURES[0];
 
 export class WavefieldApp {
@@ -545,6 +543,12 @@ function formatDuration(duration: number) {
     .toString()
     .padStart(2, "0");
   return `${minutes}:${seconds}`;
+}
+
+function formatFixtureLabel(path: string) {
+  const fileName = path.split("/").pop() ?? path;
+  const label = fileName.replace(/\.[^.]+$/, "").replace(/[-_]+/g, " ");
+  return label.replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function formatSignal(value: number) {

@@ -2,6 +2,7 @@ const MIN_FREQUENCY = 70;
 const MAX_FREQUENCY = 7_200;
 
 type PatternCandidate = {
+  key: string;
   frequency: number;
   confidence: number;
   firstSeen: number;
@@ -9,6 +10,7 @@ type PatternCandidate = {
 };
 
 export type PatternStabilityInput = {
+  key: string;
   frequency: number;
   confidence: number;
   time: number;
@@ -56,9 +58,11 @@ export class ChladniPatternStabilizer {
 
     if (
       !this.candidate ||
+      this.candidate.key !== input.key ||
       octaveDistance(this.candidate.frequency, input.frequency) > 0.1
     ) {
       this.candidate = {
+        key: input.key,
         frequency: input.frequency,
         confidence: input.confidence,
         firstSeen: input.time,
@@ -79,18 +83,18 @@ export class ChladniPatternStabilizer {
     this.candidate.lastSeen = input.time;
 
     const transitionBias = clamp(
-      input.change * 0.35 + input.beatConfidence * 0.2 + input.harmonicity * 0.18,
+      input.change * 0.58 + input.beatConfidence * 0.34 + input.harmonicity * 0.24,
       0,
-      0.55,
+      0.72,
     );
     const effectiveHoldSeconds = Math.max(
-      0.22,
+      0.12,
       Math.max(0, input.holdSeconds) * (1 - transitionBias),
     );
     const isSustained =
       input.time - this.candidate.firstSeen >= effectiveHoldSeconds;
     const isClearlyDominant =
-      this.candidate.confidence > Math.max(0.035, input.rms * 0.15 + input.energy * 0.08);
+      this.candidate.confidence > Math.max(0.025, input.rms * 0.1 + input.energy * 0.05);
     if (isSustained && isClearlyDominant) {
       this.accept(this.candidate.frequency);
     }
