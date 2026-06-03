@@ -192,12 +192,16 @@ export class ModalFieldEngine {
     }
 
     const safeDelta = clamp(deltaSeconds, 0, 0.1);
-    const frame = this.getFrameAt(time);
+    const frame =
+      settings.driveMode === "manual"
+        ? createManualFeatureFrame(settings, time)
+        : this.getFrameAt(time);
     if (!frame) {
       this.lastTime = time;
       return EMPTY_MODAL_FIELD_FRAME;
     }
-    const previousFrame = this.previousFrame ?? frame;
+    const previousFrame =
+      settings.driveMode === "manual" ? frame : this.previousFrame ?? frame;
     const flux = Math.max(
       0,
       frame.bands.low -
@@ -670,6 +674,56 @@ export function createAmbientModalFieldFrame(time: number): ModalFieldFrame {
   };
 }
 
+function createManualFeatureFrame(
+  settings: CymaticSettings,
+  time: number,
+): AudioFeatureFrame {
+  const frequency = getManualFrequency(settings, time);
+  const band = getBandForFrequency(frequency);
+  const chroma = createChromaProfileForFrequency(frequency);
+  const bands: Record<FrequencyBand, number> = {
+    low: band === "low" ? 0.86 : 0.035,
+    mid: band === "mid" ? 0.86 : 0.035,
+    high: band === "high" ? 0.86 : 0.035,
+  };
+  const pulse = settings.frequencySweep ? 0.16 : 0.08;
+
+  return {
+    index: Math.round(time * 60),
+    time,
+    rms: 0.42,
+    centroid: clampFrequencyNorm(frequency),
+    bands,
+    onsets: {
+      low: band === "low" ? pulse : 0,
+      mid: band === "mid" ? pulse : 0,
+      high: band === "high" ? pulse : 0,
+    },
+    peaks: [
+      {
+        frequency,
+        amplitude: 1,
+        bin: 0,
+        band,
+        pitchClass: chroma.tonic,
+        harmonicWeight: 1,
+      },
+    ],
+    chroma,
+    signals: {
+      structure: 0.92,
+      energy: 0.64,
+      change: settings.frequencySweep ? 0.18 : 0.02,
+      pulse,
+      beat: 0,
+      beatConfidence: 0,
+      harmonicity: 1,
+      texture: 0.04,
+    },
+    spectralFlux: 0,
+  };
+}
+
 function buildModalAtlas(): ModalAtlasEntry[] {
   const candidates = new Map<string, ModalAtlasEntry>();
   const targetFrequencies = buildFrequencyCenters(
@@ -1025,6 +1079,19 @@ function createModeColor(
     baseColor[1] * 0.72 + bandColor[1] * 0.2 + (chroma?.color[1] ?? baseColor[1]) * 0.08,
     baseColor[2] * 0.72 + bandColor[2] * 0.2 + (chroma?.color[2] ?? baseColor[2]) * 0.08,
   ];
+}
+
+function createChromaProfileForFrequency(frequency: number): ChromaProfile {
+  const pitchClass = mod(Math.round(69 + 12 * Math.log2(frequency / 440)), 12);
+  const bins = Array.from({ length: 12 }, (_, index) =>
+    index === pitchClass ? 1 : 0,
+  );
+  return {
+    bins,
+    tonic: pitchClass,
+    confidence: 1,
+    color: createModeColor(frequency, getBandForFrequency(frequency)),
+  };
 }
 
 function hsvToRgb(hue: number, saturation: number, value: number): [number, number, number] {

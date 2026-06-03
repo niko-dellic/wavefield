@@ -46,6 +46,7 @@ export class WavefieldApp {
   private lastFrameTime = performance.now();
   private ambientSeconds = 0;
   private analysisPreviewTime = 0;
+  private fieldSettingsKey = "";
   private lastAudibleVolume = 1;
   private lastModalFieldFrame: ModalFieldFrame = EMPTY_MODAL_FIELD_FRAME;
 
@@ -91,6 +92,7 @@ export class WavefieldApp {
 
     this.bindUi();
     this.syncHeaderControls();
+    this.fieldSettingsKey = getFieldSettingsKey(this.settings);
     this.resize();
   }
 
@@ -497,6 +499,13 @@ export class WavefieldApp {
   }
 
   private handleSettingsChange() {
+    const nextFieldSettingsKey = getFieldSettingsKey(this.settings);
+    if (nextFieldSettingsKey !== this.fieldSettingsKey) {
+      this.fieldSettingsKey = nextFieldSettingsKey;
+      this.modalEngine.reset(this.wavesurfer.getCurrentTime());
+      this.lastModalFieldFrame = EMPTY_MODAL_FIELD_FRAME;
+      this.resetVisualState();
+    }
     this.setStatus("Settings updated");
     this.syncHeaderControls();
   }
@@ -564,6 +573,15 @@ function getFirstMeaningfulFrameTime(analysis: AudioAnalysis) {
         frame.signals.structure > 0.08,
     )?.time ?? 0
   );
+}
+
+function getFieldSettingsKey(settings: CymaticSettings) {
+  return [
+    settings.driveMode,
+    settings.testFrequency,
+    settings.frequencySweep,
+    settings.frequencySweepRate,
+  ].join(":");
 }
 
 function isEditableKeyboardTarget(target: EventTarget | null) {
