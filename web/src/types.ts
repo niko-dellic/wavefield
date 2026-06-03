@@ -62,7 +62,6 @@ export type CymaticSettings = {
   screenAspectMode: ScreenAspectMode;
   idleMode: IdleMode;
   cymaticDensity: number;
-  cymaticSymmetry: number;
   cymaticHarmonicMix: number;
   cymaticNodeWidth: number;
   cymaticSoftness: number;
@@ -71,7 +70,6 @@ export type CymaticSettings = {
   cymaticWarp: number;
   cymaticWarpScale: number;
   cymaticDrift: number;
-  lightBackgroundMode: boolean;
   gain: number;
   sensitivity: number;
   driveMode: DriveMode;
@@ -81,6 +79,8 @@ export type CymaticSettings = {
   lowScale: number;
   midScale: number;
   highScale: number;
+  patternHoldSeconds: number;
+  morphSeconds: number;
   modalCount: number;
   modalDecay: number;
   modalDrive: number;
@@ -99,53 +99,6 @@ export type CymaticSettings = {
   terminalContourLevels: number;
   terminalContourStrength: number;
   terminalContourThreshold: number;
-};
-
-export const DEFAULT_SETTINGS: CymaticSettings = {
-  projectionMode: "screen",
-  boundaryMode: "freePlate",
-  colorMode: "chromesthesia",
-  sphereProjectionType: "triplanar",
-  screenAspectMode: "circle",
-  idleMode: "ambient",
-  cymaticDensity: 0.82,
-  cymaticSymmetry: 6,
-  cymaticHarmonicMix: 0.34,
-  cymaticNodeWidth: 0.052,
-  cymaticSoftness: 0.38,
-  cymaticInterference: 0.62,
-  cymaticEdgeFade: 0.14,
-  cymaticWarp: 0.34,
-  cymaticWarpScale: 0.72,
-  cymaticDrift: 0.16,
-  lightBackgroundMode: false,
-  gain: 1,
-  sensitivity: 1,
-  driveMode: "audio",
-  testFrequency: 220,
-  frequencySweep: false,
-  frequencySweepRate: 0.18,
-  lowScale: 1,
-  midScale: 1,
-  highScale: 1,
-  modalCount: 12,
-  modalDecay: 1.45,
-  modalDrive: 1,
-  chromesthesiaMix: 0.82,
-  sphereRadius: 1.35,
-  sphereSurfaceOpacity: 0.64,
-  sphereBackgroundTransparent: false,
-  postProcessingEnabled: true,
-  postEffectOrder: ["bloom", "pixelation", "terminal"],
-  postBloomEnabled: false,
-  postBloomIntensity: 0.72,
-  postPixelationEnabled: false,
-  postPixelSize: 6,
-  terminalContourEnabled: true,
-  terminalCellSize: 9,
-  terminalContourLevels: 8,
-  terminalContourStrength: 1,
-  terminalContourThreshold: 0.09,
 };
 
 export const BAND_COLORS: Record<FrequencyBand, [number, number, number]> = {

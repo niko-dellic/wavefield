@@ -9,6 +9,7 @@ import {
   type SpectralPeak,
 } from "../types";
 import { mapFrequencyToChladniMode } from "./chladniModes";
+import { ChladniPatternStabilizer } from "./chladniStability";
 import { EMPTY_CHROMA_PROFILE, EMPTY_FEATURE_SIGNALS } from "./featureAnalysis";
 
 export const MAX_CHLADNI_MODES = 12;
@@ -75,6 +76,16 @@ type ModeDriver = {
   harmonicWeight: number;
 };
 
+type PersistentDriver = {
+  strength: number;
+  targetStrength: number;
+  pulse: number;
+  layer: number;
+  frequency: number;
+  harmonicWeight: number;
+  lastSeen: number;
+};
+
 const BANDS: FrequencyBand[] = ["low", "mid", "high"];
 const BAND_SCALE_KEYS: Record<
   FrequencyBand,
@@ -126,6 +137,9 @@ export class ModalFieldEngine {
   private smoothedFlux = 0;
   private readonly smoothedBands: Record<FrequencyBand, number> = { ...EMPTY_BANDS };
   private readonly smoothedOnsets: Record<FrequencyBand, number> = { ...EMPTY_BANDS };
+  private readonly persistentDrivers = new Map<string, PersistentDriver>();
+  private readonly patternStabilizer = new ChladniPatternStabilizer();
+  private displayModeKeys: string[] = [];
 
   constructor() {
     this.modes = MODAL_ATLAS.map((entry) => ({
@@ -163,6 +177,9 @@ export class ModalFieldEngine {
       this.smoothedBands[band] = 0;
       this.smoothedOnsets[band] = 0;
     }
+    this.persistentDrivers.clear();
+    this.displayModeKeys = [];
+    this.patternStabilizer.reset();
   }
 
   update(
@@ -221,7 +238,14 @@ export class ModalFieldEngine {
         8,
       );
     }
-    const modeDrivers = resolveModeDrivers(frame, settings, time);
+    const rawModeDrivers = resolveModeDrivers(frame, settings, time);
+    const modeDrivers = this.resolvePersistentModeDrivers(
+      rawModeDrivers,
+      frame,
+      settings,
+      time,
+      safeDelta,
+    );
 
     for (const mode of this.modes) {
       const bandScale = settings[BAND_SCALE_KEYS[mode.band]];
@@ -328,9 +352,186 @@ export class ModalFieldEngine {
     };
   }
 
+  private resolvePersistentModeDrivers(
+    rawDrivers: Map<string, ModeDriver>,
+    frame: AudioFeatureFrame,
+    settings: CymaticSettings,
+    time: number,
+    deltaSeconds: number,
+  ) {
+    const targets =
+      settings.driveMode === "manual"
+        ? rawDrivers
+        : this.resolveAudioPatternTargets(rawDrivers, frame, settings, time);
+
+    this.updatePersistentDrivers(targets, settings, time, deltaSeconds);
+
+    const drivers = new Map<string, ModeDriver>();
+    for (const [key, driver] of this.persistentDrivers) {
+      if (driver.strength <= 0.0008 && driver.targetStrength <= 0.0008) {
+        continue;
+      }
+      drivers.set(key, {
+        strength: clamp01(driver.strength),
+        pulse: clamp01(driver.pulse),
+        layer: driver.layer,
+        frequency: driver.frequency,
+        harmonicWeight: driver.harmonicWeight,
+      });
+    }
+
+    return drivers;
+  }
+
+  private resolveAudioPatternTargets(
+    rawDrivers: Map<string, ModeDriver>,
+    frame: AudioFeatureFrame,
+    settings: CymaticSettings,
+    time: number,
+  ) {
+    this.updateBasePattern(rawDrivers, frame, settings, time);
+
+    const targets = new Map<string, ModeDriver>();
+    this.addBasePatternDrivers(targets, frame, settings);
+
+    for (const [key, driver] of rawDrivers) {
+      addModeDriver(targets, getAtlasModeByKey(key), {
+        strength: driver.strength * 0.32,
+        pulse: driver.pulse,
+        layer: 1,
+        frequency: driver.frequency,
+        harmonicWeight: driver.harmonicWeight,
+      });
+    }
+
+    return targets;
+  }
+
+  private updateBasePattern(
+    rawDrivers: Map<string, ModeDriver>,
+    frame: AudioFeatureFrame,
+    settings: CymaticSettings,
+    time: number,
+  ) {
+    const dominant = getDominantPatternDriver(rawDrivers, frame);
+    this.patternStabilizer.update({
+      frequency: dominant?.frequency ?? frequencyFromCentroid(frame.centroid),
+      confidence: dominant?.confidence ?? frame.rms * 0.22,
+      time,
+      holdSeconds: settings.patternHoldSeconds,
+      rms: this.smoothedRms,
+      energy: frame.signals.energy,
+      change: frame.signals.change,
+      beatConfidence: frame.signals.beatConfidence,
+      harmonicity: frame.signals.harmonicity,
+    });
+  }
+
+  private addBasePatternDrivers(
+    targets: Map<string, ModeDriver>,
+    frame: AudioFeatureFrame,
+    settings: CymaticSettings,
+  ) {
+    const baseEnergy = clamp01(
+      this.smoothedRms * 0.86 +
+        frame.signals.energy * 0.38 +
+        this.smoothedFlux * 0.18,
+    );
+    const basePulse = clamp01(
+      frame.signals.pulse * 0.32 +
+        this.smoothedFlux * 0.18 +
+        (this.smoothedOnsets.low + this.smoothedOnsets.mid + this.smoothedOnsets.high) *
+          0.08,
+    );
+    const baseStrength =
+      (0.13 + baseEnergy * 0.82) *
+      settings.gain *
+      settings.sensitivity *
+      settings.modalDrive;
+
+    HARMONIC_DRIVER_WEIGHTS.slice(0, 4).forEach((weight, index) => {
+      const harmonic = index + 1;
+      const frequency = this.patternStabilizer.getFrequency() * harmonic;
+      if (frequency > MAX_FREQUENCY * 1.1) {
+        return;
+      }
+      const mode = getAtlasModeForFrequency(frequency);
+      const bandScale = settings[BAND_SCALE_KEYS[mode.band]];
+      addModeDriver(targets, mode, {
+        strength: baseStrength * weight * bandScale * (index === 0 ? 1 : 0.62),
+        pulse: basePulse * (index === 0 ? 0.7 : 0.45),
+        layer: index === 0 ? 0 : 0.35,
+        frequency,
+        harmonicWeight: frame.signals.harmonicity,
+      });
+
+      if (index < 2) {
+        for (const neighbor of getNearestAtlasModes(frequency, 3).slice(1, 3)) {
+          addModeDriver(targets, neighbor, {
+            strength: baseStrength * weight * 0.32 * bandScale,
+            pulse: basePulse * 0.36,
+            layer: 0.45,
+            frequency,
+            harmonicWeight: frame.signals.harmonicity * 0.8,
+          });
+        }
+      }
+    });
+  }
+
+  private updatePersistentDrivers(
+    targets: Map<string, ModeDriver>,
+    settings: CymaticSettings,
+    time: number,
+    deltaSeconds: number,
+  ) {
+    const morphSeconds = Math.max(0.05, settings.morphSeconds);
+    const morphAlpha = 1 - Math.exp(-deltaSeconds / morphSeconds);
+    const pulseDecay = Math.exp(-deltaSeconds / Math.max(0.08, morphSeconds * 0.42));
+
+    for (const driver of this.persistentDrivers.values()) {
+      driver.targetStrength = 0;
+      driver.pulse *= pulseDecay;
+    }
+
+    for (const [key, target] of targets) {
+      const existing = this.persistentDrivers.get(key);
+      if (!existing) {
+        this.persistentDrivers.set(key, {
+          strength: 0,
+          targetStrength: clamp01(target.strength),
+          pulse: clamp01(target.pulse),
+          layer: target.layer,
+          frequency: target.frequency,
+          harmonicWeight: target.harmonicWeight,
+          lastSeen: time,
+        });
+        continue;
+      }
+
+      existing.targetStrength = clamp01(target.strength);
+      existing.pulse = Math.max(existing.pulse, target.pulse);
+      existing.layer = target.layer;
+      existing.frequency = target.frequency;
+      existing.harmonicWeight = target.harmonicWeight;
+      existing.lastSeen = time;
+    }
+
+    for (const [key, driver] of this.persistentDrivers) {
+      driver.strength += (driver.targetStrength - driver.strength) * morphAlpha;
+      if (
+        driver.strength < 0.0008 &&
+        driver.targetStrength <= 0.0008 &&
+        time - driver.lastSeen > morphSeconds * 2.5
+      ) {
+        this.persistentDrivers.delete(key);
+      }
+    }
+  }
+
   private getDisplayModes(modalCount: number) {
     const count = Math.min(MAX_MODAL_MODES, Math.max(1, modalCount));
-    const active = this.modes
+    const activeEntries = this.modes
       .map((mode, index) => ({
         mode,
         index,
@@ -342,13 +543,36 @@ export class ModalFieldEngine {
       }))
       .filter((entry) => entry.score > 0.003)
       .sort((left, right) => {
-        if (Math.abs(right.score - left.score) > 0.0001) {
-          return right.score - left.score;
+        const layerDelta = left.mode.layer - right.mode.layer;
+        if (Math.abs(layerDelta) > 0.001) {
+          return layerDelta;
         }
-        return left.mode.naturalFrequency - right.mode.naturalFrequency;
+        if (Math.abs(left.mode.naturalFrequency - right.mode.naturalFrequency) > 0.0001) {
+          return left.mode.naturalFrequency - right.mode.naturalFrequency;
+        }
+        return right.score - left.score;
       });
-    const selected = active.slice(0, count).map((entry) => entry.mode);
+    const activeByKey = new Map(
+      activeEntries.map((entry) => [entry.mode.key, entry]),
+    );
+    const selected = this.displayModeKeys
+      .map((key) => activeByKey.get(key))
+      .filter((entry): entry is { mode: ModalState; index: number; score: number } =>
+        Boolean(entry),
+      )
+      .slice(0, count)
+      .map((entry) => entry.mode);
     const used = new Set(selected.map((mode) => mode.key));
+
+    for (const entry of activeEntries) {
+      if (selected.length >= count) {
+        break;
+      }
+      if (!used.has(entry.mode.key)) {
+        selected.push(entry.mode);
+        used.add(entry.mode.key);
+      }
+    }
 
     for (const index of DISPLAY_MODE_INDEXES) {
       if (selected.length >= count) {
@@ -361,7 +585,8 @@ export class ModalFieldEngine {
       }
     }
 
-    return selected.sort((left, right) => left.naturalFrequency - right.naturalFrequency);
+    this.displayModeKeys = selected.map((mode) => mode.key);
+    return selected;
   }
 
   private getFrameAt(time: number): AudioFeatureFrame | null {
@@ -663,6 +888,70 @@ function getAtlasModeForFrequency(frequency: number) {
     naturalFrequency: mapped.frequency,
     frequencyNorm: clampFrequencyNorm(mapped.frequency),
     band: getBandForFrequency(mapped.frequency),
+  };
+}
+
+function getAtlasModeByKey(key: string) {
+  const existing = MODAL_ATLAS.find((mode) => mode.key === key);
+  if (existing) {
+    return existing;
+  }
+
+  const [m = 3, n = 5] = key.split(":").map((part) => Number.parseInt(part, 10));
+  const naturalFrequency =
+    220 * Math.pow(Math.hypot(m, n) / Math.hypot(3, 5), 2);
+  return {
+    key,
+    mode: [m, n] as [number, number],
+    naturalFrequency,
+    frequencyNorm: clampFrequencyNorm(naturalFrequency),
+    band: getBandForFrequency(naturalFrequency),
+  };
+}
+
+function getDominantPatternDriver(
+  drivers: Map<string, ModeDriver>,
+  frame: AudioFeatureFrame,
+) {
+  let best:
+    | {
+        frequency: number;
+        confidence: number;
+      }
+    | null = null;
+
+  for (const driver of drivers.values()) {
+    if (driver.layer > 0.5) {
+      continue;
+    }
+    const confidence =
+      driver.strength *
+      (0.72 + driver.harmonicWeight * 0.24 + frame.signals.structure * 0.2);
+    if (!best || confidence > best.confidence) {
+      best = {
+        frequency: driver.frequency,
+        confidence,
+      };
+    }
+  }
+
+  if (best) {
+    return best;
+  }
+
+  const peak = frame.peaks[0];
+  if (!peak) {
+    return {
+      frequency: frequencyFromCentroid(frame.centroid),
+      confidence: frame.rms * 0.22 + frame.signals.structure * 0.08,
+    };
+  }
+
+  return {
+    frequency: peak.frequency,
+    confidence:
+      peak.amplitude *
+      (0.54 + peak.harmonicWeight * 0.28 + frame.signals.structure * 0.18),
   };
 }
 

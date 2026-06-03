@@ -24,6 +24,7 @@ const FIXTURES = [
     url: contradictionsUrl,
   },
 ];
+const DEFAULT_FIXTURE = FIXTURES[0];
 
 export class WavefieldApp {
   private readonly settings: CymaticSettings = { ...DEFAULT_SETTINGS };
@@ -97,6 +98,7 @@ export class WavefieldApp {
 
   start() {
     this.animationFrame = requestAnimationFrame(this.animate);
+    void this.loadDefaultFixture();
   }
 
   dispose() {
@@ -304,6 +306,22 @@ export class WavefieldApp {
 
     this.setAnalysis(analysis);
     this.setStatus(`${label} analyzed: ${analysis.frames.length} frames`);
+  }
+
+  private async loadDefaultFixture() {
+    if (!DEFAULT_FIXTURE) {
+      return;
+    }
+
+    try {
+      await this.loadFixture(DEFAULT_FIXTURE.url, DEFAULT_FIXTURE.label);
+    } catch (error) {
+      this.setStatus(
+        error instanceof Error
+          ? error.message
+          : "Could not load the default fixture",
+      );
+    }
   }
 
   private async loadFile(file: File) {

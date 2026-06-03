@@ -77,6 +77,18 @@ export function createControls(
       max: 3,
       step: 0.01,
     });
+    engine.addBinding(settings, "patternHoldSeconds", {
+      label: "pattern hold",
+      min: 0,
+      max: 3,
+      step: 0.01,
+    });
+    engine.addBinding(settings, "morphSeconds", {
+      label: "morph speed",
+      min: 0.05,
+      max: 2,
+      step: 0.01,
+    });
     if (settings.colorMode === "chromesthesia") {
       engine.addBinding(settings, "chromesthesiaMix", {
         label: "chroma mix",

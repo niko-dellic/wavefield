@@ -9,6 +9,7 @@ import {
   type RawAudioFeatureFrame,
 } from "../src/audio/featureAnalysis.ts";
 import { mapFrequencyToChladniMode } from "../src/audio/chladniModes.ts";
+import { ChladniPatternStabilizer } from "../src/audio/chladniStability.ts";
 
 const SAMPLE_RATE = 48_000;
 const FFT_SIZE = 1024;
@@ -127,6 +128,54 @@ test("chladni frequency mapping clamps extreme frequencies", () => {
   assert.ok(high.n <= 28);
 });
 
+test("chladni pattern stabilizer keeps its base through a brief transient", () => {
+  const stabilizer = new ChladniPatternStabilizer();
+
+  assert.equal(
+    Math.round(
+      stabilizer.update(createPatternInput({ time: 0, frequency: 220, confidence: 0.5 })),
+    ),
+    220,
+  );
+  assert.equal(
+    Math.round(
+      stabilizer.update(createPatternInput({ time: 0.2, frequency: 880, confidence: 1 })),
+    ),
+    220,
+  );
+  assert.equal(
+    Math.round(
+      stabilizer.update(createPatternInput({ time: 0.35, frequency: 220, confidence: 0.5 })),
+    ),
+    220,
+  );
+});
+
+test("chladni pattern stabilizer adopts a sustained new dominant frequency", () => {
+  const stabilizer = new ChladniPatternStabilizer();
+
+  stabilizer.update(createPatternInput({ time: 0, frequency: 220, confidence: 0.5 }));
+  stabilizer.update(createPatternInput({ time: 0.2, frequency: 880, confidence: 1 }));
+  stabilizer.update(createPatternInput({ time: 0.45, frequency: 880, confidence: 1 }));
+  const frequency = stabilizer.update(
+    createPatternInput({ time: 0.62, frequency: 880, confidence: 1 }),
+  );
+
+  assert.equal(Math.round(frequency), 880);
+});
+
+test("chladni pattern stabilizer follows close pitch drift without a reset", () => {
+  const stabilizer = new ChladniPatternStabilizer();
+
+  stabilizer.update(createPatternInput({ time: 0, frequency: 220, confidence: 0.5 }));
+  const drifted = stabilizer.update(
+    createPatternInput({ time: 0.2, frequency: 231, confidence: 0.5 }),
+  );
+
+  assert.ok(drifted > 220);
+  assert.ok(drifted < 231);
+});
+
 function createSpectrum(peaks: Array<[number, number]>) {
   const magnitudes = new Float32Array(FFT_SIZE / 2);
   for (const [frequency, amplitude] of peaks) {
@@ -147,4 +196,26 @@ function createBroadbandSpectrum() {
     magnitudes[bin] = 0.08 + (wave - Math.floor(wave)) * 0.24;
   }
   return magnitudes;
+}
+
+function createPatternInput({
+  time,
+  frequency,
+  confidence,
+}: {
+  time: number;
+  frequency: number;
+  confidence: number;
+}) {
+  return {
+    time,
+    frequency,
+    confidence,
+    holdSeconds: 0.35,
+    rms: 0.28,
+    energy: 0.42,
+    change: 0.18,
+    beatConfidence: 0.28,
+    harmonicity: 0.82,
+  };
 }
