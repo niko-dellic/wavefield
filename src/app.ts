@@ -208,8 +208,8 @@ export class WavefieldApp {
             <i class="ph ph-wave-sine" aria-hidden="true"></i>
             <span>Drive</span>
             <select class="drive-mode-select" aria-label="Drive mode">
-              <option value="audio" selected>Audio</option>
-              <option value="manual">Manual</option>
+              <option value="audio">Audio</option>
+              <option value="manual" selected>Manual</option>
               <option value="live">Live</option>
             </select>
           </label>
@@ -367,7 +367,6 @@ export class WavefieldApp {
   }
 
   private async loadFixture(url: string, label: string) {
-    await this.setDriveMode("audio", false);
     this.setStatus(`Loading ${label}...`);
     this.updateSelectedSource(label);
     this.prepareForNewAudio();
@@ -404,7 +403,6 @@ export class WavefieldApp {
   }
 
   private async loadFile(file: File) {
-    await this.setDriveMode("audio", false);
     this.setStatus(`Loading ${file.name}...`);
     this.updateSelectedSource(file.name);
     this.prepareForNewAudio();
