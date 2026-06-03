@@ -40,7 +40,7 @@ const SCREEN_VIEW_MIN_SCALE = 0.05;
 const SCREEN_VIEW_MAX_SCALE = 16;
 const SCREEN_WHEEL_ZOOM_SPEED = 0.0015;
 const SCREEN_PINCH_MIN_DISTANCE = 8;
-const SCREEN_PAN_DAMPING = 10;
+const SCREEN_PAN_DAMPING = 4.5;
 const SCREEN_ZOOM_DAMPING = 14;
 const MOBILE_SETTINGS_MEDIA = "(max-width: 560px)";
 
@@ -139,6 +139,7 @@ export class WavefieldApp {
   private screenPanPointerId: number | null = null;
   private screenPanButtonMask = 0;
   private lastScreenPanPoint: PlatePoint | null = null;
+  private isScreenPointerLocked = false;
   private screenPinchGesture: ScreenPinchGesture | null = null;
 
   constructor(private readonly root: HTMLElement) {
@@ -229,8 +230,13 @@ export class WavefieldApp {
     this.canvas.removeEventListener("click", this.handleCanvasClick);
     this.canvas.removeEventListener("contextmenu", this.handleCanvasContextMenu);
     window.removeEventListener("resize", this.resize);
+    document.removeEventListener("mousemove", this.handleScreenPointerLockedMouseMove);
+    document.removeEventListener("mouseup", this.handleScreenPointerLockedMouseUp);
     document.removeEventListener("keydown", this.handleKeyDown);
     document.removeEventListener("fullscreenchange", this.handleFullscreenChange);
+    document.removeEventListener("pointerlockchange", this.handlePointerLockChange);
+    document.removeEventListener("pointerlockerror", this.handlePointerLockError);
+    this.releaseScreenPointerLock();
     this.controls.dispose();
     this.disposeModeSettingsPane();
     this.liveAnalyzer.stop();
@@ -442,8 +448,12 @@ export class WavefieldApp {
     this.canvas.addEventListener("click", this.handleCanvasClick);
     this.canvas.addEventListener("contextmenu", this.handleCanvasContextMenu);
 
+    document.addEventListener("mousemove", this.handleScreenPointerLockedMouseMove);
+    document.addEventListener("mouseup", this.handleScreenPointerLockedMouseUp);
     document.addEventListener("keydown", this.handleKeyDown);
     document.addEventListener("fullscreenchange", this.handleFullscreenChange);
+    document.addEventListener("pointerlockchange", this.handlePointerLockChange);
+    document.addEventListener("pointerlockerror", this.handlePointerLockError);
 
     this.root.querySelectorAll<HTMLButtonElement>("[data-fixture-url]").forEach((button) => {
       button.addEventListener("click", () => {
@@ -1003,6 +1013,9 @@ export class WavefieldApp {
     this.lastScreenPanPoint = this.getPlatePoint(event.clientX, event.clientY);
     this.canvas.classList.add("is-panning-screen");
     this.canvas.setPointerCapture(event.pointerId);
+    if (event.pointerType === "mouse") {
+      this.requestScreenPointerLock();
+    }
   };
 
   private handleCanvasPointerMove = (event: PointerEvent) => {
@@ -1038,6 +1051,7 @@ export class WavefieldApp {
 
     if (
       this.settings.projectionMode !== "screen" ||
+      this.isScreenPointerLocked ||
       this.screenPanPointerId !== event.pointerId ||
       !this.lastScreenPanPoint ||
       (event.buttons & this.screenPanButtonMask) === 0
@@ -1089,6 +1103,45 @@ export class WavefieldApp {
     if (this.canvas.hasPointerCapture(event.pointerId)) {
       this.canvas.releasePointerCapture(event.pointerId);
     }
+    this.releaseScreenPointerLock();
+  };
+
+  private handleScreenPointerLockedMouseMove = (event: MouseEvent) => {
+    if (
+      this.settings.projectionMode !== "screen" ||
+      !this.isScreenPointerLocked ||
+      this.screenPanButtonMask === 0 ||
+      (event.buttons & this.screenPanButtonMask) === 0
+    ) {
+      return;
+    }
+
+    event.preventDefault();
+    this.panScreenViewTargetByPixels(event.movementX, event.movementY);
+  };
+
+  private handleScreenPointerLockedMouseUp = () => {
+    if (!this.isScreenPointerLocked) {
+      return;
+    }
+
+    this.endMouseScreenPan();
+  };
+
+  private handlePointerLockChange = () => {
+    this.isScreenPointerLocked = document.pointerLockElement === this.canvas;
+    if (this.isScreenPointerLocked) {
+      this.lastScreenPanPoint = null;
+      return;
+    }
+
+    if (this.screenPanPointerId !== null && this.screenPanButtonMask !== 0) {
+      this.endMouseScreenPan();
+    }
+  };
+
+  private handlePointerLockError = () => {
+    this.isScreenPointerLocked = false;
   };
 
   private handleCanvasClick = () => {
@@ -1130,6 +1183,58 @@ export class WavefieldApp {
       (nextPoint.x - previousPoint.x) / this.screenViewTarget.scale;
     this.screenViewTarget.offsetY -=
       (nextPoint.y - previousPoint.y) / this.screenViewTarget.scale;
+  }
+
+  private panScreenViewTargetByPixels(deltaX: number, deltaY: number) {
+    const rect = this.canvas.getBoundingClientRect();
+    const width = Math.max(1, rect.width);
+    const height = Math.max(1, rect.height);
+    const xScale = this.settings.screenAspectMode === "circle" ? height : width;
+
+    this.screenViewTarget.offsetX -=
+      deltaX / xScale / this.screenViewTarget.scale;
+    this.screenViewTarget.offsetY +=
+      deltaY / height / this.screenViewTarget.scale;
+  }
+
+  private requestScreenPointerLock() {
+    if (typeof this.canvas.requestPointerLock !== "function") {
+      this.isScreenPointerLocked = false;
+      return;
+    }
+
+    if (document.pointerLockElement === this.canvas) {
+      this.isScreenPointerLocked = true;
+      return;
+    }
+
+    try {
+      this.canvas.requestPointerLock();
+    } catch {
+      this.isScreenPointerLocked = false;
+    }
+  }
+
+  private releaseScreenPointerLock() {
+    if (
+      document.pointerLockElement === this.canvas &&
+      typeof document.exitPointerLock === "function"
+    ) {
+      document.exitPointerLock();
+    }
+    this.isScreenPointerLocked = false;
+  }
+
+  private endMouseScreenPan() {
+    const pointerId = this.screenPanPointerId;
+    this.screenPanPointerId = null;
+    this.screenPanButtonMask = 0;
+    this.lastScreenPanPoint = null;
+    this.canvas.classList.remove("is-panning-screen");
+    if (pointerId !== null && this.canvas.hasPointerCapture(pointerId)) {
+      this.canvas.releasePointerCapture(pointerId);
+    }
+    this.releaseScreenPointerLock();
   }
 
   private resetScreenPinchGesture() {
@@ -1342,6 +1447,10 @@ export class WavefieldApp {
   }
 
   private handleSettingsChange() {
+    if (this.settings.projectionMode !== "screen") {
+      this.endMouseScreenPan();
+    }
+
     const nextFieldSettingsKey = getFieldSettingsKey(this.settings);
     if (nextFieldSettingsKey !== this.fieldSettingsKey) {
       this.fieldSettingsKey = nextFieldSettingsKey;
