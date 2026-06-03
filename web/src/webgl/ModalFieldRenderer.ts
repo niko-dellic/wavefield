@@ -586,7 +586,7 @@ export class ModalFieldRenderer {
     }
 
     this.controls = new TrackballControls(this.sphereCamera, renderer.domElement);
-    this.controls.dynamicDampingFactor = 0.08;
+    this.controls.dynamicDampingFactor = 0.012;
     this.controls.noPan = true;
     this.controls.handleResize();
     this.controls.enabled = false;
