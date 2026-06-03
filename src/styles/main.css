@@ -71,6 +71,7 @@ select {
 .mode-picker,
 .drive-mode-picker,
 .mode-settings-host,
+.fullscreen-toggle,
 .play-toggle,
 .volume-toggle {
   height: 34px;
@@ -109,6 +110,7 @@ select {
 .mode-picker,
 .drive-mode-picker,
 .mode-settings-host,
+.fullscreen-toggle,
 .play-toggle,
 .volume-toggle {
   display: inline-flex;
@@ -142,6 +144,7 @@ select {
 .source-option:hover,
 .mode-picker:hover,
 .drive-mode-picker:hover,
+.fullscreen-toggle:hover,
 .play-toggle:hover,
 .volume-toggle:hover {
   border-color: rgb(217 247 255 / 46%);
@@ -237,6 +240,27 @@ select {
   width: 320px;
   max-height: calc(100vh - 132px);
   overflow: auto;
+}
+
+.pane-host[hidden] {
+  display: none;
+}
+
+#app:not(.is-gui-visible) .topbar {
+  right: 16px;
+}
+
+.fullscreen-toggle {
+  width: 34px;
+  justify-content: center;
+  padding: 0;
+}
+
+#app.is-fullscreen .topbar,
+#app.is-fullscreen .pane-host,
+#app.is-fullscreen .diagnostics-strip,
+#app.is-fullscreen .transport {
+  display: none;
 }
 
 .diagnostics-strip {
@@ -675,6 +699,7 @@ select {
   .mode-picker,
   .drive-mode-picker,
   .mode-settings-host,
+  .fullscreen-toggle,
   .play-toggle,
   .volume-toggle {
     height: 32px;
@@ -684,6 +709,7 @@ select {
 
   .play-toggle,
   .volume-toggle,
+  .fullscreen-toggle,
   .volume-control {
     width: 32px;
     height: 32px;

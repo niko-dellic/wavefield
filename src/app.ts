@@ -50,13 +50,16 @@ export class WavefieldApp {
   private readonly sourceTrigger: HTMLButtonElement;
   private readonly sourceMenu: HTMLElement;
   private readonly selectedSource: HTMLElement;
+  private readonly fullscreenButton: HTMLButtonElement;
   private readonly projectionSelect: HTMLSelectElement;
   private readonly driveModeSelect: HTMLSelectElement;
   private readonly modeSettingsHost: HTMLElement;
   private readonly analysisDebug: HTMLElement;
   private readonly transport: HTMLElement;
+  private readonly guiHost: HTMLElement;
   private modeSettingsPane: Pane | null = null;
   private modeSettingsLayoutKey = "";
+  private isGuiVisible = false;
   private analysis: AudioAnalysis | null = null;
   private animationFrame = 0;
   private lastFrameTime = performance.now();
@@ -90,11 +93,13 @@ export class WavefieldApp {
     this.sourceTrigger = this.query<HTMLButtonElement>(".source-trigger");
     this.sourceMenu = this.query<HTMLElement>(".source-menu");
     this.selectedSource = this.query<HTMLElement>(".selected-source");
+    this.fullscreenButton = this.query<HTMLButtonElement>(".fullscreen-toggle");
     this.projectionSelect = this.query<HTMLSelectElement>(".projection-mode-select");
     this.driveModeSelect = this.query<HTMLSelectElement>(".drive-mode-select");
     this.modeSettingsHost = this.query<HTMLElement>(".mode-settings-host");
     this.analysisDebug = this.query<HTMLElement>(".analysis-debug");
     this.transport = this.query<HTMLElement>(".transport");
+    this.guiHost = this.query<HTMLElement>(".pane-host");
 
     this.renderer = new THREE.WebGLRenderer({
       canvas: this.canvas,
@@ -118,13 +123,14 @@ export class WavefieldApp {
     });
 
     this.controls = createControls(
-      this.query<HTMLElement>(".pane-host"),
+      this.guiHost,
       this.settings,
       () => this.handleSettingsChange(),
     );
 
     this.bindUi();
     this.syncHeaderControls();
+    this.syncGuiVisibility();
     this.fieldSettingsKey = getFieldSettingsKey(this.settings);
     this.resize();
   }
@@ -143,6 +149,7 @@ export class WavefieldApp {
     this.canvas.removeEventListener("pointercancel", this.handleCanvasPointerUp);
     this.canvas.removeEventListener("contextmenu", this.handleCanvasContextMenu);
     document.removeEventListener("keydown", this.handleKeyDown);
+    document.removeEventListener("fullscreenchange", this.handleFullscreenChange);
     this.controls.dispose();
     this.disposeModeSettingsPane();
     this.liveAnalyzer.stop();
@@ -164,6 +171,9 @@ export class WavefieldApp {
       <main class="wavefield">
         <canvas class="wavefield-canvas" aria-label="Wavefield cymatic visualization"></canvas>
         <section class="topbar" aria-label="Wavefield controls">
+          <button class="fullscreen-toggle" type="button" aria-label="Fullscreen" title="Fullscreen">
+            <i class="ph ph-corners-out" aria-hidden="true"></i>
+          </button>
           <div class="brand">
             <span class="brand-mark"></span>
             <span>Wavefield</span>
@@ -192,7 +202,7 @@ export class WavefieldApp {
             </select>
           </label>
         </section>
-        <aside class="pane-host" aria-label="Wavefield shader settings"></aside>
+        <aside class="pane-host" aria-label="Wavefield shader settings" hidden></aside>
         <section class="diagnostics-strip" aria-label="Wavefield diagnostics">
           <label class="drive-mode-picker">
             <i class="ph ph-wave-sine" aria-hidden="true"></i>
@@ -264,6 +274,10 @@ export class WavefieldApp {
       this.setMuted(!this.wavesurfer.getMuted());
     });
 
+    this.fullscreenButton.addEventListener("click", () => {
+      void this.toggleFullscreen();
+    });
+
     this.volumeSlider.addEventListener("input", () => {
       this.setVolume(Number(this.volumeSlider.value));
     });
@@ -278,6 +292,7 @@ export class WavefieldApp {
     this.canvas.addEventListener("contextmenu", this.handleCanvasContextMenu);
 
     document.addEventListener("keydown", this.handleKeyDown);
+    document.addEventListener("fullscreenchange", this.handleFullscreenChange);
 
     this.root.querySelectorAll<HTMLButtonElement>("[data-fixture-url]").forEach((button) => {
       button.addEventListener("click", () => {
@@ -426,16 +441,29 @@ export class WavefieldApp {
   }
 
   private handleKeyDown = (event: KeyboardEvent) => {
-    if (
-      event.code !== "Space"
-      || event.repeat
-      || event.metaKey
-      || event.ctrlKey
-      || event.altKey
-    ) {
+    if (event.metaKey || event.ctrlKey || event.altKey) {
       return;
     }
     if (isEditableKeyboardTarget(event.target)) {
+      return;
+    }
+    if (event.repeat) {
+      return;
+    }
+
+    if (event.code === "Tab") {
+      event.preventDefault();
+      this.setGuiVisible(!this.isGuiVisible);
+      return;
+    }
+
+    if (event.code === "KeyF") {
+      event.preventDefault();
+      void this.toggleFullscreen();
+      return;
+    }
+
+    if (event.code !== "Space") {
       return;
     }
     event.preventDefault();
@@ -564,6 +592,42 @@ export class WavefieldApp {
           : "Playback was blocked by the browser",
       );
     });
+  }
+
+  private setGuiVisible(isVisible: boolean) {
+    if (this.isGuiVisible === isVisible) {
+      return;
+    }
+
+    this.isGuiVisible = isVisible;
+    this.syncGuiVisibility();
+  }
+
+  private syncGuiVisibility() {
+    this.guiHost.hidden = !this.isGuiVisible;
+    this.root.classList.toggle("is-gui-visible", this.isGuiVisible);
+  }
+
+  private handleFullscreenChange = () => {
+    this.root.classList.toggle(
+      "is-fullscreen",
+      document.fullscreenElement === this.root,
+    );
+  };
+
+  private async toggleFullscreen() {
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+        return;
+      }
+
+      await this.root.requestFullscreen();
+    } catch (error) {
+      this.setStatus(
+        error instanceof Error ? error.message : "Fullscreen is unavailable",
+      );
+    }
   }
 
   private setVolume(volume: number) {
