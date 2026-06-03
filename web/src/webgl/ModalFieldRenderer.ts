@@ -7,6 +7,7 @@ import type {
   ColorMode,
   CymaticSettings,
   ProjectionMode,
+  SphereProjectionType,
 } from "../types";
 
 const BOUNDARY_MODE_INDEX: Record<BoundaryMode, number> = {
@@ -24,6 +25,11 @@ const COLOR_MODE_INDEX: Record<ColorMode, number> = {
 const PROJECTION_MODE_INDEX: Record<ProjectionMode, number> = {
   screen: 0,
   sphere: 1,
+};
+
+const SPHERE_PROJECTION_TYPE_INDEX: Record<SphereProjectionType, number> = {
+  triplanar: 0,
+  uv: 1,
 };
 
 const VERTEX_SHADER = `
@@ -47,6 +53,7 @@ const FRAGMENT_SHADER = `
   uniform int uBoundaryMode;
   uniform int uColorMode;
   uniform int uProjectionMode;
+  uniform int uSphereProjectionType;
   uniform vec4 uModeSlots[MAX_MODAL_MODES];
   uniform vec4 uModeMeta[MAX_MODAL_MODES];
   uniform vec4 uModeColors[MAX_MODAL_MODES];
@@ -63,6 +70,7 @@ const FRAGMENT_SHADER = `
   uniform float uFlux;
   uniform vec3 uBandEnergies;
   uniform float uChromesthesiaMix;
+  uniform float uIdlePreview;
   varying vec2 vUv;
   varying vec3 vWorldNormal;
 
@@ -190,6 +198,11 @@ const FRAGMENT_SHADER = `
 
     vec3 normal = normalize(vWorldNormal);
     vec3 p = normal * 0.5 + 0.5;
+
+    if (uSphereProjectionType == 1) {
+      return evaluateField(vec3(vUv, p.z));
+    }
+
     vec3 weights = pow(abs(normal), vec3(4.0));
     weights /= max(0.0001, weights.x + weights.y + weights.z);
 
@@ -210,6 +223,11 @@ const FRAGMENT_SHADER = `
 
   void main() {
     if (uModeCount <= 0) {
+      if (uIdlePreview < 0.5) {
+        gl_FragColor = vec4(vec3(0.0), 1.0);
+        return;
+      }
+
       vec2 centered = vUv * 2.0 - 1.0;
       float ring = 1.0 - smoothstep(0.006, 0.02, abs(length(centered) - 0.28));
       gl_FragColor = vec4(vec3(0.08, 0.16, 0.2) * ring * 0.22, 1.0);
@@ -289,6 +307,7 @@ export class ModalFieldRenderer {
       uBoundaryMode: { value: BOUNDARY_MODE_INDEX.neumann },
       uColorMode: { value: COLOR_MODE_INDEX.chromesthesia },
       uProjectionMode: { value: PROJECTION_MODE_INDEX.screen },
+      uSphereProjectionType: { value: SPHERE_PROJECTION_TYPE_INDEX.triplanar },
       uModeSlots: { value: this.modeSlotUniforms },
       uModeMeta: { value: this.modeMetaUniforms },
       uModeColors: { value: this.modeColorUniforms },
@@ -305,6 +324,7 @@ export class ModalFieldRenderer {
       uFlux: { value: 0 },
       uBandEnergies: { value: new THREE.Vector3() },
       uChromesthesiaMix: { value: 0.82 },
+      uIdlePreview: { value: 0 },
     },
     vertexShader: VERTEX_SHADER,
     fragmentShader: FRAGMENT_SHADER,
@@ -341,9 +361,10 @@ export class ModalFieldRenderer {
     fieldFrame: ModalFieldFrame,
     settings: CymaticSettings,
     deltaSeconds: number,
+    isIdlePreview = false,
   ) {
     this.elapsedSeconds += Math.max(0, deltaSeconds);
-    this.updateUniforms(fieldFrame, settings);
+    this.updateUniforms(fieldFrame, settings, isIdlePreview);
     this.ensureControls(renderer);
 
     const isSphere = settings.projectionMode === "sphere";
@@ -366,7 +387,10 @@ export class ModalFieldRenderer {
 
     renderer.autoClear = false;
     renderer.setRenderTarget(null);
-    renderer.setClearColor(0x000000, 1);
+    renderer.setClearColor(
+      0x000000,
+      isSphere && settings.sphereBackgroundTransparent ? 0 : 1,
+    );
     renderer.clear(true, true, true);
     renderer.render(this.scene, isSphere ? this.sphereCamera : this.screenCamera);
 
@@ -394,7 +418,11 @@ export class ModalFieldRenderer {
     this.controls.enabled = false;
   }
 
-  private updateUniforms(fieldFrame: ModalFieldFrame, settings: CymaticSettings) {
+  private updateUniforms(
+    fieldFrame: ModalFieldFrame,
+    settings: CymaticSettings,
+    isIdlePreview: boolean,
+  ) {
     const modes = fieldFrame.modes.slice(0, MAX_MODAL_MODES);
     for (let index = 0; index < MAX_MODAL_MODES; index += 1) {
       const mode = modes[index];
@@ -431,6 +459,8 @@ export class ModalFieldRenderer {
     this.material.uniforms.uColorMode.value = COLOR_MODE_INDEX[settings.colorMode];
     this.material.uniforms.uProjectionMode.value =
       PROJECTION_MODE_INDEX[settings.projectionMode];
+    this.material.uniforms.uSphereProjectionType.value =
+      SPHERE_PROJECTION_TYPE_INDEX[settings.sphereProjectionType];
     this.material.uniforms.uDensity.value = settings.cymaticDensity;
     this.material.uniforms.uNodeWidth.value = settings.cymaticNodeWidth;
     this.material.uniforms.uSoftness.value = settings.cymaticSoftness;
@@ -448,6 +478,7 @@ export class ModalFieldRenderer {
       fieldFrame.bands.high,
     );
     this.material.uniforms.uChromesthesiaMix.value = settings.chromesthesiaMix;
+    this.material.uniforms.uIdlePreview.value = isIdlePreview ? 1 : 0;
   }
 }
 

@@ -1,11 +1,15 @@
 import * as THREE from "three";
 import WaveSurfer from "wavesurfer.js";
-import type { Pane } from "tweakpane";
 
-import { ModalFieldEngine } from "./audio/ModalField";
+import {
+  EMPTY_MODAL_FIELD_FRAME,
+  ModalFieldEngine,
+  createAmbientModalFieldFrame,
+  type ModalFieldFrame,
+} from "./audio/ModalField";
 import { decodeAndAnalyzeAudio } from "./audio/analyze";
 import { PulseScheduler } from "./audio/PulseScheduler";
-import { createControls } from "./ui/controls";
+import { createControls, type ControlsManager } from "./ui/controls";
 import { CymaticPulseRenderer } from "./webgl/CymaticPulseRenderer";
 import { ModalFieldRenderer } from "./webgl/ModalFieldRenderer";
 import {
@@ -37,7 +41,7 @@ export class WavefieldApp {
   private readonly burstRenderer = new CymaticPulseRenderer();
   private readonly modalRenderer = new ModalFieldRenderer();
   private readonly wavesurfer: WaveSurfer;
-  private readonly pane: Pane;
+  private readonly controls: ControlsManager;
   private readonly canvas: HTMLCanvasElement;
   private readonly status: HTMLElement;
   private readonly playButton: HTMLButtonElement;
@@ -51,6 +55,8 @@ export class WavefieldApp {
   private animationFrame = 0;
   private lastFrameTime = performance.now();
   private pendingBursts: PulseBurst[] = [];
+  private ambientSeconds = 0;
+  private lastModalFieldFrame: ModalFieldFrame = EMPTY_MODAL_FIELD_FRAME;
   private previousSimulationMode: CymaticSettings["simulationMode"] =
     this.settings.simulationMode;
 
@@ -68,7 +74,7 @@ export class WavefieldApp {
 
     this.renderer = new THREE.WebGLRenderer({
       canvas: this.canvas,
-      alpha: false,
+      alpha: true,
       antialias: true,
       powerPreference: "high-performance",
     });
@@ -87,7 +93,7 @@ export class WavefieldApp {
       barRadius: 2,
     });
 
-    this.pane = createControls(
+    this.controls = createControls(
       this.query<HTMLElement>(".pane-host"),
       this.settings,
       () => this.handleSettingsChange(),
@@ -104,7 +110,7 @@ export class WavefieldApp {
 
   dispose() {
     cancelAnimationFrame(this.animationFrame);
-    this.pane.dispose();
+    this.controls.dispose();
     this.burstRenderer.dispose();
     this.modalRenderer.dispose();
     this.renderer.dispose();
@@ -197,6 +203,9 @@ export class WavefieldApp {
 
     this.simulationSelect.addEventListener("change", () => {
       this.settings.simulationMode = this.simulationSelect.value as CymaticSettings["simulationMode"];
+      if (this.settings.simulationMode === "bursts") {
+        this.settings.projectionMode = "screen";
+      }
       this.previousSimulationMode = this.settings.simulationMode;
       this.pendingBursts =
         this.settings.simulationMode === "bursts"
@@ -291,6 +300,7 @@ export class WavefieldApp {
     this.wavesurfer.on("seeking", (time) => {
       this.scheduler.reset(time);
       this.modalEngine.reset(time);
+      this.lastModalFieldFrame = EMPTY_MODAL_FIELD_FRAME;
       this.resetVisualState();
     });
     this.wavesurfer.on("interaction", () => {
@@ -342,6 +352,7 @@ export class WavefieldApp {
     this.analysis = analysis;
     this.scheduler.setAnalysis(analysis);
     this.modalEngine.setAnalysis(analysis);
+    this.lastModalFieldFrame = EMPTY_MODAL_FIELD_FRAME;
     this.pendingBursts = createPreviewBursts(this.settings);
     this.resetVisualState();
   }
@@ -350,6 +361,8 @@ export class WavefieldApp {
     this.analysis = null;
     this.scheduler.setAnalysis(null);
     this.modalEngine.setAnalysis(null);
+    this.lastModalFieldFrame = EMPTY_MODAL_FIELD_FRAME;
+    this.ambientSeconds = 0;
     this.setPlayButton(false);
     this.resetVisualState();
   }
@@ -358,17 +371,45 @@ export class WavefieldApp {
     const deltaSeconds = Math.min(0.1, (now - this.lastFrameTime) / 1_000);
     this.lastFrameTime = now;
     const time = this.wavesurfer.getCurrentTime();
+    const isPlaying = this.wavesurfer.isPlaying();
     if (this.settings.simulationMode === "bursts") {
-      const scheduledBursts = this.scheduler.collect(time, this.settings);
+      const scheduledBursts = isPlaying
+        ? this.scheduler.collect(time, this.settings)
+        : [];
       const bursts = this.pendingBursts.length
         ? [...this.pendingBursts, ...scheduledBursts].slice(-12)
         : scheduledBursts;
       this.pendingBursts = [];
-      this.burstRenderer.render(this.renderer, bursts, this.settings, deltaSeconds);
+      this.burstRenderer.render(
+        this.renderer,
+        bursts,
+        this.settings,
+        isPlaying ? deltaSeconds : 0,
+      );
     } else {
-      const fieldFrame = this.modalEngine.update(time, this.settings, deltaSeconds);
+      let fieldFrame = this.lastModalFieldFrame;
+      let renderDeltaSeconds = 0;
+      let isIdlePreview = false;
+
+      if (!this.analysis) {
+        this.ambientSeconds += deltaSeconds;
+        fieldFrame = createAmbientModalFieldFrame(this.ambientSeconds);
+        renderDeltaSeconds = deltaSeconds;
+        isIdlePreview = true;
+      } else if (isPlaying) {
+        fieldFrame = this.modalEngine.update(time, this.settings, deltaSeconds);
+        this.lastModalFieldFrame = fieldFrame;
+        renderDeltaSeconds = deltaSeconds;
+      }
+
       this.pendingBursts = [];
-      this.modalRenderer.render(this.renderer, fieldFrame, this.settings, deltaSeconds);
+      this.modalRenderer.render(
+        this.renderer,
+        fieldFrame,
+        this.settings,
+        renderDeltaSeconds,
+        isIdlePreview,
+      );
     }
 
     this.animationFrame = requestAnimationFrame(this.animate);
@@ -414,6 +455,9 @@ export class WavefieldApp {
     if (this.settings.simulationMode === "wave") {
       this.settings.simulationMode = "modal";
       this.setStatus("Wave solver is coming soon");
+    } else if (this.settings.simulationMode === "bursts") {
+      this.settings.projectionMode = "screen";
+      this.setStatus("Settings updated");
     } else {
       this.setStatus("Settings updated");
     }
@@ -433,8 +477,9 @@ export class WavefieldApp {
   private syncHeaderControls() {
     this.simulationSelect.value = this.settings.simulationMode;
     this.projectionSelect.value = this.settings.projectionMode;
+    this.projectionSelect.disabled = this.settings.simulationMode !== "modal";
     this.originModeSelect.value = this.settings.originMode;
-    this.pane.refresh();
+    this.controls.refresh();
   }
 
   private resetVisualState() {

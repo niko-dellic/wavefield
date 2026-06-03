@@ -55,16 +55,30 @@ const BAND_SCALE_KEYS: Record<
 const MIN_FREQUENCY = 70;
 const MAX_FREQUENCY = 7_200;
 const ATLAS_SIZE = 48;
+const MODAL_ATLAS = buildModalAtlas();
+
+const EMPTY_BANDS: Record<FrequencyBand, number> = {
+  low: 0,
+  mid: 0,
+  high: 0,
+};
+
+export const EMPTY_MODAL_FIELD_FRAME: ModalFieldFrame = {
+  modes: [],
+  rms: 0,
+  centroid: 0,
+  flux: 0,
+  bands: EMPTY_BANDS,
+};
 
 export class ModalFieldEngine {
   private analysis: AudioAnalysis | null = null;
   private readonly modes: ModalState[];
   private lastTime = 0;
   private previousFrame: AudioFeatureFrame | null = null;
-  private idlePhase = 0;
 
   constructor() {
-    this.modes = buildModalAtlas().map((entry) => ({
+    this.modes = MODAL_ATLAS.map((entry) => ({
       ...entry,
       amplitude: 0,
       phase: hashMode(entry.indices) * Math.PI * 2,
@@ -98,7 +112,11 @@ export class ModalFieldEngine {
     }
 
     const safeDelta = clamp(deltaSeconds, 0, 0.1);
-    const frame = this.getFrameAt(time) ?? this.createIdleFrame(time);
+    const frame = this.getFrameAt(time);
+    if (!frame) {
+      this.lastTime = time;
+      return EMPTY_MODAL_FIELD_FRAME;
+    }
     const previousFrame = this.previousFrame ?? frame;
     const flux = Math.max(
       0,
@@ -171,12 +189,6 @@ export class ModalFieldEngine {
 
     return {
       modes: this.modes
-        .filter((mode) => mode.amplitude > 0.002)
-        .sort(
-          (left, right) =>
-            right.amplitude * (0.28 + right.coherence) -
-            left.amplitude * (0.28 + left.coherence),
-        )
         .slice(0, Math.min(MAX_MODAL_MODES, Math.max(1, settings.modalCount)))
         .map((mode) => ({
           indices: mode.indices,
@@ -215,28 +227,39 @@ export class ModalFieldEngine {
 
     return frames[low] ?? null;
   }
+}
 
-  private createIdleFrame(time: number): AudioFeatureFrame {
-    this.idlePhase += Math.max(0, time - this.lastTime) * 0.8;
-    const shimmer = 0.5 + 0.5 * Math.sin(this.idlePhase);
+export function createAmbientModalFieldFrame(time: number): ModalFieldFrame {
+  const shimmer = 0.5 + 0.5 * Math.sin(time * 0.42);
+  const bands: Record<FrequencyBand, number> = {
+    low: 0.18 + shimmer * 0.03,
+    mid: 0.24 + shimmer * 0.04,
+    high: 0.12 + shimmer * 0.02,
+  };
+  const modes = MODAL_ATLAS.slice(4, 4 + MAX_MODAL_MODES).map((mode, index) => {
+    const bandBias =
+      mode.band === "low" ? bands.low : mode.band === "mid" ? bands.mid : bands.high;
+    const wave = 0.5 + 0.5 * Math.sin(time * (0.08 + mode.frequencyNorm * 0.18) + index * 0.73);
 
     return {
-      index: 0,
-      time,
-      rms: 0.32 + shimmer * 0.06,
-      centroid: 0.36 + shimmer * 0.08,
-      bands: {
-        low: 0.22 + shimmer * 0.06,
-        mid: 0.34 + shimmer * 0.08,
-        high: 0.16 + shimmer * 0.05,
-      },
-      onsets: {
-        low: 0.07,
-        mid: 0.1 + shimmer * 0.04,
-        high: 0.055,
-      },
+      indices: mode.indices,
+      amplitude: clamp01((0.1 + bandBias * 0.38) * (0.72 + wave * 0.18)),
+      phase: hashMode(mode.indices) * Math.PI * 2,
+      coherence: 0.42 + mode.frequencyNorm * 0.28,
+      frequencyNorm: mode.frequencyNorm,
+      band: mode.band,
+      color: createModeColor(mode.naturalFrequency, mode.band),
+      colorWeight: 0.62,
     };
-  }
+  });
+
+  return {
+    modes,
+    rms: 0.18 + shimmer * 0.04,
+    centroid: 0.34 + shimmer * 0.05,
+    flux: 0.02,
+    bands,
+  };
 }
 
 function buildModalAtlas(): ModalAtlasEntry[] {

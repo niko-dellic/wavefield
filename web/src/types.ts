@@ -4,6 +4,8 @@ export type SimulationMode = "modal" | "bursts" | "wave";
 export type ProjectionMode = "screen" | "sphere";
 export type BoundaryMode = "dirichlet" | "neumann";
 export type ColorMode = "chromesthesia" | "mono" | "bandSplit" | "thermalPhase";
+export type SphereProjectionType = "uv" | "triplanar";
+export type IdleMode = "ambient";
 export type PulseBlendMode =
   | "mix"
   | "lighten"
@@ -35,6 +37,8 @@ export type CymaticSettings = {
   projectionMode: ProjectionMode;
   boundaryMode: BoundaryMode;
   colorMode: ColorMode;
+  sphereProjectionType: SphereProjectionType;
+  idleMode: IdleMode;
   blendMode: PulseBlendMode;
   decaySeconds: number;
   pulseOpacity: number;
@@ -65,6 +69,7 @@ export type CymaticSettings = {
   chromesthesiaMix: number;
   sphereRadius: number;
   sphereRotation: number;
+  sphereBackgroundTransparent: boolean;
 };
 
 export type PulseBurst = {
@@ -81,6 +86,8 @@ export const DEFAULT_SETTINGS: CymaticSettings = {
   projectionMode: "screen",
   boundaryMode: "neumann",
   colorMode: "chromesthesia",
+  sphereProjectionType: "triplanar",
+  idleMode: "ambient",
   blendMode: "screen",
   decaySeconds: 1.8,
   pulseOpacity: 0.88,
@@ -111,6 +118,7 @@ export const DEFAULT_SETTINGS: CymaticSettings = {
   chromesthesiaMix: 0.82,
   sphereRadius: 1.35,
   sphereRotation: 0.08,
+  sphereBackgroundTransparent: false,
 };
 
 export const BAND_COLORS: Record<FrequencyBand, [number, number, number]> = {
