@@ -18,7 +18,13 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  background: #000;
   overflow: hidden;
+}
+
+#app {
+  min-height: 100vh;
+  background: #000;
 }
 
 button,

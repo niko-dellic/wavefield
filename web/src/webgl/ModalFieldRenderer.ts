@@ -22,6 +22,7 @@ import { TerminalContourEffect } from "./TerminalContourEffect";
 const BOUNDARY_MODE_INDEX: Record<BoundaryMode, number> = {
   dirichlet: 0,
   neumann: 1,
+  open: 2,
 };
 
 const COLOR_MODE_INDEX: Record<ColorMode, number> = {
@@ -209,12 +210,16 @@ const FRAGMENT_SHADER = `
         0.0,
         3.0
       );
-      float boundaryGain = uBoundaryMode == 0
-        ? smoothstep(0.04, 0.28, warped.x) *
+      float boundaryGain = 1.0;
+      if (uBoundaryMode == 0) {
+        boundaryGain =
+          smoothstep(0.04, 0.28, warped.x) *
           smoothstep(0.96, 0.72, warped.x) *
           smoothstep(0.04, 0.28, warped.y) *
-          smoothstep(0.96, 0.72, warped.y)
-        : 0.88 + 0.12 * cos((warped.x + warped.y + warped.z) * PI * 2.0);
+          smoothstep(0.96, 0.72, warped.y);
+      } else if (uBoundaryMode == 1) {
+        boundaryGain = 0.88 + 0.12 * cos((warped.x + warped.y + warped.z) * PI * 2.0);
+      }
       float bx = basisValue(slot.x, warped.x);
       float by = basisValue(slot.y, warped.y);
       float bz = basisValue(slot.z, warped.z);
@@ -285,12 +290,20 @@ const FRAGMENT_SHADER = `
     float normalizedRadius = clamp(warpedRadius / 1.32, 0.0, 1.0);
     float dirichletBoundary = sin((1.0 - normalizedRadius) * PI * 0.5);
     float neumannBoundary = 0.92 + 0.08 * cos(normalizedRadius * PI * 2.0);
-    float boundaryEnvelope = uBoundaryMode == 0
-      ? smoothstep(1.12, 0.05, warpedRadius) * mix(0.42, 1.0, dirichletBoundary)
-      : smoothstep(1.48, 0.0, warpedRadius) * neumannBoundary;
-    float boundaryPhase = uBoundaryMode == 0
-      ? -warpedRadius * (1.6 + uInterference * 0.8)
-      : warpedRadius * (0.45 + uInterference * 0.32);
+    float boundaryEnvelope = 1.0;
+    if (uBoundaryMode == 0) {
+      boundaryEnvelope =
+        smoothstep(1.12, 0.05, warpedRadius) *
+        mix(0.42, 1.0, dirichletBoundary);
+    } else if (uBoundaryMode == 1) {
+      boundaryEnvelope = smoothstep(1.48, 0.0, warpedRadius) * neumannBoundary;
+    }
+    float boundaryPhase = 0.0;
+    if (uBoundaryMode == 0) {
+      boundaryPhase = -warpedRadius * (1.6 + uInterference * 0.8);
+    } else if (uBoundaryMode == 1) {
+      boundaryPhase = warpedRadius * (0.45 + uInterference * 0.32);
+    }
 
     for (int index = 0; index < MAX_MODAL_MODES; index++) {
       if (index >= uModeCount) {
@@ -316,7 +329,7 @@ const FRAGMENT_SHADER = `
       float radialFrequency =
         (5.5 + modeSum * 0.62 + meta.z * 20.0) *
         (0.68 + uDensity * 0.46 + bandEnergy * 0.9 + bandOnset * 0.42) *
-        (uBoundaryMode == 0 ? 1.16 : 0.92);
+        (uBoundaryMode == 0 ? 1.16 : (uBoundaryMode == 1 ? 0.92 : 1.0));
       float angularOrder = max(
         2.0,
         floor(
@@ -324,7 +337,7 @@ const FRAGMENT_SHADER = `
           bandBias * 1.7 +
           bandOnset * 4.0 +
           mod(slot.x + slot.y + slot.z, 3.0) +
-          (uBoundaryMode == 0 ? 1.0 : -0.35)
+          (uBoundaryMode == 0 ? 1.0 : (uBoundaryMode == 1 ? -0.35 : 0.15))
         )
       );
       float phase =
@@ -343,7 +356,9 @@ const FRAGMENT_SHADER = `
         meta.x * 0.33 +
         bandEnergy * 1.9 -
         bandOnset * 0.7 +
-        (uBoundaryMode == 0 ? warpedRadius * 0.8 : -warpedRadius * 0.3)
+        (uBoundaryMode == 0
+          ? warpedRadius * 0.8
+          : (uBoundaryMode == 1 ? -warpedRadius * 0.3 : 0.0))
       );
       float harmonicWave = sin(
         warpedRadius *
@@ -431,7 +446,12 @@ const FRAGMENT_SHADER = `
       1.8
     );
     float nodeWidth = uProjectionMode == 0
-      ? max(0.00042, uNodeWidth * 0.035 * (uBoundaryMode == 0 ? 0.82 : 1.08))
+      ? max(
+          0.00042,
+          uNodeWidth *
+            0.035 *
+            (uBoundaryMode == 0 ? 0.82 : (uBoundaryMode == 1 ? 1.08 : 1.0))
+        )
       : max(0.00035, uNodeWidth * 0.055 * (0.82 + audioPulse * 0.34));
     float nodeBand = 1.0 - smoothstep(nodeWidth * 0.32, nodeWidth * 1.35, abs(normalizedField));
     float broadBand =

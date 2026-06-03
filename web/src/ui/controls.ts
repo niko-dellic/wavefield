@@ -45,6 +45,7 @@ export function createControls(
     engine.addBinding(settings, "boundaryMode", {
       label: "boundary",
       options: {
+        Open: "open",
         Neumann: "neumann",
         Dirichlet: "dirichlet",
       },

@@ -1,6 +1,6 @@
 export type FrequencyBand = "low" | "mid" | "high";
 export type ProjectionMode = "screen" | "sphere";
-export type BoundaryMode = "dirichlet" | "neumann";
+export type BoundaryMode = "dirichlet" | "neumann" | "open";
 export type ColorMode = "chromesthesia" | "mono" | "bandSplit" | "thermalPhase";
 export type SphereProjectionType = "uv" | "triplanar";
 export type ScreenAspectMode = "circle" | "fit";
@@ -69,7 +69,7 @@ export type CymaticSettings = {
 
 export const DEFAULT_SETTINGS: CymaticSettings = {
   projectionMode: "screen",
-  boundaryMode: "neumann",
+  boundaryMode: "open",
   colorMode: "chromesthesia",
   sphereProjectionType: "triplanar",
   screenAspectMode: "circle",

@@ -422,7 +422,7 @@ function getFrequencyAffinity(frequency: number, target: number) {
 function evaluateModeAtPoint(
   indices: [number, number, number],
   point: readonly [number, number, number],
-  boundaryMode: "dirichlet" | "neumann",
+  boundaryMode: "dirichlet" | "neumann" | "open",
 ) {
   return (
     basis(indices[0], point[0], boundaryMode) *
@@ -431,7 +431,11 @@ function evaluateModeAtPoint(
   );
 }
 
-function basis(index: number, coordinate: number, boundaryMode: "dirichlet" | "neumann") {
+function basis(
+  index: number,
+  coordinate: number,
+  boundaryMode: "dirichlet" | "neumann" | "open",
+) {
   const argument = Math.PI * index * coordinate;
   return boundaryMode === "dirichlet" ? Math.sin(argument) : Math.cos(argument);
 }
