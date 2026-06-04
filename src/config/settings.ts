@@ -30,6 +30,15 @@ export const DEFAULT_SETTINGS: CymaticSettings = {
   cymaticWarp: 0.38,
   cymaticWarpScale: 0.78,
   cymaticDrift: 0.18,
+  cymaticRotation: true,
+  cymaticRotationRate: 0.5,
+  cymaticModeMorph: true,
+  cymaticMorphSeconds: 0.7,
+  cymaticWander: true,
+  cymaticWanderAmount: 0.4,
+  cymaticWanderRate: 0.5,
+  cymaticPaletteWander: true,
+  cymaticPaletteWanderAmount: 0.4,
   gain: 1.2,
   sensitivity: 1.8,
   audioResponse: 1.5,
@@ -289,6 +298,44 @@ export const SHADER_CONTROLS = {
   },
 } satisfies Record<string, NumericControlConfig>;
 
+export const MOTION_CONTROLS = {
+  cymaticRotationRate: {
+    key: "cymaticRotationRate",
+    label: "rotate rate",
+    min: 0,
+    max: 2,
+    step: 0.01,
+  },
+  cymaticMorphSeconds: {
+    key: "cymaticMorphSeconds",
+    label: "morph time",
+    min: 0.05,
+    max: 1.5,
+    step: 0.01,
+  },
+  cymaticWanderAmount: {
+    key: "cymaticWanderAmount",
+    label: "wander amount",
+    min: 0,
+    max: 1,
+    step: 0.01,
+  },
+  cymaticWanderRate: {
+    key: "cymaticWanderRate",
+    label: "wander rate",
+    min: 0,
+    max: 2,
+    step: 0.01,
+  },
+  cymaticPaletteWanderAmount: {
+    key: "cymaticPaletteWanderAmount",
+    label: "palette amount",
+    min: 0,
+    max: 1,
+    step: 0.01,
+  },
+} satisfies Record<string, NumericControlConfig>;
+
 export const AUDIO_CONTROLS = {
   testFrequency: {
     key: "testFrequency",
@@ -516,6 +563,20 @@ export const SETTING_DESCRIPTIONS: Partial<
   cymaticWarpScale:
     "Scale of the warp noise — larger = broad swirls; smaller = finer turbulence.",
   cymaticDrift: "Slow continuous drift of the field over time.",
+  cymaticRotation:
+    "Rotate each figure by phase-blending it with its (n,m) degenerate partner, so nodal lines continuously turn instead of sitting still.",
+  cymaticRotationRate: "How fast the degenerate-pair rotation turns.",
+  cymaticModeMorph:
+    "Let figures melt into one another through valid intermediate Chladni shapes, instead of cross-fading brightness between fixed figures. The melt tracks the music — quicker on beats, languid during sustains.",
+  cymaticMorphSeconds:
+    "Morph time at full musical motion (on beats). Melts stretch several times longer when the music is calm. Higher = slower, more drawn-out morphs.",
+  cymaticWander:
+    "Slowly drift and rotate the whole field so it stops sitting locked on a centered anchor point.",
+  cymaticWanderAmount: "How far the field wanders from center.",
+  cymaticWanderRate: "How fast the field wanders.",
+  cymaticPaletteWander:
+    "Let the dominant figure drift among the active modes across a track. The drift advances with the music's motion and rests during quiet passages.",
+  cymaticPaletteWanderAmount: "How strongly the dominant figure wanders.",
   chromesthesiaMix:
     "Blend between neutral coloring and pitch-class color mapping (chromesthesia).",
   testFrequency:

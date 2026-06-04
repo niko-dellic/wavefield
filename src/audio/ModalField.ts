@@ -51,6 +51,15 @@ export class ModalFieldEngine {
     this.reset(0);
   }
 
+  /**
+   * Temporarily scale the palette-wander LFO speed. 1 = normal (a slow,
+   * track-length drift); the "preview palette wander" UI button raises this so
+   * the effect becomes visible within a few seconds, then restores it to 1.
+   */
+  setPaletteWanderRateScale(scale: number) {
+    this.bank.paletteWanderRateScale = scale;
+  }
+
   reset(time: number) {
     this.lastTime = time;
     this.bank.reset();

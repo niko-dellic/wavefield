@@ -110,6 +110,10 @@ const FRAGMENT_SHADER = `
   uniform float uWarp;
   uniform float uWarpScale;
   uniform float uDrift;
+  uniform float uRotation;
+  uniform float uRotationRate;
+  uniform float uWander;
+  uniform float uWanderRate;
   uniform float uRms;
   uniform float uCentroid;
   uniform float uFlux;
@@ -443,6 +447,18 @@ const FRAGMENT_SHADER = `
       p = p + (warp - 0.5) * uWarp * (0.012 + spectrumShape * 0.008);
     }
 
+    // Un-anchor the field: a slow rotation + Lissajous drift about the centre so
+    // the figure stops sitting locked on one spot. Opt-in via uWander (amount).
+    if (uWander > 0.0) {
+      vec2 c = p - 0.5;
+      float a = uTime * 0.06 * uWanderRate;
+      float ca = cos(a);
+      float sa = sin(a);
+      c = mat2(ca, -sa, sa, ca) * c;
+      c += vec2(sin(uTime * 0.07), cos(uTime * 0.053)) * 0.03 * uWander;
+      p = c + 0.5;
+    }
+
     for (int index = 0; index < MAX_MODAL_MODES; index++) {
       if (index >= uModeCount) {
         break;
@@ -473,7 +489,20 @@ const FRAGMENT_SHADER = `
         0.0,
         3.0
       );
-      float baseField = chladniValue(m, n, p);
+      // Degenerate-pair rotation: on a symmetric plate (m,n) and (n,m) share a
+      // frequency; blending them with a drifting phase rotates the nodal figure
+      // (the classic spinning-sand Chladni pattern). Opt-in via uRotation; no-ops
+      // when m == n (partner equals base) or uRotation == 0.
+      float staticField = chladniValue(m, n, p);
+      float baseField = staticField;
+      if (uRotation > 0.0 && m != n) {
+        float theta =
+          meta.x +
+          uTime * uRotationRate * (0.12 + meta.z * 0.3 + modeExcitation * 0.2);
+        float rotated =
+          cos(theta) * staticField + sin(theta) * chladniValue(n, m, p);
+        baseField = mix(staticField, rotated, uRotation);
+      }
       // Transposed, detuned partner figure — overlapping it with the base mode
       // produces moiré nodal lines, the classic "interference" lattice.
       // Both interference and harmonic terms are opt-in: skip their extra
@@ -849,6 +878,10 @@ export class ModalFieldRenderer {
       uWarp: { value: 0.34 },
       uWarpScale: { value: 0.72 },
       uDrift: { value: 0.16 },
+      uRotation: { value: 1 },
+      uRotationRate: { value: 0.5 },
+      uWander: { value: 0.4 },
+      uWanderRate: { value: 0.5 },
       uRms: { value: 0 },
       uCentroid: { value: 0 },
       uFlux: { value: 0 },
@@ -1227,6 +1260,12 @@ export class ModalFieldRenderer {
     this.material.uniforms.uWarp.value = settings.cymaticWarp;
     this.material.uniforms.uWarpScale.value = settings.cymaticWarpScale;
     this.material.uniforms.uDrift.value = settings.cymaticDrift;
+    this.material.uniforms.uRotation.value = settings.cymaticRotation ? 1 : 0;
+    this.material.uniforms.uRotationRate.value = settings.cymaticRotationRate;
+    this.material.uniforms.uWander.value = settings.cymaticWander
+      ? settings.cymaticWanderAmount
+      : 0;
+    this.material.uniforms.uWanderRate.value = settings.cymaticWanderRate;
     this.material.uniforms.uRms.value = fieldFrame.rms;
     this.material.uniforms.uCentroid.value = fieldFrame.centroid;
     this.material.uniforms.uFlux.value = fieldFrame.flux;

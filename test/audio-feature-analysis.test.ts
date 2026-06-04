@@ -15,6 +15,7 @@ import {
   atlasModeForFrequency,
   nearestModesForFrequency,
 } from "../src/audio/modeAtlas.ts";
+import { ModeBank } from "../src/audio/modeBank.ts";
 import { projectFrameToTargets } from "../src/audio/modeProjection.ts";
 import {
   deriveSphericalModeFromChladniMode,
@@ -28,6 +29,17 @@ import type { AudioFeatureFrame, CymaticSettings } from "../src/types.ts";
 const SAMPLE_RATE = 48_000;
 const FFT_SIZE = 2048;
 const BIN_HZ = SAMPLE_RATE / FFT_SIZE;
+
+// Audio-drive defaults with the cosmetic JS motion layers (fractional figure
+// morphing + palette-wander ranking bias) disabled. These engine tests assert
+// the discrete modal-projection contract (exact topology keys), which is
+// orthogonal to that time-evolving overlay.
+const AUDIO_TEST_SETTINGS: CymaticSettings = {
+  ...DEFAULT_SETTINGS,
+  driveMode: "audio",
+  cymaticModeMorph: false,
+  cymaticPaletteWander: false,
+};
 
 test("browser analysis uses a balanced 2048 point FFT", () => {
   assert.equal(ANALYSIS_FFT_SIZE, 2048);
@@ -317,9 +329,9 @@ test("audio modal engine morphs topology after a sustained frequency change", ()
     ...Array.from({ length: 90 }, (_, index) => createSyntheticAudioFrame(index + 60, 880)),
   ];
   engine.setAnalysis({ duration: frames.length / 60, sampleRate: SAMPLE_RATE, frames });
-  let field = engine.update(0, { ...DEFAULT_SETTINGS, driveMode: "audio" }, 1 / 60);
+  let field = engine.update(0, AUDIO_TEST_SETTINGS, 1 / 60);
   for (const frame of frames) {
-    field = engine.update(frame.time, { ...DEFAULT_SETTINGS, driveMode: "audio" }, 1 / 60);
+    field = engine.update(frame.time, AUDIO_TEST_SETTINGS, 1 / 60);
   }
 
   assert.equal(field.debug.topologyMode, atlasModeForFrequency(880).key);
@@ -334,9 +346,9 @@ test("audio modal engine treats brief transients as excitation without topology 
     ...Array.from({ length: 14 }, (_, index) => createSyntheticAudioFrame(index + 61, 220)),
   ];
   engine.setAnalysis({ duration: frames.length / 60, sampleRate: SAMPLE_RATE, frames });
-  let field = engine.update(0, { ...DEFAULT_SETTINGS, driveMode: "audio" }, 1 / 60);
+  let field = engine.update(0, AUDIO_TEST_SETTINGS, 1 / 60);
   for (const frame of frames) {
-    field = engine.update(frame.time, { ...DEFAULT_SETTINGS, driveMode: "audio" }, 1 / 60);
+    field = engine.update(frame.time, AUDIO_TEST_SETTINGS, 1 / 60);
   }
 
   assert.equal(field.debug.topologyMode, "2:3");
@@ -367,6 +379,66 @@ test("audio modal engine keeps a crisp dominant at high response settings", () =
   if (field.modes.length > 1) {
     assert.ok(field.modes[1].topology < field.modes[0].topology);
   }
+});
+
+test("figure morph tracks audio motion — busy passages melt faster than calm ones", () => {
+  const modeA = atlasModeForFrequency(120);
+  const modeB = atlasModeForFrequency(2_400);
+  // Sanity: the two figures must be genuinely different for the morph to travel.
+  assert.notDeepEqual(modeA.mode, modeB.mode);
+
+  const settings: CymaticSettings = {
+    ...DEFAULT_SETTINGS,
+    cymaticModeMorph: true,
+    cymaticPaletteWander: false, // isolate the morph from ranking drift
+  };
+  const dt = 1 / 60;
+  const target = (entry: typeof modeA) => [
+    { entry, weight: 1, excitation: 0.8, pulse: 0 },
+  ];
+
+  // Distance of rank-0's emitted (fractional) figure from a target mode.
+  const distanceToB = (bank: ModeBank, frame: AudioFeatureFrame) => {
+    const slot = bank.selectSlots(frame, settings).find((s) => s);
+    if (!slot) {
+      return Infinity;
+    }
+    return Math.hypot(slot.mode[0] - modeB.mode[0], slot.mode[1] - modeB.mode[1]);
+  };
+
+  const settle = (bank: ModeBank, frame: AudioFeatureFrame) => {
+    for (let i = 0; i < 180; i += 1) {
+      bank.update(target(modeA), settings, dt);
+      bank.selectSlots(frame, settings);
+    }
+  };
+
+  const calmFrame = createSyntheticAudioFrame(0, 120, { pulse: 0.02, energy: 0.15 });
+  const busyFrame = createSyntheticAudioFrame(0, 120, { pulse: 0.95, energy: 1 });
+
+  const calmBank = new ModeBank();
+  const busyBank = new ModeBank();
+  settle(calmBank, calmFrame);
+  settle(busyBank, busyFrame);
+
+  // Now switch the target to a very different figure and let each bank morph for
+  // the same short window under its own audio-motion level.
+  let calmDistance = Infinity;
+  let busyDistance = Infinity;
+  for (let i = 0; i < 48; i += 1) {
+    calmBank.update(target(modeB), settings, dt);
+    busyBank.update(target(modeB), settings, dt);
+    calmDistance = distanceToB(calmBank, calmFrame);
+    busyDistance = distanceToB(busyBank, busyFrame);
+  }
+
+  // Busy audio should have melted substantially closer to the new figure than
+  // the calm pass over the same window.
+  assert.ok(
+    busyDistance < calmDistance,
+    `busy morph (${busyDistance.toFixed(3)}) should outpace calm morph (${calmDistance.toFixed(3)})`,
+  );
+  assert.ok(busyDistance < calmDistance * 0.75);
 });
 
 test("spherical mode derivation keeps the 220Hz anchor on a low-order triplet", () => {
@@ -529,6 +601,12 @@ function createManualSettings(
     ...DEFAULT_SETTINGS,
     driveMode: "manual",
     frequencySweep: false,
+    // The cosmetic JS motion layers (fractional figure morphing + palette-wander
+    // ranking bias) deliberately make emitted mode numbers fractional / reorder
+    // ranking over time. These engine tests assert the discrete modal-projection
+    // contract, which is orthogonal to that overlay, so disable them here.
+    cymaticModeMorph: false,
+    cymaticPaletteWander: false,
     ...overrides,
   };
 }

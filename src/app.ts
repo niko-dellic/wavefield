@@ -16,6 +16,7 @@ import {
   createControls,
   type ControlsManager,
   type MonitorState,
+  type MotionPreviewKind,
 } from "./ui/controls";
 import {
   cloneTemplateSettings,
@@ -110,6 +111,8 @@ export class WavefieldApp {
   private ambientSeconds = 0;
   private manualSeconds = 0;
   private liveSeconds = 0;
+  private motionPreviewTimer: ReturnType<typeof setTimeout> | null = null;
+  private motionPreviewRestore: (() => void) | null = null;
   private analysisPreviewTime = 0;
   private fieldSettingsKey = "";
   private lastAudibleVolume = 1;
@@ -206,6 +209,7 @@ export class WavefieldApp {
         onResaveTemplate: (template) => this.resaveTemplate(template),
         onSaveTemplate: (name) => this.saveTemplate(name),
       },
+      (kind) => this.startMotionPreview(kind),
     );
 
     this.bindUi();
@@ -238,6 +242,7 @@ export class WavefieldApp {
     document.removeEventListener("pointerlockchange", this.handlePointerLockChange);
     document.removeEventListener("pointerlockerror", this.handlePointerLockError);
     this.releaseScreenPointerLock();
+    this.endMotionPreview();
     this.controls.dispose();
     this.disposeModeSettingsPane();
     this.liveAnalyzer.stop();
@@ -1494,6 +1499,86 @@ export class WavefieldApp {
     this.syncBackgroundColor();
     this.setStatus("Settings updated");
     this.syncHeaderControls();
+  }
+
+  /**
+   * Briefly isolate and exaggerate one motion layer so it is easy to see what it
+   * does, then restore the user's settings. Morph and palette wander are the two
+   * layers whose effect only emerges over time, so they get a "preview" button.
+   * Settings are read live every frame, so mutating `this.settings` takes effect
+   * immediately without resetting the running field.
+   */
+  private startMotionPreview(kind: MotionPreviewKind) {
+    // Restore any in-progress preview first so snapshots never stack.
+    this.endMotionPreview();
+
+    const s = this.settings;
+    const snapshot = {
+      cymaticRotation: s.cymaticRotation,
+      cymaticModeMorph: s.cymaticModeMorph,
+      cymaticWander: s.cymaticWander,
+      cymaticPaletteWander: s.cymaticPaletteWander,
+      cymaticMorphSeconds: s.cymaticMorphSeconds,
+      cymaticPaletteWanderAmount: s.cymaticPaletteWanderAmount,
+      frequencySweep: s.frequencySweep,
+      frequencySweepRate: s.frequencySweepRate,
+      frequencySweepRange: s.frequencySweepRange,
+    };
+    this.motionPreviewRestore = () => {
+      Object.assign(this.settings, snapshot);
+      this.modalEngine.setPaletteWanderRateScale(1);
+      this.controls.refresh();
+      this.setStatus("Preview ended");
+    };
+
+    // Silence the other motion layers so the previewed one is unambiguous.
+    s.cymaticRotation = false;
+    s.cymaticWander = false;
+
+    if (kind === "morph") {
+      s.cymaticModeMorph = true;
+      s.cymaticPaletteWander = false;
+      s.cymaticMorphSeconds = 0.9; // slow, so the melt between figures reads clearly
+      // A measured sweep changes which figure is selected every few seconds,
+      // giving the morph something to melt between (manual drive); harmless in
+      // other modes, where the music itself supplies the figure changes.
+      s.frequencySweep = true;
+      s.frequencySweepRate = 0.16;
+      s.frequencySweepRange = 1.4;
+      this.modalEngine.setPaletteWanderRateScale(1);
+      this.setStatus("Previewing morph — watch figures melt between forms");
+    } else {
+      s.cymaticModeMorph = true; // so palette swaps melt instead of cutting
+      s.cymaticPaletteWander = true;
+      s.cymaticPaletteWanderAmount = 0.8;
+      s.cymaticMorphSeconds = 0.7;
+      // A gentle sweep keeps several modes co-active for the palette to roam among.
+      s.frequencySweep = true;
+      s.frequencySweepRate = 0.07;
+      s.frequencySweepRange = 1.3;
+      // Speed the otherwise track-length drift to a perceptible cadence for the
+      // preview (still gated by the audio-motion envelope).
+      this.modalEngine.setPaletteWanderRateScale(14);
+      this.setStatus("Previewing palette wander — watch the dominant figure drift");
+    }
+
+    this.controls.refresh();
+
+    const durationMs = kind === "morph" ? 10_000 : 14_000;
+    this.motionPreviewTimer = setTimeout(() => {
+      this.motionPreviewTimer = null;
+      this.endMotionPreview();
+    }, durationMs);
+  }
+
+  private endMotionPreview() {
+    if (this.motionPreviewTimer !== null) {
+      clearTimeout(this.motionPreviewTimer);
+      this.motionPreviewTimer = null;
+    }
+    const restore = this.motionPreviewRestore;
+    this.motionPreviewRestore = null;
+    restore?.();
   }
 
   private syncBackgroundColor() {

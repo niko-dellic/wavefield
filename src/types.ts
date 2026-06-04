@@ -116,6 +116,15 @@ export type CymaticSettings = {
   cymaticWarp: number;
   cymaticWarpScale: number;
   cymaticDrift: number;
+  cymaticRotation: boolean;
+  cymaticRotationRate: number;
+  cymaticModeMorph: boolean;
+  cymaticMorphSeconds: number;
+  cymaticWander: boolean;
+  cymaticWanderAmount: number;
+  cymaticWanderRate: number;
+  cymaticPaletteWander: boolean;
+  cymaticPaletteWanderAmount: number;
   gain: number;
   sensitivity: number;
   audioResponse: number;

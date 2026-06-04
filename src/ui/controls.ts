@@ -4,6 +4,7 @@ import {
   AUDIO_CONTROLS,
   ENGINE_CONTROLS,
   MONITOR_SIGNAL_OPTIONS,
+  MOTION_CONTROLS,
   POST_EFFECT_CONTROLS,
   POST_EFFECT_LABELS,
   SETTING_DESCRIPTIONS,
@@ -37,6 +38,7 @@ for (const group of [
   AUDIO_CONTROLS,
   SHADER_CONTROLS,
   SPHERE_CONTROLS,
+  MOTION_CONTROLS,
 ]) {
   for (const control of Object.values(group)) {
     LABEL_TO_KEY.set(control.label, control.key);
@@ -63,6 +65,10 @@ for (const [label, key] of [
   ["transparent sphere", "sphereBackgroundTransparent"],
   ["sweep", "frequencySweep"],
   ["monitor", "monitorSignal"],
+  ["rotate", "cymaticRotation"],
+  ["morph", "cymaticModeMorph"],
+  ["wander", "cymaticWander"],
+  ["palette wander", "cymaticPaletteWander"],
 ] satisfies Array<[string, keyof CymaticSettings]>) {
   LABEL_TO_KEY.set(label, key);
 }
@@ -177,12 +183,15 @@ export type TemplateControlsOptions = {
   onSaveTemplate: (name: string) => void | Promise<void>;
 };
 
+export type MotionPreviewKind = "morph" | "palette";
+
 export function createControls(
   container: HTMLElement,
   settings: CymaticSettings,
   onChange: () => void,
   monitorState: MonitorState,
   templateControls?: TemplateControlsOptions,
+  onMotionPreview?: (kind: MotionPreviewKind) => void,
 ): ControlsManager {
   let pane: Pane | null = null;
   let monitorPane: Pane | null = null;
@@ -304,6 +313,38 @@ export function createControls(
     addNumericBinding(excitation, settings, AUDIO_CONTROLS.lowScale);
     addNumericBinding(excitation, settings, AUDIO_CONTROLS.midScale);
     addNumericBinding(excitation, settings, AUDIO_CONTROLS.highScale);
+
+    const motion = addPersistentFolder(pane, "folder:Motion", "Motion");
+    motion.addBinding(settings, "cymaticRotation", { label: "rotate" });
+    addNumericBinding(motion, settings, MOTION_CONTROLS.cymaticRotationRate, {
+      disabled: !settings.cymaticRotation,
+    });
+    motion.addBinding(settings, "cymaticModeMorph", { label: "morph" });
+    addNumericBinding(motion, settings, MOTION_CONTROLS.cymaticMorphSeconds, {
+      disabled: !settings.cymaticModeMorph,
+    });
+    motion
+      .addButton({ title: "▶ preview", label: "morph" })
+      .on("click", () => onMotionPreview?.("morph"));
+    motion.addBinding(settings, "cymaticWander", { label: "wander" });
+    addNumericBinding(motion, settings, MOTION_CONTROLS.cymaticWanderAmount, {
+      disabled: !settings.cymaticWander,
+    });
+    addNumericBinding(motion, settings, MOTION_CONTROLS.cymaticWanderRate, {
+      disabled: !settings.cymaticWander,
+    });
+    motion.addBinding(settings, "cymaticPaletteWander", {
+      label: "palette wander",
+    });
+    addNumericBinding(
+      motion,
+      settings,
+      MOTION_CONTROLS.cymaticPaletteWanderAmount,
+      { disabled: !settings.cymaticPaletteWander },
+    );
+    motion
+      .addButton({ title: "▶ preview", label: "palette wander" })
+      .on("click", () => onMotionPreview?.("palette"));
 
     if (settings.projectionMode === "sphere") {
       const sphere = addPersistentFolder(pane, "folder:Sphere", "Sphere");
@@ -455,6 +496,10 @@ function getLayoutKey(
     settings.sphereFieldMode,
     settings.colorMode,
     settings.screenAspectMode,
+    settings.cymaticRotation,
+    settings.cymaticModeMorph,
+    settings.cymaticWander,
+    settings.cymaticPaletteWander,
     settings.postProcessingEnabled,
     settings.postBloomEnabled,
     settings.postPixelationEnabled,
@@ -483,12 +528,14 @@ function addNumericBinding(
   pane: Pane | FolderApi,
   settings: CymaticSettings,
   control: NumericControlConfig,
+  options?: { disabled?: boolean },
 ) {
   pane.addBinding(settings, control.key, {
     label: control.label,
     min: control.min,
     max: control.max,
     step: control.step,
+    disabled: options?.disabled ?? false,
   });
 }
 
