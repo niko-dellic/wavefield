@@ -10,10 +10,12 @@ import {
 
 import { MAX_MODAL_MODES, type ModalFieldFrame } from "../audio/ModalField";
 import type {
+  BoundaryWeights,
   BoundaryMode,
   ColorMode,
-  CymaticSettings,
+  EffectiveCymaticSettings,
   HeatmapPalette,
+  PostEffectAmounts,
   PostEffectId,
   ProjectionMode,
   SphereFieldMode,
@@ -22,12 +24,6 @@ import type {
 import { AlphaDecayPass } from "./AlphaDecayPass";
 import { FisheyeEffect } from "./FisheyeEffect";
 import { TerminalContourEffect } from "./TerminalContourEffect";
-
-const BOUNDARY_MODE_INDEX: Record<BoundaryMode, number> = {
-  freePlate: 0,
-  dirichlet: 1,
-  neumann: 2,
-};
 
 const COLOR_MODE_INDEX: Record<ColorMode, number> = {
   chromesthesia: 0,
@@ -86,7 +82,7 @@ const FRAGMENT_SHADER = `
   uniform vec2 uResolution;
   uniform float uTime;
   uniform int uModeCount;
-  uniform int uBoundaryMode;
+  uniform vec3 uBoundaryWeights;
   uniform int uColorMode;
   uniform int uProjectionMode;
   uniform int uSphereFieldMode;
@@ -246,15 +242,7 @@ const FRAGMENT_SHADER = `
     return (p - 0.5) / max(0.0001, uScreenViewScale) + 0.5 + uScreenViewOffset;
   }
 
-  float chladniValue(float m, float n, vec2 p) {
-    if (uBoundaryMode == 1) {
-      return sin(m * PI * p.x) * sin(n * PI * p.y);
-    }
-
-    if (uBoundaryMode == 2) {
-      return cos(m * PI * p.x) * cos(n * PI * p.y);
-    }
-
+  float freeChladniValue(float m, float n, vec2 p) {
     float x = (p.x - 0.5) * 2.0;
     float y = (p.y - 0.5) * 2.0;
     return
@@ -262,21 +250,22 @@ const FRAGMENT_SHADER = `
       cos(n * PI * x) * cos(m * PI * y);
   }
 
-  vec2 chladniGradient(float m, float n, vec2 p) {
-    if (uBoundaryMode == 1) {
-      return vec2(
-        m * PI * cos(m * PI * p.x) * sin(n * PI * p.y),
-        n * PI * sin(m * PI * p.x) * cos(n * PI * p.y)
-      );
-    }
+  float dirichletChladniValue(float m, float n, vec2 p) {
+    return sin(m * PI * p.x) * sin(n * PI * p.y);
+  }
 
-    if (uBoundaryMode == 2) {
-      return vec2(
-        -m * PI * sin(m * PI * p.x) * cos(n * PI * p.y),
-        -n * PI * cos(m * PI * p.x) * sin(n * PI * p.y)
-      );
-    }
+  float neumannChladniValue(float m, float n, vec2 p) {
+    return cos(m * PI * p.x) * cos(n * PI * p.y);
+  }
 
+  float chladniValue(float m, float n, vec2 p) {
+    return
+      freeChladniValue(m, n, p) * uBoundaryWeights.x +
+      dirichletChladniValue(m, n, p) * uBoundaryWeights.y +
+      neumannChladniValue(m, n, p) * uBoundaryWeights.z;
+  }
+
+  vec2 freeChladniGradient(float m, float n, vec2 p) {
     float x = (p.x - 0.5) * 2.0;
     float y = (p.y - 0.5) * 2.0;
     float dx =
@@ -288,23 +277,40 @@ const FRAGMENT_SHADER = `
     return vec2(dx, dy);
   }
 
+  vec2 dirichletChladniGradient(float m, float n, vec2 p) {
+    return vec2(
+      m * PI * cos(m * PI * p.x) * sin(n * PI * p.y),
+      n * PI * sin(m * PI * p.x) * cos(n * PI * p.y)
+    );
+  }
+
+  vec2 neumannChladniGradient(float m, float n, vec2 p) {
+    return vec2(
+      -m * PI * sin(m * PI * p.x) * cos(n * PI * p.y),
+      -n * PI * cos(m * PI * p.x) * sin(n * PI * p.y)
+    );
+  }
+
+  vec2 chladniGradient(float m, float n, vec2 p) {
+    return
+      freeChladniGradient(m, n, p) * uBoundaryWeights.x +
+      dirichletChladniGradient(m, n, p) * uBoundaryWeights.y +
+      neumannChladniGradient(m, n, p) * uBoundaryWeights.z;
+  }
+
   float cavityBasisValue(float modeIndex, float coordinate) {
     float argument = modeIndex * PI * coordinate;
-    if (uBoundaryMode == 1) {
-      return sin(argument);
-    }
-
-    return cos(argument);
+    return
+      cos(argument) * (uBoundaryWeights.x + uBoundaryWeights.z) +
+      sin(argument) * uBoundaryWeights.y;
   }
 
   float cavityBasisDerivative(float modeIndex, float coordinate) {
     float angularScale = modeIndex * PI;
     float argument = angularScale * coordinate;
-    if (uBoundaryMode == 1) {
-      return cos(argument) * angularScale;
-    }
-
-    return -sin(argument) * angularScale;
+    return
+      -sin(argument) * angularScale * (uBoundaryWeights.x + uBoundaryWeights.z) +
+      cos(argument) * angularScale * uBoundaryWeights.y;
   }
 
   void accumulateCavityPermutation(
@@ -714,7 +720,7 @@ const FRAGMENT_SHADER = `
           uNodeWidth *
             0.035 *
             (0.85 + audioPulse * 0.3) *
-            (uBoundaryMode == 1 ? 0.82 : (uBoundaryMode == 2 ? 1.08 : 1.0))
+            dot(uBoundaryWeights, vec3(1.0, 0.82, 1.08))
         )
       : max(0.00035, uNodeWidth * 0.055 * (0.82 + audioPulse * 0.34));
     float nodeBand = 1.0 - smoothstep(nodeWidth * 0.32, nodeWidth * 1.35, abs(normalizedField));
@@ -825,7 +831,7 @@ export class ModalFieldRenderer {
       uResolution: { value: new THREE.Vector2(1, 1) },
       uTime: { value: 0 },
       uModeCount: { value: 0 },
-      uBoundaryMode: { value: BOUNDARY_MODE_INDEX.freePlate },
+      uBoundaryWeights: { value: new THREE.Vector3(1, 0, 0) },
       uColorMode: { value: COLOR_MODE_INDEX.chromesthesia },
       uProjectionMode: { value: PROJECTION_MODE_INDEX.screen },
       uSphereFieldMode: { value: SPHERE_FIELD_MODE_INDEX.surface },
@@ -931,7 +937,7 @@ export class ModalFieldRenderer {
   render(
     renderer: THREE.WebGLRenderer,
     fieldFrame: ModalFieldFrame,
-    settings: CymaticSettings,
+    settings: EffectiveCymaticSettings,
     screenView: ScreenViewTransform,
     deltaSeconds: number,
     isIdlePreview = false,
@@ -1037,7 +1043,7 @@ export class ModalFieldRenderer {
 
   private updatePostProcessing(
     renderer: THREE.WebGLRenderer,
-    settings: CymaticSettings,
+    settings: EffectiveCymaticSettings,
     camera: THREE.Camera,
     enabledPostEffects: PostEffectId[],
   ) {
@@ -1071,23 +1077,37 @@ export class ModalFieldRenderer {
       this.terminalPass.enabled = true;
     }
 
-    this.pixelationEffect.granularity = settings.postPixelSize;
-    this.bloomEffect.intensity = settings.postBloomIntensity;
-    this.fisheyeEffect.updateSettings(settings);
-    this.alphaDecayPass?.updateSettings(settings);
+    this.pixelationEffect.granularity = THREE.MathUtils.lerp(
+      1,
+      settings.postPixelSize,
+      getPostEffectAmount(settings, "pixelation"),
+    );
+    this.bloomEffect.intensity =
+      settings.postBloomIntensity * getPostEffectAmount(settings, "bloom");
+    this.fisheyeEffect.updateSettings(
+      settings,
+      getPostEffectAmount(settings, "fisheye"),
+    );
+    this.alphaDecayPass?.updateSettings(
+      settings,
+      getPostEffectAmount(settings, "alphaDecay"),
+    );
     this.resetAlphaDecayHistoryIfNeeded(settings);
-    this.terminalContourEffect.updateSettings(settings);
+    this.terminalContourEffect.updateSettings(
+      settings,
+      getPostEffectAmount(settings, "terminal"),
+    );
     this.rebuildPostPipeline(enabledPostEffects);
   }
 
-  private resetAlphaDecayHistoryIfNeeded(settings: CymaticSettings) {
+  private resetAlphaDecayHistoryIfNeeded(settings: EffectiveCymaticSettings) {
     const resetKey = [
       settings.projectionMode,
       settings.sphereFieldMode,
       settings.sphereBackgroundTransparent,
       settings.backgroundColor,
       settings.postProcessingEnabled,
-      settings.postAlphaDecayEnabled,
+      getPostEffectAmount(settings, "alphaDecay") > 0.001,
       settings.postEffectOrder.join(">"),
     ].join(":");
 
@@ -1133,30 +1153,20 @@ export class ModalFieldRenderer {
     }
   }
 
-  private getEnabledPostEffects(settings: CymaticSettings): PostEffectId[] {
-    if (!settings.postProcessingEnabled) {
+  private getEnabledPostEffects(settings: EffectiveCymaticSettings): PostEffectId[] {
+    const amounts = getPostEffectAmounts(settings);
+    if (!settings.postProcessingEnabled && !hasActivePostEffectAmount(amounts)) {
       return [];
     }
 
     return settings.postEffectOrder.filter((effectId) => {
-      switch (effectId) {
-        case "bloom":
-          return settings.postBloomEnabled;
-        case "pixelation":
-          return settings.postPixelationEnabled;
-        case "fisheye":
-          return settings.postFisheyeEnabled;
-        case "alphaDecay":
-          return settings.postAlphaDecayEnabled;
-        case "terminal":
-          return settings.terminalContourEnabled;
-      }
+      return amounts[effectId] > 0.001;
     });
   }
 
   private updateUniforms(
     fieldFrame: ModalFieldFrame,
-    settings: CymaticSettings,
+    settings: EffectiveCymaticSettings,
     screenView: ScreenViewTransform,
     isIdlePreview: boolean,
   ) {
@@ -1200,8 +1210,10 @@ export class ModalFieldRenderer {
 
     this.material.uniforms.uTime.value = this.elapsedSeconds;
     this.material.uniforms.uModeCount.value = modes.length;
-    this.material.uniforms.uBoundaryMode.value =
-      BOUNDARY_MODE_INDEX[settings.boundaryMode];
+    setBoundaryWeightsUniform(
+      this.material.uniforms.uBoundaryWeights.value,
+      settings.boundaryWeights,
+    );
     this.material.uniforms.uColorMode.value = COLOR_MODE_INDEX[settings.colorMode];
     this.material.uniforms.uProjectionMode.value =
       PROJECTION_MODE_INDEX[settings.projectionMode];
@@ -1312,6 +1324,52 @@ function setColorUniform(target: THREE.Color, color: string, fallback: number) {
   } else {
     target.set(fallback);
   }
+}
+
+function setBoundaryWeightsUniform(
+  target: THREE.Vector3,
+  weights: BoundaryWeights | undefined,
+) {
+  const safeWeights = weights ?? getBoundaryWeights("freePlate");
+  target.set(
+    safeWeights.freePlate,
+    safeWeights.dirichlet,
+    safeWeights.neumann,
+  );
+}
+
+function getBoundaryWeights(boundaryMode: BoundaryMode): BoundaryWeights {
+  return {
+    freePlate: boundaryMode === "freePlate" ? 1 : 0,
+    dirichlet: boundaryMode === "dirichlet" ? 1 : 0,
+    neumann: boundaryMode === "neumann" ? 1 : 0,
+  };
+}
+
+function getPostEffectAmounts(
+  settings: EffectiveCymaticSettings,
+): PostEffectAmounts {
+  return settings.postEffectAmounts ?? {
+    bloom: settings.postProcessingEnabled && settings.postBloomEnabled ? 1 : 0,
+    pixelation:
+      settings.postProcessingEnabled && settings.postPixelationEnabled ? 1 : 0,
+    fisheye: settings.postProcessingEnabled && settings.postFisheyeEnabled ? 1 : 0,
+    alphaDecay:
+      settings.postProcessingEnabled && settings.postAlphaDecayEnabled ? 1 : 0,
+    terminal:
+      settings.postProcessingEnabled && settings.terminalContourEnabled ? 1 : 0,
+  };
+}
+
+function getPostEffectAmount(
+  settings: EffectiveCymaticSettings,
+  effectId: PostEffectId,
+) {
+  return getPostEffectAmounts(settings)[effectId];
+}
+
+function hasActivePostEffectAmount(amounts: PostEffectAmounts) {
+  return Object.values(amounts).some((amount) => amount > 0.001);
 }
 
 function useImmediateZoomDamping(controls: TrackballControls) {

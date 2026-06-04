@@ -1,4 +1,4 @@
-import { DEFAULT_SETTINGS } from "./config/settings";
+import { DEFAULT_SETTINGS } from "./config/settings.ts";
 import type {
   AlphaDecayBlendMode,
   BoundaryMode,
@@ -12,13 +12,25 @@ import type {
   ScreenAspectMode,
   SphereFieldMode,
   SphereProjectionType,
-} from "./types";
+} from "./types.ts";
+
+const TEMPLATE_EXCLUDED_SETTING_KEYS = [
+  "driveMode",
+  "testFrequency",
+  "frequencySweep",
+  "frequencySweepRate",
+  "frequencySweepRange",
+] satisfies Array<keyof CymaticSettings>;
+
+type TemplateExcludedSettingKey = (typeof TEMPLATE_EXCLUDED_SETTING_KEYS)[number];
+
+export type TemplateSettings = Omit<CymaticSettings, TemplateExcludedSettingKey>;
 
 export type WavefieldTemplate = {
   slug: string;
   name: string;
   createdAt: string;
-  settings: CymaticSettings;
+  settings: TemplateSettings;
 };
 
 type RawWavefieldTemplate = {
@@ -94,10 +106,23 @@ export function cloneCymaticSettings(
 
 export function cloneTemplateSettings(
   settings: CymaticSettings,
-): Omit<CymaticSettings, "driveMode"> {
-  const { driveMode: _driveMode, ...templateSettings } =
-    cloneCymaticSettings(settings);
+): TemplateSettings {
+  const templateSettings = cloneCymaticSettings(settings);
+  for (const key of TEMPLATE_EXCLUDED_SETTING_KEYS) {
+    delete templateSettings[key];
+  }
   return templateSettings;
+}
+
+export function createSettingsFromTemplate(
+  templateSettings: unknown,
+  currentSettings: CymaticSettings,
+): CymaticSettings {
+  const settings = coerceCymaticSettings(templateSettings);
+  for (const key of TEMPLATE_EXCLUDED_SETTING_KEYS) {
+    (settings[key] as CymaticSettings[typeof key]) = currentSettings[key];
+  }
+  return settings;
 }
 
 export function coerceCymaticSettings(input: unknown): CymaticSettings {
@@ -169,7 +194,7 @@ export function coerceWavefieldTemplate(
     slug,
     name,
     createdAt,
-    settings: coerceCymaticSettings(source.settings),
+    settings: cloneTemplateSettings(coerceCymaticSettings(source.settings)),
   };
 }
 
@@ -189,6 +214,25 @@ export function sortWavefieldTemplates(
   return [...templates].sort((left, right) =>
     left.name.localeCompare(right.name, undefined, { sensitivity: "base" }),
   );
+}
+
+export function getCycledTemplateIndex(
+  templates: WavefieldTemplate[],
+  currentSlug: string | null,
+  direction: -1 | 1,
+) {
+  if (templates.length === 0) {
+    return -1;
+  }
+
+  const currentIndex = currentSlug
+    ? templates.findIndex((template) => template.slug === currentSlug)
+    : -1;
+  if (currentIndex < 0) {
+    return direction > 0 ? 0 : templates.length - 1;
+  }
+
+  return (currentIndex + direction + templates.length) % templates.length;
 }
 
 function coercePostEffectOrder(value: unknown): PostEffectId[] {

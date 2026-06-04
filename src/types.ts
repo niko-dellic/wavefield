@@ -27,6 +27,8 @@ export type PostEffectId =
   | "fisheye"
   | "alphaDecay"
   | "terminal";
+export type BoundaryWeights = Record<BoundaryMode, number>;
+export type PostEffectAmounts = Record<PostEffectId, number>;
 export type AlphaDecayBlendMode =
   | "normal"
   | "screen"
@@ -158,6 +160,11 @@ export type CymaticSettings = {
   terminalContourLevels: number;
   terminalContourStrength: number;
   terminalContourThreshold: number;
+};
+
+export type EffectiveCymaticSettings = CymaticSettings & {
+  boundaryWeights: BoundaryWeights;
+  postEffectAmounts: PostEffectAmounts;
 };
 
 export const BAND_COLORS: Record<FrequencyBand, [number, number, number]> = {

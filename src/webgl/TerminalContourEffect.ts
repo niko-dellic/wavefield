@@ -10,6 +10,7 @@ const FRAGMENT_SHADER = `
   uniform float contourStrength;
   uniform float contourThreshold;
   uniform float colorPreserve;
+  uniform float amount;
 
   float luminance(vec3 color) {
     return dot(color, vec3(0.2126, 0.7152, 0.0722));
@@ -53,7 +54,7 @@ const FRAGMENT_SHADER = `
     vec3 preservedColor = max(inputColor.rgb, terminalColor * 0.22);
     vec3 color = mix(terminalComposite, preservedColor, colorPreserve);
 
-    outputColor = vec4(color, inputColor.a);
+    outputColor = mix(inputColor, vec4(color, inputColor.a), amount);
   }
 `;
 
@@ -64,6 +65,7 @@ export class TerminalContourEffect extends Effect {
   private readonly contourStrengthUniform: Uniform<number>;
   private readonly contourThresholdUniform: Uniform<number>;
   private readonly colorPreserveUniform: Uniform<number>;
+  private readonly amountUniform: Uniform<number>;
 
   constructor() {
     const resolutionUniform = new Uniform(new Vector2(1, 1));
@@ -72,6 +74,7 @@ export class TerminalContourEffect extends Effect {
     const contourStrengthUniform = new Uniform(1);
     const contourThresholdUniform = new Uniform(0.09);
     const colorPreserveUniform = new Uniform(0);
+    const amountUniform = new Uniform(1);
 
     super("TerminalContourEffect", FRAGMENT_SHADER, {
       attributes: EffectAttribute.CONVOLUTION,
@@ -83,6 +86,7 @@ export class TerminalContourEffect extends Effect {
         ["contourStrength", contourStrengthUniform],
         ["contourThreshold", contourThresholdUniform],
         ["colorPreserve", colorPreserveUniform],
+        ["amount", amountUniform],
       ]),
     });
 
@@ -92,17 +96,19 @@ export class TerminalContourEffect extends Effect {
     this.contourStrengthUniform = contourStrengthUniform;
     this.contourThresholdUniform = contourThresholdUniform;
     this.colorPreserveUniform = colorPreserveUniform;
+    this.amountUniform = amountUniform;
   }
 
   setSize(width: number, height: number) {
     this.resolutionUniform.value.set(width, height);
   }
 
-  updateSettings(settings: CymaticSettings) {
+  updateSettings(settings: CymaticSettings, amount = 1) {
     this.cellSizeUniform.value = settings.terminalCellSize;
     this.contourLevelsUniform.value = settings.terminalContourLevels;
     this.contourStrengthUniform.value = settings.terminalContourStrength;
     this.contourThresholdUniform.value = settings.terminalContourThreshold;
     this.colorPreserveUniform.value = settings.colorMode === "heatmap" ? 0.15 : 0;
+    this.amountUniform.value = amount;
   }
 }

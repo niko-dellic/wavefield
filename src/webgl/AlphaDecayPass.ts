@@ -33,6 +33,7 @@ const BLEND_FRAGMENT_SHADER = `
   uniform float decay;
   uniform int blendMode;
   uniform float hasHistory;
+  uniform float amount;
   varying vec2 vUv;
 
   vec3 blendOverlay(vec3 base, vec3 blend) {
@@ -106,7 +107,7 @@ const BLEND_FRAGMENT_SHADER = `
     float floorFade = smoothstep(0.006, 0.018, alphaDecayLuminance(color));
     color *= floorFade;
     alpha *= floorFade;
-    gl_FragColor = vec4(color, alpha);
+    gl_FragColor = mix(current, vec4(color, alpha), amount);
   }
 `;
 
@@ -149,6 +150,7 @@ export class AlphaDecayPass extends Pass {
         decay: { value: this.getDecayForFrames(24) },
         blendMode: { value: BLEND_MODE_INDEX.screen },
         hasHistory: { value: 0 },
+        amount: { value: 1 },
       },
       vertexShader: VERTEX_SHADER,
       fragmentShader: BLEND_FRAGMENT_SHADER,
@@ -171,12 +173,13 @@ export class AlphaDecayPass extends Pass {
     this.fullscreenMaterial = this.blendMaterial;
   }
 
-  updateSettings(settings: CymaticSettings) {
+  updateSettings(settings: CymaticSettings, amount = 1) {
     this.blendMaterial.uniforms.decay.value = this.getDecayForFrames(
       settings.postAlphaDecayFrames,
     );
     this.blendMaterial.uniforms.blendMode.value =
       BLEND_MODE_INDEX[settings.postAlphaDecayBlendMode];
+    this.blendMaterial.uniforms.amount.value = amount;
   }
 
   resetHistory() {

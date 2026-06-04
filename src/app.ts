@@ -10,7 +10,26 @@ import {
 } from "./audio/ModalField";
 import { decodeAndAnalyzeAudio } from "./audio/analyze";
 import { LiveAudioAnalyzer } from "./audio/liveAnalysis";
+import {
+  BOUNDARY_TRANSITION_STORAGE_KEY,
+  DEFAULT_BOUNDARY_TRANSITION_CONFIG,
+  coerceBoundaryTransitionConfig,
+  type BoundaryTransitionConfig,
+} from "./boundaryTransition";
 import { AUDIO_CONTROLS, DEFAULT_SETTINGS } from "./config/settings";
+import {
+  KEYBIND_STORAGE_KEY,
+  assignKeyBinding,
+  buildKeyCommands,
+  clearKeyBinding,
+  coerceKeyBindings,
+  createTemplateApplyCommandId,
+  getCommandForKey,
+  getKeyboardEventCode,
+  type KeyBindingMap,
+  type KeyCommand,
+  type KeyCommandId,
+} from "./keybindings";
 import {
   applyTooltipsByLabel,
   createControls,
@@ -18,13 +37,26 @@ import {
   type MonitorState,
 } from "./ui/controls";
 import {
+  cloneCymaticSettings,
   cloneTemplateSettings,
-  coerceCymaticSettings,
   coerceWavefieldTemplate,
+  createSettingsFromTemplate,
+  getCycledTemplateIndex,
   loadWavefieldTemplates,
   sortWavefieldTemplates,
   type WavefieldTemplate,
 } from "./templateSettings";
+import {
+  DEFAULT_TEMPLATE_TRANSITION_CONFIG,
+  TEMPLATE_TRANSITION_STORAGE_KEY,
+  advanceTemplateTransition,
+  coerceTemplateTransitionConfig,
+  createEffectiveCymaticSettings,
+  createTemplateTransition,
+  type TemplateTransitionConfig,
+  type TemplateTransitionEasing,
+  type TemplateTransitionState,
+} from "./templateTransition";
 import {
   ModalFieldRenderer,
   type ScreenViewTransform,
@@ -34,6 +66,7 @@ import type {
   BoundaryMode,
   CymaticSettings,
   DriveMode,
+  EffectiveCymaticSettings,
 } from "./types";
 
 const SCREEN_VIEW_MIN_SCALE = 0.05;
@@ -60,15 +93,33 @@ const TEMPLATE_MODULES = import.meta.glob<unknown>("./templates/*.json", {
 });
 const INITIAL_TEMPLATES = loadWavefieldTemplates(TEMPLATE_MODULES);
 const BOUNDARY_OPTIONS = [
-  { label: "Free", value: "freePlate" },
-  { label: "Dir", value: "dirichlet" },
-  { label: "Neu", value: "neumann" },
-] satisfies Array<{ label: string; value: BoundaryMode }>;
+  { label: "Free", value: "freePlate", shortcut: "1" },
+  { label: "Dir", value: "dirichlet", shortcut: "2" },
+  { label: "Neu", value: "neumann", shortcut: "3" },
+] satisfies Array<{ label: string; value: BoundaryMode; shortcut: string }>;
+const TRANSITION_EASING_OPTIONS = [
+  { label: "Linear", value: "linear" },
+  { label: "Ease in", value: "easeIn" },
+  { label: "Ease out", value: "easeOut" },
+  { label: "Ease in/out", value: "easeInOut" },
+] satisfies Array<{ label: string; value: TemplateTransitionEasing }>;
 
 export class WavefieldApp {
   private readonly settings: CymaticSettings = { ...DEFAULT_SETTINGS };
+  private effectiveSettings: EffectiveCymaticSettings =
+    createEffectiveCymaticSettings(this.settings);
   private readonly templates: WavefieldTemplate[] = [...INITIAL_TEMPLATES];
   private readonly templateSaveState = { name: "" };
+  private templateTransitionConfig: TemplateTransitionConfig =
+    loadTemplateTransitionConfig();
+  private templateTransition: TemplateTransitionState | null = null;
+  private boundaryTransitionConfig: BoundaryTransitionConfig =
+    loadBoundaryTransitionConfig();
+  private boundaryTransition: TemplateTransitionState | null = null;
+  private keyCommands: KeyCommand[] = buildKeyCommands(this.templates);
+  private keyBindings: KeyBindingMap = loadKeyBindings(this.keyCommands);
+  private capturingKeybindSlug: string | null = null;
+  private activeTemplateSlug: string | null = null;
   private readonly modalEngine = new ModalFieldEngine();
   private readonly liveAnalyzer = new LiveAudioAnalyzer();
   private readonly renderer: THREE.WebGLRenderer;
@@ -86,6 +137,8 @@ export class WavefieldApp {
   private readonly fullscreenButton: HTMLButtonElement;
   private readonly settingsButton: HTMLButtonElement;
   private readonly boundaryInputs: HTMLInputElement[];
+  private readonly boundaryMorphInput: HTMLInputElement;
+  private readonly boundaryMorphPaneHost: HTMLElement;
   private readonly settingsModal: HTMLElement;
   private readonly settingsPanel: HTMLElement;
   private readonly settingsCloseButton: HTMLButtonElement;
@@ -100,6 +153,7 @@ export class WavefieldApp {
   private readonly mobileSettingsMedia = window.matchMedia(MOBILE_SETTINGS_MEDIA);
   private modeSettingsPane: Pane | null = null;
   private modeSettingsLayoutKey = "";
+  private boundaryMorphPane: Pane | null = null;
   private isSettingsOpen = false;
   private isMobileSettings = false;
   private isFullscreenUiVisible = false;
@@ -158,6 +212,12 @@ export class WavefieldApp {
     this.boundaryInputs = Array.from(
       this.root.querySelectorAll<HTMLInputElement>(".boundary-radio-input"),
     );
+    this.boundaryMorphInput = this.query<HTMLInputElement>(
+      ".boundary-morph-input",
+    );
+    this.boundaryMorphPaneHost = this.query<HTMLElement>(
+      ".boundary-morph-pane-host",
+    );
     this.settingsModal = this.query<HTMLElement>(".settings-modal");
     this.settingsPanel = this.query<HTMLElement>(".settings-panel");
     this.settingsCloseButton = this.query<HTMLButtonElement>(".settings-close");
@@ -197,15 +257,23 @@ export class WavefieldApp {
       this.settings,
       () => this.handleSettingsChange(),
       this.monitorState,
-      {
+      () => ({
         isDev: import.meta.env.DEV,
         saveState: this.templateSaveState,
+        transitionConfig: this.templateTransitionConfig,
+        keyBindings: this.keyBindings,
+        capturingKeybindSlug: this.capturingKeybindSlug,
+        activeTemplateSlug: this.activeTemplateSlug,
         templates: this.templates,
-        onApplyTemplate: (template) => this.applyTemplate(template),
+        onApplyTemplate: (template) => this.startTemplateTransition(template),
         onDeleteTemplate: (template) => this.deleteTemplate(template),
         onResaveTemplate: (template) => this.resaveTemplate(template),
         onSaveTemplate: (name) => this.saveTemplate(name),
-      },
+        onStartTemplateKeyCapture: (template) =>
+          this.startTemplateKeyCapture(template),
+        onTransitionConfigChange: (config) =>
+          this.setTemplateTransitionConfig(config),
+      }),
     );
 
     this.bindUi();
@@ -239,6 +307,7 @@ export class WavefieldApp {
     document.removeEventListener("pointerlockerror", this.handlePointerLockError);
     this.releaseScreenPointerLock();
     this.controls.dispose();
+    this.disposeBoundaryMorphPane();
     this.disposeModeSettingsPane();
     this.liveAnalyzer.stop();
     this.modalRenderer.dispose();
@@ -269,7 +338,7 @@ export class WavefieldApp {
           <div class="boundary-radio-group" role="radiogroup" aria-label="Boundary type">
             ${BOUNDARY_OPTIONS.map(
               (option) => `
-                <label class="boundary-radio-option" title="${formatBoundaryMode(option.value)} boundary">
+                <label class="boundary-radio-option" title="${formatBoundaryMode(option.value)} boundary (${option.shortcut})">
                   <input
                     class="boundary-radio-input"
                     type="radio"
@@ -277,11 +346,23 @@ export class WavefieldApp {
                     value="${option.value}"
                     ${option.value === this.settings.boundaryMode ? "checked" : ""}
                   />
-                  <span>${option.label}</span>
+                  <span class="boundary-radio-shortcut">${option.shortcut}</span>
+                  <span class="boundary-radio-title">${option.label}</span>
                 </label>
               `,
             ).join("")}
           </div>
+          <div class="boundary-morph-controls" aria-label="Boundary morph controls">
+            <label class="boundary-morph-toggle" title="Lerp direct boundary changes">
+              <input
+                class="boundary-morph-input"
+                type="checkbox"
+                ${this.boundaryTransitionConfig.enabled ? "checked" : ""}
+              />
+              <span>Morph</span>
+            </label>
+          </div>
+          <div class="boundary-morph-pane-host" aria-label="Boundary morph settings" hidden></div>
           <button
             class="settings-toggle"
             type="button"
@@ -406,6 +487,15 @@ export class WavefieldApp {
           this.setBoundaryMode(input.value as BoundaryMode);
         }
       });
+    });
+    this.boundaryMorphInput.addEventListener("change", () => {
+      this.setBoundaryTransitionConfig({
+        ...this.boundaryTransitionConfig,
+        enabled: this.boundaryMorphInput.checked,
+      });
+    });
+    this.boundaryMorphPaneHost.addEventListener("change", (event) => {
+      blurControlTarget(event.target);
     });
 
     this.drivePane.addEventListener("toggle", () => {
@@ -601,6 +691,11 @@ export class WavefieldApp {
   }
 
   private handleKeyDown = (event: KeyboardEvent) => {
+    if (this.capturingKeybindSlug) {
+      this.handleTemplateKeyCapture(event);
+      return;
+    }
+
     if (event.metaKey || event.ctrlKey || event.altKey) {
       return;
     }
@@ -618,37 +713,24 @@ export class WavefieldApp {
       return;
     }
 
-    if (event.code === "Tab") {
-      event.preventDefault();
-      if (document.fullscreenElement === this.root) {
-        this.setFullscreenUiVisible(!this.isFullscreenUiVisible);
-        return;
-      }
-
-      this.setSettingsOpen(!this.isSettingsOpen, this.settingsButton);
+    const keyCode = getKeyboardEventCode(event);
+    const command = getCommandForKey(this.keyCommands, this.keyBindings, keyCode);
+    if (!command) {
       return;
     }
 
-    if (event.code === "KeyF") {
-      event.preventDefault();
-      void this.toggleFullscreen();
-      return;
-    }
-
-    if (event.code !== "Space") {
-      return;
-    }
     event.preventDefault();
-    this.togglePlayback();
+    this.runKeyCommand(command.id);
   };
 
   private animate = (now: number) => {
     const deltaSeconds = Math.min(0.1, (now - this.lastFrameTime) / 1_000);
     this.lastFrameTime = now;
+    const renderSettings = this.updateTemplateTransition(deltaSeconds);
     const time = this.wavesurfer.getCurrentTime();
     const isPlaying = this.wavesurfer.isPlaying();
-    const isManualDrive = this.settings.driveMode === "manual";
-    const isLiveDrive = this.settings.driveMode === "live";
+    const isManualDrive = renderSettings.driveMode === "manual";
+    const isLiveDrive = renderSettings.driveMode === "live";
     let fieldFrame = this.lastModalFieldFrame;
     let renderDeltaSeconds = 0;
     let isIdlePreview = false;
@@ -657,7 +739,7 @@ export class WavefieldApp {
       this.manualSeconds += deltaSeconds;
       fieldFrame = this.modalEngine.update(
         this.manualSeconds,
-        this.settings,
+        renderSettings,
         deltaSeconds || 1 / 60,
       );
       this.lastModalFieldFrame = fieldFrame;
@@ -668,7 +750,7 @@ export class WavefieldApp {
       if (liveFrame) {
         fieldFrame = this.modalEngine.updateFromFeatureFrame(
           liveFrame,
-          this.settings,
+          renderSettings,
           deltaSeconds || 1 / 60,
         );
         this.lastModalFieldFrame = fieldFrame;
@@ -685,13 +767,17 @@ export class WavefieldApp {
       renderDeltaSeconds = deltaSeconds;
       isIdlePreview = true;
     } else if (isPlaying) {
-      fieldFrame = this.modalEngine.update(time, this.settings, deltaSeconds);
+      fieldFrame = this.modalEngine.update(time, renderSettings, deltaSeconds);
       this.lastModalFieldFrame = fieldFrame;
       renderDeltaSeconds = deltaSeconds;
     } else {
       if (fieldFrame.modes.length === 0) {
         const previewTime = time > 0.05 ? time : this.analysisPreviewTime;
-        fieldFrame = this.modalEngine.update(previewTime, this.settings, 1 / 60);
+        fieldFrame = this.modalEngine.update(
+          previewTime,
+          renderSettings,
+          1 / 60,
+        );
         this.lastModalFieldFrame = fieldFrame;
       }
     }
@@ -706,7 +792,7 @@ export class WavefieldApp {
     this.modalRenderer.render(
       this.renderer,
       fieldFrame,
-      this.settings,
+      renderSettings,
       this.screenView,
       renderDeltaSeconds,
       isIdlePreview,
@@ -1377,14 +1463,211 @@ export class WavefieldApp {
     this.volumeButton.title = label;
   }
 
-  private applyTemplate(template: WavefieldTemplate) {
-    const nextSettings = coerceCymaticSettings(template.settings);
-    const currentDriveMode = this.settings.driveMode;
-
-    Object.assign(this.settings, nextSettings);
-    this.settings.driveMode = currentDriveMode;
-    this.handleSettingsChange();
+  private startTemplateTransition(template: WavefieldTemplate) {
+    const nextSettings = createSettingsFromTemplate(
+      template.settings,
+      this.settings,
+    );
+    this.boundaryTransition = null;
+    this.templateTransition = createTemplateTransition(
+      this.effectiveSettings,
+      nextSettings,
+      this.templateTransitionConfig,
+    );
+    this.activeTemplateSlug = template.slug;
     this.setStatus(`Template: ${template.name}`);
+    this.controls.refresh();
+  }
+
+  private updateTemplateTransition(deltaSeconds: number) {
+    if (!this.templateTransition && !this.boundaryTransition) {
+      return this.effectiveSettings;
+    }
+
+    if (this.templateTransition) {
+      const result = advanceTemplateTransition(
+        this.templateTransition,
+        deltaSeconds,
+      );
+      this.templateTransition = result.done ? null : result.transition;
+      this.effectiveSettings = result.settings;
+      this.syncBackgroundColor(this.effectiveSettings);
+
+      if (result.done) {
+        this.commitEffectiveSettings(result.settings);
+      }
+
+      return this.effectiveSettings;
+    }
+
+    const boundaryTransition = this.boundaryTransition;
+    if (!boundaryTransition) {
+      return this.effectiveSettings;
+    }
+
+    const result = advanceTemplateTransition(boundaryTransition, deltaSeconds);
+    this.boundaryTransition = result.done ? null : result.transition;
+    this.effectiveSettings = result.settings;
+    this.syncBackgroundColor(this.effectiveSettings);
+
+    if (result.done) {
+      this.effectiveSettings = createEffectiveCymaticSettings(this.settings);
+    }
+
+    return this.effectiveSettings;
+  }
+
+  private commitEffectiveSettings(settings: EffectiveCymaticSettings) {
+    const currentDriveMode = this.settings.driveMode;
+    Object.assign(this.settings, cloneCymaticSettings(settings));
+    this.settings.driveMode = currentDriveMode;
+    this.effectiveSettings = createEffectiveCymaticSettings(this.settings);
+    this.handleSettingsChange();
+  }
+
+  private cycleTemplate(direction: -1 | 1) {
+    if (this.templates.length === 0) {
+      return;
+    }
+
+    const nextIndex = getCycledTemplateIndex(
+      this.templates,
+      this.activeTemplateSlug,
+      direction,
+    );
+    if (nextIndex >= 0) {
+      this.startTemplateTransition(this.templates[nextIndex]);
+    }
+  }
+
+  private runKeyCommand(commandId: KeyCommandId) {
+    if (commandId === "ui.settings") {
+      if (document.fullscreenElement === this.root) {
+        this.setFullscreenUiVisible(!this.isFullscreenUiVisible);
+        return;
+      }
+
+      this.setSettingsOpen(!this.isSettingsOpen, this.settingsButton);
+      return;
+    }
+
+    if (commandId === "ui.fullscreen") {
+      void this.toggleFullscreen();
+      return;
+    }
+
+    if (commandId === "audio.playback") {
+      this.togglePlayback();
+      return;
+    }
+
+    if (commandId === "boundary.freePlate") {
+      this.setBoundaryMode("freePlate");
+      return;
+    }
+
+    if (commandId === "boundary.dirichlet") {
+      this.setBoundaryMode("dirichlet");
+      return;
+    }
+
+    if (commandId === "boundary.neumann") {
+      this.setBoundaryMode("neumann");
+      return;
+    }
+
+    if (commandId === "template.previous") {
+      this.cycleTemplate(-1);
+      return;
+    }
+
+    if (commandId === "template.next") {
+      this.cycleTemplate(1);
+      return;
+    }
+
+    if (commandId.startsWith("template.apply.")) {
+      const slug = commandId.slice("template.apply.".length);
+      const template = this.templates.find((candidate) => candidate.slug === slug);
+      if (template) {
+        this.startTemplateTransition(template);
+      }
+    }
+  }
+
+  private startTemplateKeyCapture(template: WavefieldTemplate) {
+    this.capturingKeybindSlug = template.slug;
+    this.controls.refresh();
+    this.setStatus(`Press a key for ${template.name}`);
+  }
+
+  private handleTemplateKeyCapture(event: KeyboardEvent) {
+    event.preventDefault();
+    if (event.repeat || event.metaKey || event.ctrlKey || event.altKey) {
+      return;
+    }
+
+    const slug = this.capturingKeybindSlug;
+    if (!slug) {
+      return;
+    }
+
+    const keyCode = getKeyboardEventCode(event);
+
+    if (keyCode === "Escape") {
+      this.capturingKeybindSlug = null;
+      this.controls.refresh();
+      return;
+    }
+
+    const commandId = createTemplateApplyCommandId(slug);
+    if (keyCode === "Backspace" || keyCode === "Delete") {
+      this.setKeyBindings(clearKeyBinding(this.keyBindings, commandId));
+      this.capturingKeybindSlug = null;
+      this.controls.refresh();
+      return;
+    }
+
+    const assignment = assignKeyBinding(
+      this.keyCommands,
+      this.keyBindings,
+      commandId,
+      keyCode,
+    );
+    if (!assignment.ok) {
+      this.setStatus(`Key already used by ${assignment.conflictLabel}`);
+      return;
+    }
+
+    this.setKeyBindings(assignment.bindings);
+    this.capturingKeybindSlug = null;
+    this.controls.refresh();
+  }
+
+  private setKeyBindings(bindings: KeyBindingMap) {
+    this.keyBindings = bindings;
+    saveJsonToLocalStorage(KEYBIND_STORAGE_KEY, this.keyBindings);
+  }
+
+  private setTemplateTransitionConfig(config: TemplateTransitionConfig) {
+    this.templateTransitionConfig = coerceTemplateTransitionConfig(config);
+    saveJsonToLocalStorage(
+      TEMPLATE_TRANSITION_STORAGE_KEY,
+      this.templateTransitionConfig,
+    );
+    this.controls.refresh();
+  }
+
+  private setBoundaryTransitionConfig(config: BoundaryTransitionConfig) {
+    Object.assign(
+      this.boundaryTransitionConfig,
+      coerceBoundaryTransitionConfig(config),
+    );
+    saveJsonToLocalStorage(
+      BOUNDARY_TRANSITION_STORAGE_KEY,
+      this.boundaryTransitionConfig,
+    );
+    this.syncHeaderControls();
   }
 
   private async saveTemplate(name: string) {
@@ -1423,7 +1706,7 @@ export class WavefieldApp {
       },
       body: JSON.stringify({
         name: trimmedName,
-        settings: cloneTemplateSettings(this.settings),
+        settings: cloneTemplateSettings(this.effectiveSettings),
       }),
     });
 
@@ -1469,10 +1752,21 @@ export class WavefieldApp {
       this.templates.length,
       ...sortWavefieldTemplates(templates),
     );
+    this.keyCommands = buildKeyCommands(this.templates);
+    this.setKeyBindings(coerceKeyBindings(this.keyBindings, this.keyCommands));
+    if (
+      this.activeTemplateSlug &&
+      !this.templates.some((template) => template.slug === this.activeTemplateSlug)
+    ) {
+      this.activeTemplateSlug = null;
+    }
     this.controls.refresh();
   }
 
   private handleSettingsChange() {
+    this.templateTransition = null;
+    this.boundaryTransition = null;
+    this.effectiveSettings = createEffectiveCymaticSettings(this.settings);
     if (this.settings.projectionMode !== "screen") {
       this.endMouseScreenPan();
     }
@@ -1496,8 +1790,8 @@ export class WavefieldApp {
     this.syncHeaderControls();
   }
 
-  private syncBackgroundColor() {
-    const backgroundColor = normalizeHexColor(this.settings.backgroundColor);
+  private syncBackgroundColor(settings: CymaticSettings = this.settings) {
+    const backgroundColor = normalizeHexColor(settings.backgroundColor);
     this.root.style.setProperty("--wavefield-background", backgroundColor);
     document.documentElement.style.setProperty(
       "--wavefield-background",
@@ -1510,6 +1804,7 @@ export class WavefieldApp {
     this.boundaryInputs.forEach((input) => {
       input.checked = input.value === this.settings.boundaryMode;
     });
+    this.boundaryMorphInput.checked = this.boundaryTransitionConfig.enabled;
     this.driveSummaryValue.textContent = formatDriveMode(this.settings.driveMode);
     this.sourcePicker.hidden = this.settings.driveMode !== "audio";
     this.transport.hidden = this.settings.driveMode !== "audio";
@@ -1518,6 +1813,7 @@ export class WavefieldApp {
       "is-live-recording",
       this.settings.driveMode === "live" && this.liveAnalyzer.isActive,
     );
+    this.syncBoundaryMorphPane();
     this.syncModeSettingsPane();
     this.controls.refresh();
   }
@@ -1527,13 +1823,28 @@ export class WavefieldApp {
   }
 
   private setBoundaryMode(boundaryMode: BoundaryMode) {
-    if (this.settings.boundaryMode === boundaryMode) {
+    const hasActiveTransition =
+      this.templateTransition !== null || this.boundaryTransition !== null;
+    if (this.settings.boundaryMode === boundaryMode && !hasActiveTransition) {
       this.syncHeaderControls();
       return;
     }
 
+    const sourceSettings = this.effectiveSettings;
+    const shouldMorph = this.boundaryTransitionConfig.enabled;
+    this.activeTemplateSlug = null;
     this.settings.boundaryMode = boundaryMode;
     this.handleSettingsChange();
+    if (shouldMorph) {
+      this.boundaryTransition = createTemplateTransition(
+        sourceSettings,
+        this.settings,
+        this.boundaryTransitionConfig,
+      );
+      this.effectiveSettings = sourceSettings;
+      this.syncBackgroundColor(this.effectiveSettings);
+    }
+    this.setStatus(`Boundary: ${formatBoundaryMode(boundaryMode)}`);
   }
 
   private async setDriveMode(driveMode: DriveMode, announce = true) {
@@ -1585,6 +1896,42 @@ export class WavefieldApp {
     if (announce) {
       this.setStatus(`Drive: ${formatDriveMode(driveMode)}`);
     }
+  }
+
+  private syncBoundaryMorphPane() {
+    if (!this.boundaryTransitionConfig.enabled) {
+      this.boundaryMorphPaneHost.hidden = true;
+      this.disposeBoundaryMorphPane();
+      return;
+    }
+
+    this.boundaryMorphPaneHost.hidden = false;
+    if (this.boundaryMorphPane) {
+      this.boundaryMorphPane.refresh();
+      return;
+    }
+
+    this.boundaryMorphPane = new Pane({
+      container: this.boundaryMorphPaneHost,
+    });
+    this.boundaryMorphPane.addBinding(
+      this.boundaryTransitionConfig,
+      "durationSeconds",
+      {
+        label: "duration",
+        min: 0,
+        max: 12,
+        step: 0.05,
+      },
+    );
+    this.boundaryMorphPane.addBinding(this.boundaryTransitionConfig, "easing", {
+      label: "easing",
+      options: getTransitionEasingOptions(),
+    });
+    this.boundaryMorphPane.on("change", () => {
+      this.setBoundaryTransitionConfig(this.boundaryTransitionConfig);
+    });
+    applyTooltipsByLabel(this.boundaryMorphPaneHost);
   }
 
   private syncModeSettingsPane() {
@@ -1640,6 +1987,11 @@ export class WavefieldApp {
     this.modeSettingsPane = null;
     this.modeSettingsLayoutKey = "";
   }
+
+  private disposeBoundaryMorphPane() {
+    this.boundaryMorphPane?.dispose();
+    this.boundaryMorphPane = null;
+  }
 }
 
 function formatDuration(duration: number) {
@@ -1665,6 +2017,12 @@ function formatBoundaryMode(boundaryMode: BoundaryMode) {
     BOUNDARY_OPTIONS.find((option) => option.value === boundaryMode)?.label ??
     boundaryMode
   );
+}
+
+function getTransitionEasingOptions() {
+  return Object.fromEntries(
+    TRANSITION_EASING_OPTIONS.map((option) => [option.label, option.value]),
+  ) as Record<string, TemplateTransitionEasing>;
 }
 
 function clamp(value: number, min: number, max: number) {
@@ -1708,6 +2066,12 @@ function isEditableKeyboardTarget(target: EventTarget | null) {
   );
 }
 
+function blurControlTarget(target: EventTarget | null) {
+  if (target instanceof HTMLInputElement || target instanceof HTMLSelectElement) {
+    target.blur();
+  }
+}
+
 function normalizeHexColor(color: string) {
   return /^#[0-9a-f]{6}$/i.test(color) ? color : DEFAULT_SETTINGS.backgroundColor;
 }
@@ -1724,6 +2088,50 @@ async function readTemplateApiError(response: Response) {
     return typeof body.error === "string" ? body.error : fallback;
   } catch {
     return text;
+  }
+}
+
+function loadTemplateTransitionConfig() {
+  try {
+    const rawValue = window.localStorage.getItem(
+      TEMPLATE_TRANSITION_STORAGE_KEY,
+    );
+    return coerceTemplateTransitionConfig(
+      rawValue ? JSON.parse(rawValue) : DEFAULT_TEMPLATE_TRANSITION_CONFIG,
+    );
+  } catch {
+    return { ...DEFAULT_TEMPLATE_TRANSITION_CONFIG };
+  }
+}
+
+function loadBoundaryTransitionConfig() {
+  try {
+    const rawValue = window.localStorage.getItem(
+      BOUNDARY_TRANSITION_STORAGE_KEY,
+    );
+    return coerceBoundaryTransitionConfig(
+      rawValue ? JSON.parse(rawValue) : DEFAULT_BOUNDARY_TRANSITION_CONFIG,
+    );
+  } catch {
+    return { ...DEFAULT_BOUNDARY_TRANSITION_CONFIG };
+  }
+}
+
+function loadKeyBindings(commands: KeyCommand[]) {
+  try {
+    const rawValue = window.localStorage.getItem(KEYBIND_STORAGE_KEY);
+    return coerceKeyBindings(rawValue ? JSON.parse(rawValue) : {}, commands);
+  } catch {
+    return coerceKeyBindings({}, commands);
+  }
+}
+
+function saveJsonToLocalStorage(key: string, value: unknown) {
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // Local persistence is a convenience; storage failures should not break
+    // rendering or controls.
   }
 }
 

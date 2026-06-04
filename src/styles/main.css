@@ -70,6 +70,7 @@ select {
 
 .brand,
 .boundary-radio-group,
+.boundary-morph-controls,
 .source-trigger,
 .source-option,
 .drive-mode-picker,
@@ -117,7 +118,7 @@ select {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   flex: 0 0 auto;
   gap: 2px;
-  min-width: 142px;
+  min-width: 166px;
   padding: 3px;
   border-radius: 6px;
 }
@@ -127,9 +128,10 @@ select {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 5px;
   min-width: 0;
   height: 26px;
-  padding: 0 8px;
+  padding: 0 7px;
   border-radius: 4px;
   color: rgb(238 250 255 / 68%);
   font-size: 12px;
@@ -139,9 +141,37 @@ select {
   user-select: none;
 }
 
+.boundary-radio-shortcut {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  min-width: 13px;
+  height: 15px;
+  border-radius: 3px;
+  background: rgb(255 255 255 / 9%);
+  color: rgb(238 250 255 / 62%);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.boundary-radio-title {
+  overflow: hidden;
+  min-width: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .boundary-radio-option:hover {
   color: #eefaff;
   background: rgb(255 255 255 / 7%);
+}
+
+.boundary-radio-option:hover .boundary-radio-shortcut,
+.boundary-radio-option:has(.boundary-radio-input:checked)
+  .boundary-radio-shortcut {
+  background: rgb(217 247 255 / 16%);
+  color: #eefaff;
 }
 
 .boundary-radio-input {
@@ -161,6 +191,116 @@ select {
 .boundary-radio-option:has(.boundary-radio-input:focus-visible) {
   outline: 2px solid rgb(217 247 255 / 42%);
   outline-offset: 2px;
+}
+
+.boundary-morph-controls {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  min-width: 84px;
+  padding: 3px;
+  border-radius: 6px;
+}
+
+.boundary-morph-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  height: 26px;
+  padding: 0 6px;
+  border-radius: 4px;
+  color: rgb(238 250 255 / 72%);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1;
+  cursor: pointer;
+  user-select: none;
+}
+
+.boundary-morph-input {
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  accent-color: #d9f7ff;
+}
+
+.boundary-morph-toggle:hover {
+  background: rgb(255 255 255 / 7%);
+  color: #eefaff;
+}
+
+.boundary-morph-input:focus-visible {
+  outline: 2px solid rgb(217 247 255 / 42%);
+  outline-offset: 2px;
+}
+
+.boundary-morph-pane-host {
+  --tp-base-background-color: transparent;
+  --tp-container-background-color: transparent;
+  --tp-container-background-color-active: rgb(255 255 255 / 8%);
+  --tp-container-background-color-focus: rgb(255 255 255 / 8%);
+  --tp-container-background-color-hover: rgb(255 255 255 / 6%);
+  --tp-container-foreground-color: rgb(245 251 255 / 74%);
+  --tp-groove-foreground-color: rgb(217 247 255 / 38%);
+  --tp-input-background-color: rgb(255 255 255 / 6%);
+  --tp-input-background-color-active: rgb(255 255 255 / 12%);
+  --tp-input-background-color-focus: rgb(255 255 255 / 12%);
+  --tp-input-background-color-hover: rgb(255 255 255 / 10%);
+  --tp-input-foreground-color: rgb(245 251 255 / 72%);
+  --tp-label-foreground-color: rgb(245 251 255 / 68%);
+  --tp-monitor-background-color: rgb(0 0 0 / 18%);
+  --tp-monitor-foreground-color: rgb(245 251 255 / 54%);
+  flex: 0 0 520px;
+  width: 520px;
+  min-width: 0;
+  padding: 3px 6px;
+  border: 1px solid rgb(255 255 255 / 15%);
+  border-radius: 6px;
+  background: rgb(10 16 18 / 72%);
+  backdrop-filter: blur(14px);
+}
+
+.boundary-morph-pane-host[hidden] {
+  display: none;
+}
+
+.boundary-morph-pane-host > .tp-rotv {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.boundary-morph-pane-host > .tp-rotv > .tp-rotv_c {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.9fr) minmax(236px, 1fr);
+  align-items: center;
+  gap: 10px;
+}
+
+.boundary-morph-pane-host .tp-lblv {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.boundary-morph-pane-host .tp-lblv_v {
+  overflow: hidden;
+  min-width: 0;
+}
+
+.boundary-morph-pane-host .tp-lblv_l {
+  overflow: visible;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.boundary-morph-pane-host input,
+.boundary-morph-pane-host select {
+  max-width: 100%;
 }
 
 .source-picker {
@@ -638,6 +778,40 @@ select {
   gap: 6px;
 }
 
+.template-transition-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 6px;
+}
+
+.template-transition-field {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  color: rgb(245 251 255 / 48%);
+  font-size: 10px;
+  font-weight: 650;
+  text-transform: uppercase;
+}
+
+.template-transition-field input,
+.template-transition-field select {
+  min-width: 0;
+  height: 28px;
+  padding: 0 7px;
+  border: 1px solid rgb(255 255 255 / 10%);
+  border-radius: 4px;
+  outline: 0;
+  background: rgb(255 255 255 / 6%);
+  color: #eefaff;
+  font-size: 11px;
+  text-transform: none;
+}
+
+.template-transition-field select option {
+  color: #11181c;
+}
+
 .template-name-input {
   min-width: 0;
   height: 30px;
@@ -665,17 +839,18 @@ select {
 
 .template-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 30px 30px;
+  grid-template-columns: minmax(0, 1fr) 38px;
   align-items: center;
   gap: 6px;
 }
 
-.template-row:has(.template-apply-button:only-child) {
-  grid-template-columns: minmax(0, 1fr);
+.template-row.has-dev-actions {
+  grid-template-columns: minmax(0, 1fr) 38px 30px 30px;
 }
 
 .template-save-button,
 .template-apply-button,
+.template-keybind-button,
 .template-resave-button,
 .template-delete-button {
   min-width: 0;
@@ -688,6 +863,7 @@ select {
 }
 
 .template-save-button,
+.template-keybind-button,
 .template-resave-button,
 .template-delete-button {
   display: inline-flex;
@@ -706,14 +882,22 @@ select {
 
 .template-save-button:hover,
 .template-apply-button:hover,
+.template-keybind-button:hover,
 .template-resave-button:hover,
 .template-delete-button:hover {
   border-color: rgb(217 247 255 / 30%);
   background: rgb(20 38 44 / 42%);
 }
 
+.template-apply-button.active {
+  border-color: rgb(217 247 255 / 46%);
+  background: rgb(217 247 255 / 13%);
+  color: #ffffff;
+}
+
 .template-save-button:focus-visible,
 .template-apply-button:focus-visible,
+.template-keybind-button:focus-visible,
 .template-resave-button:focus-visible,
 .template-delete-button:focus-visible {
   outline: 2px solid rgb(217 247 255 / 42%);
@@ -722,6 +906,7 @@ select {
 
 .template-save-button:disabled,
 .template-apply-button:disabled,
+.template-keybind-button:disabled,
 .template-resave-button:disabled,
 .template-delete-button:disabled {
   cursor: not-allowed;
@@ -955,6 +1140,20 @@ select {
 }
 
 @media (max-width: 900px) {
+  .topbar {
+    right: 16px;
+  }
+
+  .boundary-morph-pane-host {
+    flex-basis: 440px;
+    width: 440px;
+  }
+
+  .boundary-morph-pane-host > .tp-rotv > .tp-rotv_c {
+    grid-template-columns: minmax(190px, 0.9fr) minmax(194px, 1fr);
+    gap: 8px;
+  }
+
   .diagnostics-strip {
     bottom: 168px;
     align-items: flex-start;
@@ -1061,6 +1260,7 @@ select {
 
   .brand,
   .boundary-radio-group,
+  .boundary-morph-controls,
   .source-trigger,
   .source-option,
   .drive-mode-picker,
@@ -1084,14 +1284,37 @@ select {
   }
 
   .boundary-radio-group {
-    min-width: 118px;
+    min-width: 148px;
     padding: 3px;
+  }
+
+  .boundary-morph-controls {
+    min-width: 74px;
+  }
+
+  .boundary-morph-pane-host {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 0;
+    width: min(520px, calc(100vw - 32px));
+    flex-basis: auto;
+  }
+
+  .boundary-morph-pane-host > .tp-rotv > .tp-rotv_c {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .boundary-radio-option {
     height: 24px;
-    padding: 0 6px;
+    gap: 4px;
+    padding: 0 5px;
     font-size: 11px;
+  }
+
+  .boundary-radio-shortcut {
+    min-width: 12px;
+    height: 14px;
+    font-size: 9px;
   }
 
   .drive-pane-summary {

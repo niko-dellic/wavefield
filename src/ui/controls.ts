@@ -12,7 +12,16 @@ import {
   type NumericControlConfig,
   type PostEffectControlConfig,
 } from "../config/settings";
+import {
+  createTemplateApplyCommandId,
+  formatKeyBinding,
+  type KeyBindingMap,
+} from "../keybindings";
 import type { WavefieldTemplate } from "../templateSettings";
+import type {
+  TemplateTransitionConfig,
+  TemplateTransitionEasing,
+} from "../templateTransition";
 import type { CymaticSettings, PostEffectId } from "../types";
 
 /** Live, read-only state surfaced by the Status monitor folder. */
@@ -170,19 +179,29 @@ export type TemplateControlsOptions = {
   saveState: {
     name: string;
   };
+  transitionConfig: TemplateTransitionConfig;
+  keyBindings: KeyBindingMap;
+  capturingKeybindSlug: string | null;
+  activeTemplateSlug: string | null;
   templates: WavefieldTemplate[];
   onApplyTemplate: (template: WavefieldTemplate) => void;
   onDeleteTemplate: (template: WavefieldTemplate) => void | Promise<void>;
   onResaveTemplate: (template: WavefieldTemplate) => void | Promise<void>;
   onSaveTemplate: (name: string) => void | Promise<void>;
+  onStartTemplateKeyCapture: (template: WavefieldTemplate) => void;
+  onTransitionConfigChange: (config: TemplateTransitionConfig) => void;
 };
+
+type TemplateControlsSource =
+  | TemplateControlsOptions
+  | (() => TemplateControlsOptions);
 
 export function createControls(
   container: HTMLElement,
   settings: CymaticSettings,
   onChange: () => void,
   monitorState: MonitorState,
-  templateControls?: TemplateControlsOptions,
+  templateControls?: TemplateControlsSource,
 ): ControlsManager {
   let pane: Pane | null = null;
   let monitorPane: Pane | null = null;
@@ -349,10 +368,11 @@ export function createControls(
       addNumericBinding(shader, settings, ENGINE_CONTROLS.chromesthesiaMix);
     }
 
-    if (templateControls) {
+    const currentTemplateControls = resolveTemplateControls(templateControls);
+    if (currentTemplateControls) {
       mountTemplatePanel(
         pane,
-        templateControls,
+        currentTemplateControls,
         folderExpansionState,
         persistFolderExpansion,
       );
@@ -422,7 +442,10 @@ export function createControls(
   };
 
   const refresh = () => {
-    const nextLayoutKey = getLayoutKey(settings, templateControls);
+    const nextLayoutKey = getLayoutKey(
+      settings,
+      resolveTemplateControls(templateControls),
+    );
     if (!pane || nextLayoutKey !== layoutKey) {
       layoutKey = nextLayoutKey;
       build();
@@ -473,10 +496,21 @@ function getTemplateLayoutKey(templateControls?: TemplateControlsOptions) {
 
   return [
     templateControls.isDev ? "dev" : "prod",
+    templateControls.transitionConfig.durationSeconds,
+    templateControls.transitionConfig.easing,
+    templateControls.capturingKeybindSlug ?? "",
+    templateControls.activeTemplateSlug ?? "",
+    JSON.stringify(templateControls.keyBindings),
     ...templateControls.templates.map(
       (template) => `${template.slug}/${template.name}/${template.createdAt}`,
     ),
   ].join(",");
+}
+
+function resolveTemplateControls(templateControls?: TemplateControlsSource) {
+  return typeof templateControls === "function"
+    ? templateControls()
+    : templateControls;
 }
 
 function addNumericBinding(
@@ -519,6 +553,7 @@ function mountTemplatePanel(
   if (templateControls.isDev) {
     root.append(createTemplateSavePanel(templateControls));
   }
+  root.append(createTemplateTransitionPanel(templateControls));
 
   const list = document.createElement("div");
   list.className = "template-list";
@@ -584,22 +619,99 @@ function createTemplateSavePanel(templateControls: TemplateControlsOptions) {
   return savePanel;
 }
 
+function createTemplateTransitionPanel(
+  templateControls: TemplateControlsOptions,
+) {
+  const panel = document.createElement("div");
+  panel.className = "template-transition-panel";
+
+  const durationLabel = document.createElement("label");
+  durationLabel.className = "template-transition-field";
+  const durationText = document.createElement("span");
+  durationText.textContent = "duration";
+  const durationInput = document.createElement("input");
+  durationInput.type = "number";
+  durationInput.min = "0";
+  durationInput.max = "12";
+  durationInput.step = "0.05";
+  durationInput.value = String(templateControls.transitionConfig.durationSeconds);
+  durationInput.setAttribute("aria-label", "Template transition duration");
+  durationInput.addEventListener("change", () => {
+    templateControls.onTransitionConfigChange({
+      ...templateControls.transitionConfig,
+      durationSeconds: Math.max(0, Number(durationInput.value) || 0),
+    });
+  });
+  durationLabel.append(durationText, durationInput);
+
+  const easingLabel = document.createElement("label");
+  easingLabel.className = "template-transition-field";
+  const easingText = document.createElement("span");
+  easingText.textContent = "easing";
+  const easingSelect = document.createElement("select");
+  easingSelect.setAttribute("aria-label", "Template transition easing");
+  for (const easing of [
+    "linear",
+    "easeIn",
+    "easeOut",
+    "easeInOut",
+  ] satisfies TemplateTransitionEasing[]) {
+    const option = document.createElement("option");
+    option.value = easing;
+    option.textContent = formatEasingLabel(easing);
+    option.selected = templateControls.transitionConfig.easing === easing;
+    easingSelect.append(option);
+  }
+  easingSelect.addEventListener("change", () => {
+    templateControls.onTransitionConfigChange({
+      ...templateControls.transitionConfig,
+      easing: easingSelect.value as TemplateTransitionEasing,
+    });
+  });
+  easingLabel.append(easingText, easingSelect);
+
+  panel.append(durationLabel, easingLabel);
+  return panel;
+}
+
 function createTemplateRow(
   template: WavefieldTemplate,
   templateControls: TemplateControlsOptions,
 ) {
   const row = document.createElement("div");
   row.className = "template-row";
+  if (templateControls.isDev) {
+    row.classList.add("has-dev-actions");
+  }
 
   const applyButton = document.createElement("button");
   applyButton.className = "template-apply-button";
   applyButton.type = "button";
   applyButton.textContent = template.name;
   applyButton.title = `Apply ${template.name}`;
+  if (templateControls.activeTemplateSlug === template.slug) {
+    applyButton.classList.add("active");
+    applyButton.setAttribute("aria-current", "true");
+  }
   applyButton.addEventListener("click", () => {
     templateControls.onApplyTemplate(template);
   });
   row.append(applyButton);
+
+  const keybindButton = document.createElement("button");
+  keybindButton.className = "template-keybind-button";
+  keybindButton.type = "button";
+  const commandId = createTemplateApplyCommandId(template.slug);
+  const isCapturing = templateControls.capturingKeybindSlug === template.slug;
+  keybindButton.textContent = isCapturing
+    ? "..."
+    : formatKeyBinding(templateControls.keyBindings[commandId]);
+  keybindButton.title = `Set keybind for ${template.name}`;
+  keybindButton.setAttribute("aria-label", `Set keybind for ${template.name}`);
+  keybindButton.addEventListener("click", () => {
+    templateControls.onStartTemplateKeyCapture(template);
+  });
+  row.append(keybindButton);
 
   if (templateControls.isDev) {
     const resaveButton = document.createElement("button");
@@ -630,6 +742,19 @@ function createTemplateRow(
   }
 
   return row;
+}
+
+function formatEasingLabel(easing: TemplateTransitionEasing) {
+  switch (easing) {
+    case "linear":
+      return "Linear";
+    case "easeIn":
+      return "Ease in";
+    case "easeOut":
+      return "Ease out";
+    case "easeInOut":
+      return "Ease in/out";
+  }
 }
 
 function runTemplateAction(

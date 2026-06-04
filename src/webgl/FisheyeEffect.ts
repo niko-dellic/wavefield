@@ -56,9 +56,9 @@ export class FisheyeEffect extends Effect {
     this.resolutionUniform.value.set(width, height);
   }
 
-  updateSettings(settings: CymaticSettings) {
+  updateSettings(settings: CymaticSettings, amount = 1) {
     this.k1Uniform.value = settings.postFisheyeK1;
     this.k2Uniform.value = settings.postFisheyeK2;
-    this.strengthUniform.value = settings.postFisheyeStrength;
+    this.strengthUniform.value = settings.postFisheyeStrength * amount;
   }
 }
