@@ -115,10 +115,10 @@ select {
 
 .boundary-radio-group {
   display: inline-grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   flex: 0 0 auto;
   gap: 2px;
-  min-width: 166px;
+  min-width: 382px;
   padding: 3px;
   border-radius: 6px;
 }
@@ -128,10 +128,10 @@ select {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
+  gap: 4px;
   min-width: 0;
   height: 26px;
-  padding: 0 7px;
+  padding: 0 6px;
   border-radius: 4px;
   color: rgb(238 250 255 / 68%);
   font-size: 12px;
@@ -1284,7 +1284,7 @@ select {
   }
 
   .boundary-radio-group {
-    min-width: 148px;
+    min-width: min(360px, calc(100vw - 32px));
     padding: 3px;
   }
 
@@ -1306,9 +1306,9 @@ select {
 
   .boundary-radio-option {
     height: 24px;
-    gap: 4px;
-    padding: 0 5px;
-    font-size: 11px;
+    gap: 3px;
+    padding: 0 3px;
+    font-size: 10px;
   }
 
   .boundary-radio-shortcut {

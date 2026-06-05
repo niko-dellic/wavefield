@@ -82,7 +82,8 @@ const FRAGMENT_SHADER = `
   uniform vec2 uResolution;
   uniform float uTime;
   uniform int uModeCount;
-  uniform vec3 uBoundaryWeights;
+  uniform vec4 uBoundaryWeights;
+  uniform float uBoundaryClampedWeight;
   uniform int uColorMode;
   uniform int uProjectionMode;
   uniform int uSphereFieldMode;
@@ -258,11 +259,30 @@ const FRAGMENT_SHADER = `
     return cos(m * PI * p.x) * cos(n * PI * p.y);
   }
 
+  float supportedChladniValue(float m, float n, vec2 p) {
+    float partnerM = n + 1.0;
+    float partnerN = m + 1.0;
+    return
+      sin(m * PI * p.x) * sin(n * PI * p.y) -
+      0.86 * sin(partnerM * PI * p.x) * sin(partnerN * PI * p.y);
+  }
+
+  float edgeEnvelope(vec2 p) {
+    vec2 q = clamp(p, vec2(0.0), vec2(1.0));
+    return 16.0 * q.x * (1.0 - q.x) * q.y * (1.0 - q.y);
+  }
+
+  float clampedChladniValue(float m, float n, vec2 p) {
+    return supportedChladniValue(m, n, p) * edgeEnvelope(p);
+  }
+
   float chladniValue(float m, float n, vec2 p) {
     return
       freeChladniValue(m, n, p) * uBoundaryWeights.x +
       dirichletChladniValue(m, n, p) * uBoundaryWeights.y +
-      neumannChladniValue(m, n, p) * uBoundaryWeights.z;
+      neumannChladniValue(m, n, p) * uBoundaryWeights.z +
+      supportedChladniValue(m, n, p) * uBoundaryWeights.w +
+      clampedChladniValue(m, n, p) * uBoundaryClampedWeight;
   }
 
   vec2 freeChladniGradient(float m, float n, vec2 p) {
@@ -291,26 +311,74 @@ const FRAGMENT_SHADER = `
     );
   }
 
+  vec2 supportedChladniGradient(float m, float n, vec2 p) {
+    float partnerM = n + 1.0;
+    float partnerN = m + 1.0;
+    return vec2(
+      m * PI * cos(m * PI * p.x) * sin(n * PI * p.y) -
+        0.86 * partnerM * PI * cos(partnerM * PI * p.x) *
+          sin(partnerN * PI * p.y),
+      n * PI * sin(m * PI * p.x) * cos(n * PI * p.y) -
+        0.86 * partnerN * PI * sin(partnerM * PI * p.x) *
+          cos(partnerN * PI * p.y)
+    );
+  }
+
+  vec2 edgeEnvelopeGradient(vec2 p) {
+    vec2 q = clamp(p, vec2(0.0), vec2(1.0));
+    return vec2(
+      16.0 * (1.0 - 2.0 * q.x) * q.y * (1.0 - q.y),
+      16.0 * q.x * (1.0 - q.x) * (1.0 - 2.0 * q.y)
+    );
+  }
+
+  vec2 clampedChladniGradient(float m, float n, vec2 p) {
+    float supported = supportedChladniValue(m, n, p);
+    return
+      supportedChladniGradient(m, n, p) * edgeEnvelope(p) +
+      supported * edgeEnvelopeGradient(p);
+  }
+
   vec2 chladniGradient(float m, float n, vec2 p) {
     return
       freeChladniGradient(m, n, p) * uBoundaryWeights.x +
       dirichletChladniGradient(m, n, p) * uBoundaryWeights.y +
-      neumannChladniGradient(m, n, p) * uBoundaryWeights.z;
+      neumannChladniGradient(m, n, p) * uBoundaryWeights.z +
+      supportedChladniGradient(m, n, p) * uBoundaryWeights.w +
+      clampedChladniGradient(m, n, p) * uBoundaryClampedWeight;
+  }
+
+  float clampedCavityEnvelope(float coordinate) {
+    float q = clamp(coordinate, 0.0, 1.0);
+    return 4.0 * q * (1.0 - q);
+  }
+
+  float clampedCavityEnvelopeDerivative(float coordinate) {
+    float q = clamp(coordinate, 0.0, 1.0);
+    return 4.0 * (1.0 - 2.0 * q);
   }
 
   float cavityBasisValue(float modeIndex, float coordinate) {
     float argument = modeIndex * PI * coordinate;
+    float sine = sin(argument);
     return
       cos(argument) * (uBoundaryWeights.x + uBoundaryWeights.z) +
-      sin(argument) * uBoundaryWeights.y;
+      sine * (uBoundaryWeights.y + uBoundaryWeights.w) +
+      sine * clampedCavityEnvelope(coordinate) * uBoundaryClampedWeight;
   }
 
   float cavityBasisDerivative(float modeIndex, float coordinate) {
     float angularScale = modeIndex * PI;
     float argument = angularScale * coordinate;
+    float sine = sin(argument);
+    float cosine = cos(argument);
     return
-      -sin(argument) * angularScale * (uBoundaryWeights.x + uBoundaryWeights.z) +
-      cos(argument) * angularScale * uBoundaryWeights.y;
+      -sine * angularScale * (uBoundaryWeights.x + uBoundaryWeights.z) +
+      cosine * angularScale * (uBoundaryWeights.y + uBoundaryWeights.w) +
+      (
+        cosine * angularScale * clampedCavityEnvelope(coordinate) +
+        sine * clampedCavityEnvelopeDerivative(coordinate)
+      ) * uBoundaryClampedWeight;
   }
 
   void accumulateCavityPermutation(
@@ -720,7 +788,13 @@ const FRAGMENT_SHADER = `
           uNodeWidth *
             0.035 *
             (0.85 + audioPulse * 0.3) *
-            dot(uBoundaryWeights, vec3(1.0, 0.82, 1.08))
+            (
+              uBoundaryWeights.x * 1.0 +
+              uBoundaryWeights.y * 0.82 +
+              uBoundaryWeights.z * 1.08 +
+              uBoundaryWeights.w * 0.92 +
+              uBoundaryClampedWeight * 0.76
+            )
         )
       : max(0.00035, uNodeWidth * 0.055 * (0.82 + audioPulse * 0.34));
     float nodeBand = 1.0 - smoothstep(nodeWidth * 0.32, nodeWidth * 1.35, abs(normalizedField));
@@ -831,7 +905,8 @@ export class ModalFieldRenderer {
       uResolution: { value: new THREE.Vector2(1, 1) },
       uTime: { value: 0 },
       uModeCount: { value: 0 },
-      uBoundaryWeights: { value: new THREE.Vector3(1, 0, 0) },
+      uBoundaryWeights: { value: new THREE.Vector4(1, 0, 0, 0) },
+      uBoundaryClampedWeight: { value: 0 },
       uColorMode: { value: COLOR_MODE_INDEX.chromesthesia },
       uProjectionMode: { value: PROJECTION_MODE_INDEX.screen },
       uSphereFieldMode: { value: SPHERE_FIELD_MODE_INDEX.surface },
@@ -1212,6 +1287,7 @@ export class ModalFieldRenderer {
     this.material.uniforms.uModeCount.value = modes.length;
     setBoundaryWeightsUniform(
       this.material.uniforms.uBoundaryWeights.value,
+      this.material.uniforms.uBoundaryClampedWeight,
       settings.boundaryWeights,
     );
     this.material.uniforms.uColorMode.value = COLOR_MODE_INDEX[settings.colorMode];
@@ -1327,7 +1403,8 @@ function setColorUniform(target: THREE.Color, color: string, fallback: number) {
 }
 
 function setBoundaryWeightsUniform(
-  target: THREE.Vector3,
+  target: THREE.Vector4,
+  clampedUniform: { value: number },
   weights: BoundaryWeights | undefined,
 ) {
   const safeWeights = weights ?? getBoundaryWeights("freePlate");
@@ -1335,7 +1412,9 @@ function setBoundaryWeightsUniform(
     safeWeights.freePlate,
     safeWeights.dirichlet,
     safeWeights.neumann,
+    safeWeights.supported,
   );
+  clampedUniform.value = safeWeights.clamped;
 }
 
 function getBoundaryWeights(boundaryMode: BoundaryMode): BoundaryWeights {
@@ -1343,6 +1422,8 @@ function getBoundaryWeights(boundaryMode: BoundaryMode): BoundaryWeights {
     freePlate: boundaryMode === "freePlate" ? 1 : 0,
     dirichlet: boundaryMode === "dirichlet" ? 1 : 0,
     neumann: boundaryMode === "neumann" ? 1 : 0,
+    clamped: boundaryMode === "clamped" ? 1 : 0,
+    supported: boundaryMode === "supported" ? 1 : 0,
   };
 }
 

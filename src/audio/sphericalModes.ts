@@ -83,7 +83,16 @@ function evaluateBoundaryBasis(
   boundaryMode: BoundaryMode,
 ) {
   const argument = modeIndex * Math.PI * coordinate;
-  return boundaryMode === "dirichlet" ? Math.sin(argument) : Math.cos(argument);
+  if (boundaryMode === "dirichlet" || boundaryMode === "supported") {
+    return Math.sin(argument);
+  }
+
+  if (boundaryMode === "clamped") {
+    const envelope = 4 * coordinate * (1 - coordinate);
+    return Math.sin(argument) * envelope;
+  }
+
+  return Math.cos(argument);
 }
 
 function sortModeTriplet(mode: SphericalMode): SphericalMode {

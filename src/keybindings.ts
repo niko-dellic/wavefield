@@ -7,6 +7,8 @@ export type KeyCommandId =
   | "boundary.freePlate"
   | "boundary.dirichlet"
   | "boundary.neumann"
+  | "boundary.clamped"
+  | "boundary.supported"
   | "template.previous"
   | "template.next"
   | `template.apply.${string}`;
@@ -54,20 +56,32 @@ export const RESERVED_KEY_COMMANDS = [
   },
   {
     id: "boundary.freePlate",
-    label: "Free boundary",
+    label: "Free Plate resonance",
     defaultKey: "Digit1",
     locked: true,
   },
   {
     id: "boundary.dirichlet",
-    label: "Dirichlet boundary",
+    label: "Pinned resonance",
     defaultKey: "Digit2",
     locked: true,
   },
   {
     id: "boundary.neumann",
-    label: "Neumann boundary",
+    label: "Open Edge resonance",
     defaultKey: "Digit3",
+    locked: true,
+  },
+  {
+    id: "boundary.clamped",
+    label: "Clamped resonance",
+    defaultKey: "Digit4",
+    locked: true,
+  },
+  {
+    id: "boundary.supported",
+    label: "Supported resonance",
+    defaultKey: "Digit5",
     locked: true,
   },
   {

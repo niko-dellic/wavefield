@@ -43,7 +43,13 @@ const FALLBACK_CREATED_AT = "1970-01-01T00:00:00.000Z";
 
 const STRING_OPTIONS: Partial<Record<keyof CymaticSettings, readonly string[]>> = {
   projectionMode: ["screen", "sphere"] satisfies ProjectionMode[],
-  boundaryMode: ["freePlate", "dirichlet", "neumann"] satisfies BoundaryMode[],
+  boundaryMode: [
+    "freePlate",
+    "dirichlet",
+    "neumann",
+    "clamped",
+    "supported",
+  ] satisfies BoundaryMode[],
   colorMode: [
     "chromesthesia",
     "mono",

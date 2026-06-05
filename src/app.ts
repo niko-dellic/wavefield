@@ -93,10 +93,42 @@ const TEMPLATE_MODULES = import.meta.glob<unknown>("./templates/*.json", {
 });
 const INITIAL_TEMPLATES = loadWavefieldTemplates(TEMPLATE_MODULES);
 const BOUNDARY_OPTIONS = [
-  { label: "Free", value: "freePlate", shortcut: "1" },
-  { label: "Dir", value: "dirichlet", shortcut: "2" },
-  { label: "Neu", value: "neumann", shortcut: "3" },
-] satisfies Array<{ label: string; value: BoundaryMode; shortcut: string }>;
+  {
+    label: "Free",
+    value: "freePlate",
+    shortcut: "1",
+    title: "Free Plate resonance: antisymmetric Chladni-like plate family.",
+  },
+  {
+    label: "Pinned",
+    value: "dirichlet",
+    shortcut: "2",
+    title: "Pinned resonance: edge-constrained sine family.",
+  },
+  {
+    label: "Open",
+    value: "neumann",
+    shortcut: "3",
+    title: "Open Edge resonance: edge-bright cosine family.",
+  },
+  {
+    label: "Clamped",
+    value: "clamped",
+    shortcut: "4",
+    title: "Clamped resonance: edge-damped constrained family.",
+  },
+  {
+    label: "Supported",
+    value: "supported",
+    shortcut: "5",
+    title: "Supported resonance: zero-edge plate family with richer cross-mode symmetry.",
+  },
+] satisfies Array<{
+  label: string;
+  value: BoundaryMode;
+  shortcut: string;
+  title: string;
+}>;
 const TRANSITION_EASING_OPTIONS = [
   { label: "Linear", value: "linear" },
   { label: "Ease in", value: "easeIn" },
@@ -335,10 +367,10 @@ export class WavefieldApp {
             <span class="brand-mark"></span>
             <span>Wavefield</span>
           </div>
-          <div class="boundary-radio-group" role="radiogroup" aria-label="Boundary type">
+          <div class="boundary-radio-group" role="radiogroup" aria-label="Resonance style">
             ${BOUNDARY_OPTIONS.map(
               (option) => `
-                <label class="boundary-radio-option" title="${formatBoundaryMode(option.value)} boundary (${option.shortcut})">
+                <label class="boundary-radio-option" title="${option.title} (${option.shortcut})">
                   <input
                     class="boundary-radio-input"
                     type="radio"
@@ -352,8 +384,8 @@ export class WavefieldApp {
               `,
             ).join("")}
           </div>
-          <div class="boundary-morph-controls" aria-label="Boundary morph controls">
-            <label class="boundary-morph-toggle" title="Lerp direct boundary changes">
+          <div class="boundary-morph-controls" aria-label="Resonance morph controls">
+            <label class="boundary-morph-toggle" title="Lerp direct resonance changes">
               <input
                 class="boundary-morph-input"
                 type="checkbox"
@@ -362,7 +394,7 @@ export class WavefieldApp {
               <span>Morph</span>
             </label>
           </div>
-          <div class="boundary-morph-pane-host" aria-label="Boundary morph settings" hidden></div>
+          <div class="boundary-morph-pane-host" aria-label="Resonance morph settings" hidden></div>
           <button
             class="settings-toggle"
             type="button"
@@ -1576,6 +1608,16 @@ export class WavefieldApp {
       return;
     }
 
+    if (commandId === "boundary.clamped") {
+      this.setBoundaryMode("clamped");
+      return;
+    }
+
+    if (commandId === "boundary.supported") {
+      this.setBoundaryMode("supported");
+      return;
+    }
+
     if (commandId === "template.previous") {
       this.cycleTemplate(-1);
       return;
@@ -1844,7 +1886,7 @@ export class WavefieldApp {
       this.effectiveSettings = sourceSettings;
       this.syncBackgroundColor(this.effectiveSettings);
     }
-    this.setStatus(`Boundary: ${formatBoundaryMode(boundaryMode)}`);
+    this.setStatus(`Resonance: ${formatBoundaryMode(boundaryMode)}`);
   }
 
   private async setDriveMode(driveMode: DriveMode, announce = true) {

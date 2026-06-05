@@ -20,11 +20,12 @@ import {
 import { DEFAULT_SETTINGS } from "../src/config/settings.ts";
 import {
   cloneTemplateSettings,
+  coerceCymaticSettings,
   createSettingsFromTemplate,
   getCycledTemplateIndex,
   type WavefieldTemplate,
 } from "../src/templateSettings.ts";
-import type { CymaticSettings } from "../src/types.ts";
+import type { BoundaryMode, CymaticSettings } from "../src/types.ts";
 
 const TEMPLATES: WavefieldTemplate[] = [
   createTemplate("alpha", "Alpha"),
@@ -50,6 +51,8 @@ test("boundary hotkeys are reserved defaults", () => {
   assert.equal(getCommandForKey(commands, bindings, "Digit1")?.id, "boundary.freePlate");
   assert.equal(getCommandForKey(commands, bindings, "Digit2")?.id, "boundary.dirichlet");
   assert.equal(getCommandForKey(commands, bindings, "Digit3")?.id, "boundary.neumann");
+  assert.equal(getCommandForKey(commands, bindings, "Digit4")?.id, "boundary.clamped");
+  assert.equal(getCommandForKey(commands, bindings, "Digit5")?.id, "boundary.supported");
 
   const commandId = createTemplateApplyCommandId("alpha");
   const assignment = assignKeyBinding(commands, bindings, commandId, "Digit1");
@@ -63,12 +66,12 @@ test("boundary hotkeys are reserved defaults", () => {
 test("keybind assignment resolves template command by key", () => {
   const commands = buildKeyCommands(TEMPLATES);
   const commandId = createTemplateApplyCommandId("alpha");
-  const assignment = assignKeyBinding(commands, {}, commandId, "Digit4");
+  const assignment = assignKeyBinding(commands, {}, commandId, "KeyG");
 
   assert.equal(assignment.ok, true);
   if (assignment.ok) {
     assert.equal(
-      getCommandForKey(commands, assignment.bindings, "Digit4")?.id,
+      getCommandForKey(commands, assignment.bindings, "KeyG")?.id,
       commandId,
     );
   }
@@ -159,6 +162,24 @@ test("template application preserves current drive mode settings", () => {
   assert.equal(applied.cymaticBrightness, 2);
 });
 
+test("template settings accept all resonance styles", () => {
+  const modes = [
+    "freePlate",
+    "dirichlet",
+    "neumann",
+    "clamped",
+    "supported",
+  ] satisfies BoundaryMode[];
+
+  for (const boundaryMode of modes) {
+    const settings = coerceCymaticSettings({
+      ...DEFAULT_SETTINGS,
+      boundaryMode,
+    });
+    assert.equal(settings.boundaryMode, boundaryMode);
+  }
+});
+
 test("boundary transition config preserves enabled and coerces timing", () => {
   const config = coerceBoundaryTransitionConfig({
     enabled: false,
@@ -190,25 +211,49 @@ test("template transition interpolates boundary and post-effect amounts", () => 
   assert.equal(interpolated.postBloomEnabled, true);
 });
 
+test("all resonance styles produce one-hot boundary weights", () => {
+  const modes = [
+    "freePlate",
+    "dirichlet",
+    "neumann",
+    "clamped",
+    "supported",
+  ] satisfies BoundaryMode[];
+
+  for (const boundaryMode of modes) {
+    const effective = createEffectiveCymaticSettings({
+      ...DEFAULT_SETTINGS,
+      boundaryMode,
+    });
+
+    for (const mode of modes) {
+      assert.equal(
+        effective.boundaryWeights[mode],
+        mode === boundaryMode ? 1 : 0,
+      );
+    }
+  }
+});
+
 test("boundary retargeting starts from current effective weights", () => {
   const from = createEffectiveCymaticSettings({
     ...DEFAULT_SETTINGS,
     boundaryMode: "freePlate",
   });
-  const toDirichlet = {
+  const toPinned = {
     ...DEFAULT_SETTINGS,
     boundaryMode: "dirichlet",
   } satisfies CymaticSettings;
-  const firstTransition = createTemplateTransition(from, toDirichlet, {
+  const firstTransition = createTemplateTransition(from, toPinned, {
     durationSeconds: 1,
     easing: "linear",
   });
   const mid = advanceTemplateTransition(firstTransition, 0.5).settings;
-  const toNeumann = {
+  const toOpenEdge = {
     ...DEFAULT_SETTINGS,
     boundaryMode: "neumann",
   } satisfies CymaticSettings;
-  const retargetedTransition = createTemplateTransition(mid, toNeumann, {
+  const retargetedTransition = createTemplateTransition(mid, toOpenEdge, {
     durationSeconds: 1,
     easing: "linear",
   });

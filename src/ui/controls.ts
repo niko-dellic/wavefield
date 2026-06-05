@@ -65,7 +65,7 @@ for (const [label, key] of [
   ["mono", "monoColor"],
   ["cold", "thermalColdColor"],
   ["hot", "thermalHotColor"],
-  ["boundary", "boundaryMode"],
+  ["resonance", "boundaryMode"],
   ["aspect", "screenAspectMode"],
   ["field", "sphereFieldMode"],
   ["mapping", "sphereProjectionType"],
@@ -288,11 +288,13 @@ export function createControls(
     }
 
     engine.addBinding(settings, "boundaryMode", {
-      label: "boundary",
+      label: "resonance",
       options: {
-        "Free plate": "freePlate",
-        Dirichlet: "dirichlet",
-        Neumann: "neumann",
+        "Free Plate": "freePlate",
+        Pinned: "dirichlet",
+        "Open Edge": "neumann",
+        Clamped: "clamped",
+        Supported: "supported",
       },
     });
     if (settings.projectionMode === "screen") {

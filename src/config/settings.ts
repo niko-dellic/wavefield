@@ -474,7 +474,7 @@ export const SETTING_DESCRIPTIONS: Partial<
   thermalHotColor:
     "Hot-side color used by Thermal phase when the field phase is high.",
   boundaryMode:
-    "Plate edge condition that defines the figure family: free plate, Dirichlet (clamped), or Neumann.",
+    "Resonance style that chooses the visual field family: Free Plate, Pinned, Open Edge, Clamped, or Supported.",
   screenAspectMode:
     "Circle keeps the figure square/centered regardless of window shape; Fit stretches it to the viewport.",
   monitorSignal:

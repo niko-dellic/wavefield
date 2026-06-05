@@ -40,6 +40,8 @@ const BOUNDARY_MODES = [
   "freePlate",
   "dirichlet",
   "neumann",
+  "clamped",
+  "supported",
 ] satisfies BoundaryMode[];
 
 const POST_EFFECT_IDS = [
@@ -247,6 +249,8 @@ function getBoundaryWeights(boundaryMode: BoundaryMode): BoundaryWeights {
     freePlate: boundaryMode === "freePlate" ? 1 : 0,
     dirichlet: boundaryMode === "dirichlet" ? 1 : 0,
     neumann: boundaryMode === "neumann" ? 1 : 0,
+    clamped: boundaryMode === "clamped" ? 1 : 0,
+    supported: boundaryMode === "supported" ? 1 : 0,
   };
 }
 
@@ -275,6 +279,8 @@ function interpolateBoundaryWeights(
     freePlate: lerp(from.freePlate, to.freePlate, progress),
     dirichlet: lerp(from.dirichlet, to.dirichlet, progress),
     neumann: lerp(from.neumann, to.neumann, progress),
+    clamped: lerp(from.clamped, to.clamped, progress),
+    supported: lerp(from.supported, to.supported, progress),
   };
 }
 

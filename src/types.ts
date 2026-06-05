@@ -1,6 +1,11 @@
 export type FrequencyBand = "low" | "mid" | "high";
 export type ProjectionMode = "screen" | "sphere";
-export type BoundaryMode = "freePlate" | "dirichlet" | "neumann";
+export type BoundaryMode =
+  | "freePlate"
+  | "dirichlet"
+  | "neumann"
+  | "clamped"
+  | "supported";
 export type ColorMode =
   | "chromesthesia"
   | "mono"
