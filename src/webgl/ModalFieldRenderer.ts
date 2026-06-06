@@ -54,6 +54,14 @@ const SPHERE_FIELD_MODE_INDEX: Record<SphereFieldMode, number> = {
   volume: 1,
 };
 
+const POST_EFFECT_ENABLED_KEYS = {
+  bloom: "postBloomEnabled",
+  pixelation: "postPixelationEnabled",
+  fisheye: "postFisheyeEnabled",
+  alphaDecay: "postAlphaDecayEnabled",
+  terminal: "terminalContourEnabled",
+} satisfies Record<PostEffectId, keyof EffectiveCymaticSettings>;
+
 const SPHERE_ROTATION_DAMPING_FACTOR = 0.012;
 const SPHERE_ZOOM_DAMPING_FACTOR = 1;
 
@@ -1230,12 +1238,21 @@ export class ModalFieldRenderer {
 
   private getEnabledPostEffects(settings: EffectiveCymaticSettings): PostEffectId[] {
     const amounts = getPostEffectAmounts(settings);
-    if (!settings.postProcessingEnabled && !hasActivePostEffectAmount(amounts)) {
+    const hasEnabledEffect = settings.postEffectOrder.some(
+      (effectId) => isPostEffectEnabled(settings, effectId),
+    );
+    if (
+      !settings.postProcessingEnabled &&
+      !hasEnabledEffect &&
+      !hasActivePostEffectAmount(amounts)
+    ) {
       return [];
     }
 
     return settings.postEffectOrder.filter((effectId) => {
-      return amounts[effectId] > 0.001;
+      return (
+        isPostEffectEnabled(settings, effectId) || amounts[effectId] > 0.001
+      );
     });
   }
 
@@ -1447,6 +1464,15 @@ function getPostEffectAmount(
   effectId: PostEffectId,
 ) {
   return getPostEffectAmounts(settings)[effectId];
+}
+
+function isPostEffectEnabled(
+  settings: EffectiveCymaticSettings,
+  effectId: PostEffectId,
+) {
+  return Boolean(
+    settings.postProcessingEnabled && settings[POST_EFFECT_ENABLED_KEYS[effectId]],
+  );
 }
 
 function hasActivePostEffectAmount(amounts: PostEffectAmounts) {

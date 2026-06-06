@@ -2,3 +2,4 @@
 node_modules
 dist
 src/fixtures/audio/black_and_blues.mp3
+.DS_Store

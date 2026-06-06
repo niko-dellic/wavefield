@@ -299,16 +299,18 @@ test("boundary transition config preserves enabled and coerces timing", () => {
   assert.equal(config.easing, "easeOut");
 });
 
-test("template transition interpolates boundary and post-effect amounts", () => {
+test("template transition interpolates boundary and activates participating post effects", () => {
   const from = createEffectiveCymaticSettings({
     ...DEFAULT_SETTINGS,
     boundaryMode: "freePlate",
     postBloomEnabled: false,
+    postBloomIntensity: 0.9,
   });
   const to = createEffectiveCymaticSettings({
     ...DEFAULT_SETTINGS,
     boundaryMode: "dirichlet",
     postBloomEnabled: true,
+    postBloomIntensity: 0.8,
   });
   const interpolated = interpolateEffectiveSettings(from, to, 0.5);
 
@@ -316,6 +318,155 @@ test("template transition interpolates boundary and post-effect amounts", () => 
   assert.equal(interpolated.boundaryWeights.dirichlet, 0.5);
   assert.equal(interpolated.postEffectAmounts.bloom, 0.5);
   assert.equal(interpolated.postBloomEnabled, true);
+  assert.equal(interpolated.postBloomIntensity, 0.4);
+});
+
+test("template transition ramps enabled post effects down to neutral values", () => {
+  const from = createEffectiveCymaticSettings({
+    ...DEFAULT_SETTINGS,
+    postBloomEnabled: true,
+    postBloomIntensity: 0.8,
+    postPixelationEnabled: true,
+    postPixelSize: 7,
+    postFisheyeEnabled: true,
+    postFisheyeStrength: 0.8,
+    postAlphaDecayEnabled: true,
+    postAlphaDecayFrames: 80,
+    terminalContourEnabled: true,
+    terminalCellSize: 10,
+    terminalContourLevels: 8,
+    terminalContourStrength: 1,
+    terminalContourThreshold: 0.1,
+  });
+  const to = createEffectiveCymaticSettings({
+    ...DEFAULT_SETTINGS,
+    postBloomEnabled: false,
+    postBloomIntensity: 0.4,
+    postPixelationEnabled: false,
+    postPixelSize: 5,
+    postFisheyeEnabled: false,
+    postFisheyeStrength: 0.2,
+    postAlphaDecayEnabled: false,
+    postAlphaDecayFrames: 24,
+    terminalContourEnabled: false,
+    terminalCellSize: 12,
+    terminalContourLevels: 6,
+    terminalContourStrength: 0.5,
+    terminalContourThreshold: 0.2,
+  });
+  const halfway = interpolateEffectiveSettings(from, to, 0.5);
+  const complete = interpolateEffectiveSettings(from, to, 1);
+
+  assert.equal(halfway.postBloomEnabled, true);
+  assert.equal(halfway.postPixelationEnabled, true);
+  assert.equal(halfway.postFisheyeEnabled, true);
+  assert.equal(halfway.postAlphaDecayEnabled, true);
+  assert.equal(halfway.terminalContourEnabled, true);
+  assert.equal(halfway.postBloomIntensity, 0.4);
+  assert.equal(halfway.postPixelSize, 4);
+  assert.equal(halfway.postFisheyeStrength, 0.4);
+  assert.equal(halfway.postAlphaDecayFrames, 40);
+  assert.equal(halfway.terminalCellSize, 5);
+  assert.equal(halfway.terminalContourLevels, 4);
+  assert.equal(halfway.terminalContourStrength, 0.5);
+  assert.equal(halfway.terminalContourThreshold, 0.05);
+
+  assert.equal(complete.postBloomEnabled, false);
+  assert.equal(complete.postPixelationEnabled, false);
+  assert.equal(complete.postFisheyeEnabled, false);
+  assert.equal(complete.postAlphaDecayEnabled, false);
+  assert.equal(complete.terminalContourEnabled, false);
+  assert.equal(complete.postBloomIntensity, 0);
+  assert.equal(complete.postPixelSize, 1);
+  assert.equal(complete.postFisheyeStrength, 0);
+  assert.equal(complete.postAlphaDecayFrames, 0);
+  assert.equal(complete.terminalCellSize, 0);
+  assert.equal(complete.terminalContourLevels, 0);
+  assert.equal(complete.terminalContourStrength, 0);
+  assert.equal(complete.terminalContourThreshold, 0);
+});
+
+test("template transition ramps disabled post effects up from neutral values", () => {
+  const from = createEffectiveCymaticSettings({
+    ...DEFAULT_SETTINGS,
+    postBloomEnabled: false,
+    postBloomIntensity: 0.9,
+    postPixelationEnabled: false,
+    postPixelSize: 9,
+    postFisheyeEnabled: false,
+    postFisheyeStrength: 0.9,
+    postAlphaDecayEnabled: false,
+    postAlphaDecayFrames: 90,
+    terminalContourEnabled: false,
+    terminalCellSize: 14,
+    terminalContourLevels: 10,
+    terminalContourStrength: 1,
+    terminalContourThreshold: 0.2,
+  });
+  const to = createEffectiveCymaticSettings({
+    ...DEFAULT_SETTINGS,
+    postBloomEnabled: true,
+    postBloomIntensity: 0.8,
+    postPixelationEnabled: true,
+    postPixelSize: 7,
+    postFisheyeEnabled: true,
+    postFisheyeStrength: 0.8,
+    postAlphaDecayEnabled: true,
+    postAlphaDecayFrames: 80,
+    terminalContourEnabled: true,
+    terminalCellSize: 10,
+    terminalContourLevels: 8,
+    terminalContourStrength: 1,
+    terminalContourThreshold: 0.1,
+  });
+  const start = interpolateEffectiveSettings(from, to, 0);
+  const halfway = interpolateEffectiveSettings(from, to, 0.5);
+
+  assert.equal(start.postBloomEnabled, true);
+  assert.equal(start.postPixelationEnabled, true);
+  assert.equal(start.postFisheyeEnabled, true);
+  assert.equal(start.postAlphaDecayEnabled, true);
+  assert.equal(start.terminalContourEnabled, true);
+  assert.equal(start.postBloomIntensity, 0);
+  assert.equal(start.postPixelSize, 1);
+  assert.equal(start.postFisheyeStrength, 0);
+  assert.equal(start.postAlphaDecayFrames, 0);
+  assert.equal(start.terminalCellSize, 0);
+  assert.equal(start.terminalContourLevels, 0);
+  assert.equal(start.terminalContourStrength, 0);
+  assert.equal(start.terminalContourThreshold, 0);
+
+  assert.equal(halfway.postBloomIntensity, 0.4);
+  assert.equal(halfway.postPixelSize, 4);
+  assert.equal(halfway.postFisheyeStrength, 0.4);
+  assert.equal(halfway.postAlphaDecayFrames, 40);
+  assert.equal(halfway.terminalCellSize, 5);
+  assert.equal(halfway.terminalContourLevels, 4);
+  assert.equal(halfway.terminalContourStrength, 0.5);
+  assert.equal(halfway.terminalContourThreshold, 0.05);
+});
+
+test("template transition naturally lerps post effects that stay enabled", () => {
+  const from = createEffectiveCymaticSettings({
+    ...DEFAULT_SETTINGS,
+    postBloomEnabled: true,
+    postBloomIntensity: 0.2,
+    postPixelationEnabled: true,
+    postPixelSize: 4,
+  });
+  const to = createEffectiveCymaticSettings({
+    ...DEFAULT_SETTINGS,
+    postBloomEnabled: true,
+    postBloomIntensity: 0.8,
+    postPixelationEnabled: true,
+    postPixelSize: 8,
+  });
+  const halfway = interpolateEffectiveSettings(from, to, 0.5);
+
+  assert.equal(halfway.postBloomEnabled, true);
+  assert.equal(halfway.postPixelationEnabled, true);
+  assert.equal(halfway.postBloomIntensity, 0.5);
+  assert.equal(halfway.postPixelSize, 6);
 });
 
 test("all resonance styles produce one-hot boundary weights", () => {

@@ -77,6 +77,24 @@ const POST_EFFECT_ENABLED_KEYS = {
   terminal: "terminalContourEnabled",
 } satisfies Record<PostEffectId, keyof CymaticSettings>;
 
+type PostEffectOffValueConfig = {
+  effectId: PostEffectId;
+  value: number;
+};
+
+const POST_EFFECT_OFF_VALUES: Partial<
+  Record<keyof CymaticSettings, PostEffectOffValueConfig>
+> = {
+  postBloomIntensity: { effectId: "bloom", value: 0 },
+  postPixelSize: { effectId: "pixelation", value: 1 },
+  postFisheyeStrength: { effectId: "fisheye", value: 0 },
+  postAlphaDecayFrames: { effectId: "alphaDecay", value: 0 },
+  terminalCellSize: { effectId: "terminal", value: 0 },
+  terminalContourLevels: { effectId: "terminal", value: 0 },
+  terminalContourStrength: { effectId: "terminal", value: 0 },
+  terminalContourThreshold: { effectId: "terminal", value: 0 },
+};
+
 export function createEffectiveCymaticSettings(
   settings: CymaticSettings,
 ): EffectiveCymaticSettings {
@@ -169,7 +187,14 @@ export function interpolateEffectiveSettings(
     const fromValue = from[key];
     const toValue = to[key];
     if (typeof fromValue === "number" && typeof toValue === "number") {
-      const value = lerp(fromValue, toValue, t);
+      const endpoint = getPostEffectNumericEndpoint(
+        key,
+        from,
+        to,
+        fromValue,
+        toValue,
+      );
+      const value = lerp(endpoint.fromValue, endpoint.toValue, t);
       (result[key] as number) = INTEGER_SETTING_KEYS.has(key)
         ? Math.round(value)
         : value;
@@ -201,7 +226,7 @@ export function interpolateEffectiveSettings(
     to.postEffectAmounts,
     t,
   );
-  applyPostEffectEnablement(result, isComplete, to);
+  applyPostEffectEnablement(result, isComplete, from, to);
   return result;
 }
 
@@ -314,22 +339,45 @@ function interpolatePostEffectAmounts(
   };
 }
 
+function getPostEffectNumericEndpoint(
+  key: keyof CymaticSettings,
+  from: EffectiveCymaticSettings,
+  to: EffectiveCymaticSettings,
+  fromValue: number,
+  toValue: number,
+) {
+  const config = POST_EFFECT_OFF_VALUES[key];
+  if (!config) {
+    return { fromValue, toValue };
+  }
+
+  return {
+    fromValue: isPostEffectEnabled(from, config.effectId)
+      ? fromValue
+      : config.value,
+    toValue: isPostEffectEnabled(to, config.effectId) ? toValue : config.value,
+  };
+}
+
 function applyPostEffectEnablement(
   settings: EffectiveCymaticSettings,
   isComplete: boolean,
+  from: EffectiveCymaticSettings,
   target: EffectiveCymaticSettings,
 ) {
-  const hasActiveEffect = POST_EFFECT_IDS.some(
-    (effectId) => settings.postEffectAmounts[effectId] > 0.001,
+  const participatingEffects = POST_EFFECT_IDS.filter(
+    (effectId) =>
+      isPostEffectEnabled(from, effectId) ||
+      isPostEffectEnabled(target, effectId),
   );
   settings.postProcessingEnabled = isComplete
     ? target.postProcessingEnabled
-    : hasActiveEffect;
+    : participatingEffects.length > 0;
 
   for (const effectId of POST_EFFECT_IDS) {
     settings[POST_EFFECT_ENABLED_KEYS[effectId]] = isComplete
       ? target[POST_EFFECT_ENABLED_KEYS[effectId]]
-      : settings.postEffectAmounts[effectId] > 0.001;
+      : participatingEffects.includes(effectId);
   }
 }
 
