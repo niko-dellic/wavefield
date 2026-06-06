@@ -1,0 +1,163 @@
+<main class="wavefield">
+  <canvas class="wavefield-canvas" aria-label="Wavefield cymatic visualization"></canvas>
+  <section class="topbar" aria-label="Wavefield controls">
+    <button class="fullscreen-toggle" type="button" aria-label="Fullscreen" title="Fullscreen">
+      <i class="ph ph-corners-out" aria-hidden="true"></i>
+    </button>
+    <button
+      class="about-toggle"
+      type="button"
+      aria-label="About Wavefield"
+      aria-controls="wavefield-about-modal"
+      aria-expanded="false"
+      title="About"
+    >
+      <i class="ph ph-info" aria-hidden="true"></i>
+    </button>
+    <div class="brand">
+      <span class="brand-mark"></span>
+      <span>Wavefield</span>
+    </div>
+    <div class="boundary-radio-group" role="radiogroup" aria-label="Resonance style">
+      {{BOUNDARY_OPTIONS}}
+    </div>
+    <button
+      class="settings-toggle"
+      type="button"
+      aria-label="Open settings"
+      aria-controls="wavefield-settings-modal"
+      aria-expanded="false"
+      title="Settings"
+    >
+      <i class="ph ph-sliders-horizontal" aria-hidden="true"></i>
+    </button>
+  </section>
+  <section
+    class="settings-modal"
+    id="wavefield-settings-modal"
+    aria-hidden="true"
+    hidden
+  >
+    <aside
+      class="settings-panel"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="wavefield-settings-title"
+      tabindex="-1"
+    >
+      <header class="settings-panel-header">
+        <h2 id="wavefield-settings-title">Settings</h2>
+        <button class="settings-close" type="button" aria-label="Close settings" title="Close settings">
+          <i class="ph ph-x" aria-hidden="true"></i>
+        </button>
+      </header>
+      <div class="mobile-drive-host" aria-label="Drive settings"></div>
+      <div class="pane-host" aria-label="Wavefield shader settings"></div>
+    </aside>
+  </section>
+  <section
+    class="about-modal"
+    id="wavefield-about-modal"
+    aria-hidden="true"
+    hidden
+  >
+    <aside
+      class="about-panel"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="wavefield-about-title"
+      tabindex="-1"
+    >
+      <header class="about-panel-header">
+        <h2 id="wavefield-about-title">About Wavefield</h2>
+        <button class="about-close" type="button" aria-label="Close about" title="Close about">
+          <i class="ph ph-x" aria-hidden="true"></i>
+        </button>
+      </header>
+      <div class="about-body">
+        <img
+          class="about-image"
+          src="/wavefield.png"
+          alt="Pixelated red cymatic wavefield pattern"
+        />
+        <p class="about-copy">
+          Wavefield explores the visible patterns that emerge when vibration organizes matter into
+          standing waves, nodal lines, and shifting fields of resonance. While not true to physics, Wavefield takes inspiration from cymatics, the study of visible sound and vibration.
+        </p>
+        <p class="about-credit">Made by Niko in 2026.</p>
+        <a
+          class="about-link"
+          href="https://github.com/niko-dellic"
+          target="_blank"
+          rel="noreferrer"
+        >
+          <i class="ph ph-github-logo" aria-hidden="true"></i>
+          <span>github.com/niko-dellic</span>
+        </a>
+      </div>
+    </aside>
+  </section>
+  <section class="diagnostics-strip" aria-label="Wavefield diagnostics">
+    <div class="desktop-drive-host">
+      <details class="drive-pane">
+        <summary class="drive-pane-summary">
+          <span class="drive-pane-title">
+            <i class="ph ph-wave-sine" aria-hidden="true"></i>
+            <span>Drive</span>
+          </span>
+          <span class="drive-summary-value">Manual</span>
+          <i class="ph ph-caret-down drive-pane-caret" aria-hidden="true"></i>
+        </summary>
+        <div class="drive-pane-body">
+          <label class="drive-mode-picker">
+            <span>Mode</span>
+            <select class="drive-mode-select" aria-label="Drive mode">
+              <option value="audio">Audio</option>
+              <option value="manual" selected>Manual</option>
+              <option value="live">Live</option>
+            </select>
+          </label>
+          <div class="source-picker" hidden>
+            <button class="source-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">
+              <i class="ph ph-music-notes" aria-hidden="true"></i>
+              <span class="selected-source">Choose audio</span>
+              <i class="ph ph-caret-down" aria-hidden="true"></i>
+            </button>
+            <div class="source-menu" role="listbox" hidden>
+              {{FIXTURE_OPTIONS}}
+              <button class="source-option upload-option" type="button" role="option">
+                <i class="ph ph-upload-simple" aria-hidden="true"></i>
+                <span>Upload audio...</span>
+              </button>
+            </div>
+            <input class="audio-file" type="file" accept="audio/*" />
+          </div>
+          <div class="mode-settings-host" aria-label="Drive mode settings" hidden></div>
+        </div>
+      </details>
+    </div>
+  </section>
+  <section class="transport" aria-label="Audio transport">
+    <button class="play-toggle" type="button" aria-label="Play" title="Play">
+      <i class="ph ph-play" aria-hidden="true"></i>
+    </button>
+    <div class="volume-control">
+      <button class="volume-toggle" type="button" aria-label="Mute" title="Mute">
+        <i class="ph ph-speaker-high" aria-hidden="true"></i>
+      </button>
+      <div class="volume-popover">
+        <input
+          class="volume-slider"
+          type="range"
+          min="0"
+          max="1"
+          step="0.01"
+          value="1"
+          aria-label="Volume"
+          aria-orientation="vertical"
+        />
+      </div>
+    </div>
+    <div class="waveform"></div>
+  </section>
+</main>
