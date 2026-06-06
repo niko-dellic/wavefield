@@ -331,8 +331,9 @@ const FRAGMENT_SHADER = `
     float radius = length(centered);
     float angle = atan(centered.y, centered.x);
     float arms = max(2.0, floor(mod(m + n, 6.0) + 2.0));
+    float counterArms = arms + 1.0;
     float twist = arms * angle + radius * PI * (m * 0.85 + n * 0.35);
-    float counterTwist = radius * PI * (n * 0.72 + 1.0) - arms * angle * 0.68;
+    float counterTwist = radius * PI * (n * 0.72 + 1.0) - counterArms * angle;
     float motion = uTime * (0.08 + uDrift * 0.18 + uFeatureSignals.z * 0.08);
     float edge = 1.0 - smoothstep(1.0, 1.34, radius);
     return sin(twist + motion) * cos(counterTwist - motion * 0.72) * edge;
