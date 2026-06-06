@@ -121,7 +121,8 @@ const BOUNDARY_OPTIONS = [
     label: "Supported",
     value: "supported",
     shortcut: "5",
-    title: "Supported resonance: zero-edge plate family with richer cross-mode symmetry.",
+    title:
+      "Supported resonance: zero-edge plate family with richer cross-mode symmetry.",
   },
 ] satisfies Array<{
   label: string;
@@ -167,6 +168,10 @@ export class WavefieldApp {
   private readonly sourcePicker: HTMLElement;
   private readonly selectedSource: HTMLElement;
   private readonly fullscreenButton: HTMLButtonElement;
+  private readonly aboutButton: HTMLButtonElement;
+  private readonly aboutModal: HTMLElement;
+  private readonly aboutPanel: HTMLElement;
+  private readonly aboutCloseButton: HTMLButtonElement;
   private readonly settingsButton: HTMLButtonElement;
   private readonly boundaryInputs: HTMLInputElement[];
   private readonly boundaryMorphInput: HTMLInputElement;
@@ -182,13 +187,17 @@ export class WavefieldApp {
   private readonly modeSettingsHost: HTMLElement;
   private readonly transport: HTMLElement;
   private readonly guiHost: HTMLElement;
-  private readonly mobileSettingsMedia = window.matchMedia(MOBILE_SETTINGS_MEDIA);
+  private readonly mobileSettingsMedia = window.matchMedia(
+    MOBILE_SETTINGS_MEDIA,
+  );
   private modeSettingsPane: Pane | null = null;
   private modeSettingsLayoutKey = "";
   private boundaryMorphPane: Pane | null = null;
+  private isAboutOpen = false;
   private isSettingsOpen = false;
   private isMobileSettings = false;
   private isFullscreenUiVisible = false;
+  private lastAboutTrigger: HTMLElement | null = null;
   private lastSettingsTrigger: HTMLElement | null = null;
   private analysis: AudioAnalysis | null = null;
   private animationFrame = 0;
@@ -240,6 +249,10 @@ export class WavefieldApp {
     this.sourcePicker = this.query<HTMLElement>(".source-picker");
     this.selectedSource = this.query<HTMLElement>(".selected-source");
     this.fullscreenButton = this.query<HTMLButtonElement>(".fullscreen-toggle");
+    this.aboutButton = this.query<HTMLButtonElement>(".about-toggle");
+    this.aboutModal = this.query<HTMLElement>(".about-modal");
+    this.aboutPanel = this.query<HTMLElement>(".about-panel");
+    this.aboutCloseButton = this.query<HTMLButtonElement>(".about-close");
     this.settingsButton = this.query<HTMLButtonElement>(".settings-toggle");
     this.boundaryInputs = Array.from(
       this.root.querySelectorAll<HTMLInputElement>(".boundary-radio-input"),
@@ -324,19 +337,46 @@ export class WavefieldApp {
   dispose() {
     cancelAnimationFrame(this.animationFrame);
     this.canvas.removeEventListener("wheel", this.handleCanvasWheel);
-    this.canvas.removeEventListener("pointerdown", this.handleCanvasPointerDown);
-    this.canvas.removeEventListener("pointermove", this.handleCanvasPointerMove);
+    this.canvas.removeEventListener(
+      "pointerdown",
+      this.handleCanvasPointerDown,
+    );
+    this.canvas.removeEventListener(
+      "pointermove",
+      this.handleCanvasPointerMove,
+    );
     this.canvas.removeEventListener("pointerup", this.handleCanvasPointerUp);
-    this.canvas.removeEventListener("pointercancel", this.handleCanvasPointerUp);
+    this.canvas.removeEventListener(
+      "pointercancel",
+      this.handleCanvasPointerUp,
+    );
     this.canvas.removeEventListener("click", this.handleCanvasClick);
-    this.canvas.removeEventListener("contextmenu", this.handleCanvasContextMenu);
+    this.canvas.removeEventListener(
+      "contextmenu",
+      this.handleCanvasContextMenu,
+    );
     window.removeEventListener("resize", this.resize);
-    document.removeEventListener("mousemove", this.handleScreenPointerLockedMouseMove);
-    document.removeEventListener("mouseup", this.handleScreenPointerLockedMouseUp);
+    document.removeEventListener(
+      "mousemove",
+      this.handleScreenPointerLockedMouseMove,
+    );
+    document.removeEventListener(
+      "mouseup",
+      this.handleScreenPointerLockedMouseUp,
+    );
     document.removeEventListener("keydown", this.handleKeyDown, true);
-    document.removeEventListener("fullscreenchange", this.handleFullscreenChange);
-    document.removeEventListener("pointerlockchange", this.handlePointerLockChange);
-    document.removeEventListener("pointerlockerror", this.handlePointerLockError);
+    document.removeEventListener(
+      "fullscreenchange",
+      this.handleFullscreenChange,
+    );
+    document.removeEventListener(
+      "pointerlockchange",
+      this.handlePointerLockChange,
+    );
+    document.removeEventListener(
+      "pointerlockerror",
+      this.handlePointerLockError,
+    );
     this.releaseScreenPointerLock();
     this.controls.dispose();
     this.disposeBoundaryMorphPane();
@@ -362,6 +402,16 @@ export class WavefieldApp {
         <section class="topbar" aria-label="Wavefield controls">
           <button class="fullscreen-toggle" type="button" aria-label="Fullscreen" title="Fullscreen">
             <i class="ph ph-corners-out" aria-hidden="true"></i>
+          </button>
+          <button
+            class="about-toggle"
+            type="button"
+            aria-label="About Wavefield"
+            aria-controls="wavefield-about-modal"
+            aria-expanded="false"
+            title="About"
+          >
+            <i class="ph ph-info" aria-hidden="true"></i>
           </button>
           <div class="brand">
             <span class="brand-mark"></span>
@@ -427,6 +477,43 @@ export class WavefieldApp {
             </header>
             <div class="mobile-drive-host" aria-label="Drive settings"></div>
             <div class="pane-host" aria-label="Wavefield shader settings"></div>
+          </aside>
+        </section>
+        <section
+          class="about-modal"
+          id="wavefield-about-modal"
+          aria-hidden="true"
+          hidden
+        >
+          <aside
+            class="about-panel"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="wavefield-about-title"
+            tabindex="-1"
+          >
+            <header class="about-panel-header">
+              <h2 id="wavefield-about-title">About Wavefield</h2>
+              <button class="about-close" type="button" aria-label="Close about" title="Close about">
+                <i class="ph ph-x" aria-hidden="true"></i>
+              </button>
+            </header>
+            <div class="about-body">
+              <p class="about-copy">
+                Wavefield explores the visible patterns that emerge when vibration organizes matter into
+                standing waves, nodal lines, and shifting fields of resonance. While not true to physics, Wavefield takes inspiration from cymatics, the study of visible sound and vibration.
+              </p>
+              <p class="about-credit">Made by Niko in 2026.</p>
+              <a
+                class="about-link"
+                href="https://github.com/niko-dellic"
+                target="_blank"
+                rel="noreferrer"
+              >
+                <i class="ph ph-github-logo" aria-hidden="true"></i>
+                <span>github.com/niko-dellic</span>
+              </a>
+            </div>
           </aside>
         </section>
         <section class="diagnostics-strip" aria-label="Wavefield diagnostics">
@@ -546,6 +633,20 @@ export class WavefieldApp {
       void this.toggleFullscreen();
     });
 
+    this.aboutButton.addEventListener("click", () => {
+      this.setAboutOpen(true, this.aboutButton);
+    });
+
+    this.aboutCloseButton.addEventListener("click", () => {
+      this.setAboutOpen(false);
+    });
+
+    this.aboutModal.addEventListener("click", (event) => {
+      if (!this.aboutPanel.contains(event.target as Node)) {
+        this.setAboutOpen(false);
+      }
+    });
+
     this.settingsButton.addEventListener("click", () => {
       if (!this.isMobileSettings) {
         return;
@@ -571,36 +672,53 @@ export class WavefieldApp {
     this.canvas.addEventListener("click", this.handleCanvasClick);
     this.canvas.addEventListener("contextmenu", this.handleCanvasContextMenu);
 
-    document.addEventListener("mousemove", this.handleScreenPointerLockedMouseMove);
+    document.addEventListener(
+      "mousemove",
+      this.handleScreenPointerLockedMouseMove,
+    );
     document.addEventListener("mouseup", this.handleScreenPointerLockedMouseUp);
     document.addEventListener("keydown", this.handleKeyDown, true);
     document.addEventListener("fullscreenchange", this.handleFullscreenChange);
-    document.addEventListener("pointerlockchange", this.handlePointerLockChange);
+    document.addEventListener(
+      "pointerlockchange",
+      this.handlePointerLockChange,
+    );
     document.addEventListener("pointerlockerror", this.handlePointerLockError);
 
-    this.root.querySelectorAll<HTMLButtonElement>("[data-fixture-url]").forEach((button) => {
-      button.addEventListener("click", () => {
-        const fixtureUrl = button.dataset.fixtureUrl;
-        if (fixtureUrl) {
-          this.setSourceMenuOpen(false);
-          void this.loadFixture(fixtureUrl, button.textContent?.trim() ?? "fixture");
-        }
+    this.root
+      .querySelectorAll<HTMLButtonElement>("[data-fixture-url]")
+      .forEach((button) => {
+        button.addEventListener("click", () => {
+          const fixtureUrl = button.dataset.fixtureUrl;
+          if (fixtureUrl) {
+            this.setSourceMenuOpen(false);
+            void this.loadFixture(
+              fixtureUrl,
+              button.textContent?.trim() ?? "fixture",
+            );
+          }
+        });
       });
-    });
 
-    this.query<HTMLButtonElement>(".upload-option").addEventListener("click", () => {
-      this.setSourceMenuOpen(false);
-      this.query<HTMLInputElement>(".audio-file").click();
-    });
+    this.query<HTMLButtonElement>(".upload-option").addEventListener(
+      "click",
+      () => {
+        this.setSourceMenuOpen(false);
+        this.query<HTMLInputElement>(".audio-file").click();
+      },
+    );
 
-    this.query<HTMLInputElement>(".audio-file").addEventListener("change", (event) => {
-      const input = event.currentTarget as HTMLInputElement;
-      const file = input.files?.[0];
-      if (file) {
-        void this.loadFile(file);
-      }
-      input.value = "";
-    });
+    this.query<HTMLInputElement>(".audio-file").addEventListener(
+      "change",
+      (event) => {
+        const input = event.currentTarget as HTMLInputElement;
+        const file = input.files?.[0];
+        if (file) {
+          void this.loadFile(file);
+        }
+        input.value = "";
+      },
+    );
 
     this.root.addEventListener("dragover", (event) => {
       event.preventDefault();
@@ -735,6 +853,12 @@ export class WavefieldApp {
       return;
     }
 
+    if (this.isAboutOpen && event.code === "Escape") {
+      event.preventDefault();
+      this.setAboutOpen(false);
+      return;
+    }
+
     if (this.isSettingsOpen && event.code === "Escape") {
       event.preventDefault();
       this.setSettingsOpen(false);
@@ -742,7 +866,11 @@ export class WavefieldApp {
     }
 
     const keyCode = getKeyboardEventCode(event);
-    const command = getCommandForKey(this.keyCommands, this.keyBindings, keyCode);
+    const command = getCommandForKey(
+      this.keyCommands,
+      this.keyBindings,
+      keyCode,
+    );
     if (!command) {
       return;
     }
@@ -952,6 +1080,45 @@ export class WavefieldApp {
     });
   }
 
+  private setAboutOpen(isOpen: boolean, trigger: HTMLElement | null = null) {
+    if (this.isAboutOpen === isOpen) {
+      return;
+    }
+
+    this.isAboutOpen = isOpen;
+    this.lastAboutTrigger = isOpen ? trigger : this.lastAboutTrigger;
+    this.syncAboutModal();
+  }
+
+  private syncAboutModal() {
+    this.aboutModal.hidden = !this.isAboutOpen;
+    this.aboutModal.setAttribute("aria-hidden", String(!this.isAboutOpen));
+    this.aboutButton.setAttribute("aria-expanded", String(this.isAboutOpen));
+    this.root.classList.toggle("is-about-open", this.isAboutOpen);
+
+    if (this.isAboutOpen) {
+      requestAnimationFrame(() => {
+        this.getAboutFocusableElements()[0]?.focus();
+      });
+      return;
+    }
+
+    this.lastAboutTrigger?.focus();
+  }
+
+  private getAboutFocusableElements() {
+    return Array.from(
+      this.aboutPanel.querySelectorAll<HTMLElement>(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+      ),
+    ).filter(
+      (element) =>
+        !element.hasAttribute("disabled") &&
+        element.getAttribute("aria-hidden") !== "true" &&
+        element.offsetParent !== null,
+    );
+  }
+
   private setSettingsOpen(isOpen: boolean, trigger: HTMLElement | null = null) {
     if (this.isSettingsOpen === isOpen) {
       return;
@@ -990,7 +1157,10 @@ export class WavefieldApp {
       this.settingsPanel.removeAttribute("aria-modal");
     }
     this.settingsButton.hidden = !this.isMobileSettings;
-    this.settingsButton.setAttribute("aria-expanded", String(shouldShowMobileModal));
+    this.settingsButton.setAttribute(
+      "aria-expanded",
+      String(shouldShowMobileModal),
+    );
     this.settingsButton.setAttribute(
       "aria-label",
       shouldShowMobileModal ? "Close settings" : "Open settings",
@@ -1115,7 +1285,12 @@ export class WavefieldApp {
       return;
     }
 
-    this.setScreenViewTargetAtAnchor(nextScale, event.clientX, event.clientY, anchor);
+    this.setScreenViewTargetAtAnchor(
+      nextScale,
+      event.clientX,
+      event.clientY,
+      anchor,
+    );
   };
 
   private handleCanvasPointerDown = (event: PointerEvent) => {
@@ -1183,7 +1358,10 @@ export class WavefieldApp {
       }
 
       if (!this.lastScreenPanPoint) {
-        this.lastScreenPanPoint = this.getPlatePoint(event.clientX, event.clientY);
+        this.lastScreenPanPoint = this.getPlatePoint(
+          event.clientX,
+          event.clientY,
+        );
         return;
       }
 
@@ -1300,11 +1478,20 @@ export class WavefieldApp {
     }
   };
 
-  private getTransformedPlatePoint(clientX: number, clientY: number): PlatePoint {
+  private getTransformedPlatePoint(
+    clientX: number,
+    clientY: number,
+  ): PlatePoint {
     const platePoint = this.getPlatePoint(clientX, clientY);
     return {
-      x: (platePoint.x - 0.5) / this.screenView.scale + 0.5 + this.screenView.offsetX,
-      y: (platePoint.y - 0.5) / this.screenView.scale + 0.5 + this.screenView.offsetY,
+      x:
+        (platePoint.x - 0.5) / this.screenView.scale +
+        0.5 +
+        this.screenView.offsetX,
+      y:
+        (platePoint.y - 0.5) / this.screenView.scale +
+        0.5 +
+        this.screenView.offsetY,
     };
   }
 
@@ -1322,7 +1509,10 @@ export class WavefieldApp {
       anchor.y - ((platePoint.y - 0.5) / scale + 0.5);
   }
 
-  private panScreenViewTarget(nextPoint: PlatePoint, previousPoint: PlatePoint) {
+  private panScreenViewTarget(
+    nextPoint: PlatePoint,
+    previousPoint: PlatePoint,
+  ) {
     this.screenViewTarget.offsetX -=
       (nextPoint.x - previousPoint.x) / this.screenViewTarget.scale;
     this.screenViewTarget.offsetY -=
@@ -1500,7 +1690,8 @@ export class WavefieldApp {
       template.settings,
       this.settings,
     );
-    const shouldApplyBoundaryMode = this.templateTransitionConfig.applyBoundaryMode;
+    const shouldApplyBoundaryMode =
+      this.templateTransitionConfig.applyBoundaryMode;
     this.boundaryTransition = null;
     this.templateTransition = createTemplateTransition(
       this.effectiveSettings,
@@ -1636,7 +1827,9 @@ export class WavefieldApp {
 
     if (commandId.startsWith("template.apply.")) {
       const slug = commandId.slice("template.apply.".length);
-      const template = this.templates.find((candidate) => candidate.slug === slug);
+      const template = this.templates.find(
+        (candidate) => candidate.slug === slug,
+      );
       if (template) {
         this.startTemplateTransition(template);
       }
@@ -1804,7 +1997,9 @@ export class WavefieldApp {
     this.setKeyBindings(coerceKeyBindings(this.keyBindings, this.keyCommands));
     if (
       this.activeTemplateSlug &&
-      !this.templates.some((template) => template.slug === this.activeTemplateSlug)
+      !this.templates.some(
+        (template) => template.slug === this.activeTemplateSlug,
+      )
     ) {
       this.activeTemplateSlug = null;
     }
@@ -1853,10 +2048,15 @@ export class WavefieldApp {
       input.checked = input.value === this.settings.boundaryMode;
     });
     this.boundaryMorphInput.checked = this.boundaryTransitionConfig.enabled;
-    this.driveSummaryValue.textContent = formatDriveMode(this.settings.driveMode);
+    this.driveSummaryValue.textContent = formatDriveMode(
+      this.settings.driveMode,
+    );
     this.sourcePicker.hidden = this.settings.driveMode !== "audio";
     this.transport.hidden = this.settings.driveMode !== "audio";
-    this.root.classList.toggle("is-audio-drive", this.settings.driveMode === "audio");
+    this.root.classList.toggle(
+      "is-audio-drive",
+      this.settings.driveMode === "audio",
+    );
     this.root.classList.toggle(
       "is-live-recording",
       this.settings.driveMode === "live" && this.liveAnalyzer.isActive,
@@ -1918,7 +2118,9 @@ export class WavefieldApp {
     this.manualSeconds = 0;
     this.liveSeconds = 0;
     this.lastModalFieldFrame = EMPTY_MODAL_FIELD_FRAME;
-    this.modalEngine.reset(driveMode === "audio" ? this.wavesurfer.getCurrentTime() : 0);
+    this.modalEngine.reset(
+      driveMode === "audio" ? this.wavesurfer.getCurrentTime() : 0,
+    );
     this.fieldSettingsKey = getFieldSettingsKey(this.settings);
     this.resetVisualState();
     this.syncHeaderControls();
@@ -2127,13 +2329,18 @@ function isTextEntryKeyboardTarget(target: EventTarget | null) {
 }
 
 function blurControlTarget(target: EventTarget | null) {
-  if (target instanceof HTMLInputElement || target instanceof HTMLSelectElement) {
+  if (
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLSelectElement
+  ) {
     target.blur();
   }
 }
 
 function normalizeHexColor(color: string) {
-  return /^#[0-9a-f]{6}$/i.test(color) ? color : DEFAULT_SETTINGS.backgroundColor;
+  return /^#[0-9a-f]{6}$/i.test(color)
+    ? color
+    : DEFAULT_SETTINGS.backgroundColor;
 }
 
 async function readTemplateApiError(response: Response) {

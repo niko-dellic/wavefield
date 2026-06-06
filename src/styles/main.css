@@ -75,8 +75,10 @@ select {
 .source-option,
 .drive-mode-picker,
 .fullscreen-toggle,
+.about-toggle,
 .settings-toggle,
 .settings-close,
+.about-close,
 .play-toggle,
 .volume-toggle {
   height: 34px;
@@ -316,8 +318,10 @@ select {
 .source-option,
 .drive-mode-picker,
 .fullscreen-toggle,
+.about-toggle,
 .settings-toggle,
 .settings-close,
+.about-close,
 .play-toggle,
 .volume-toggle {
   display: inline-flex;
@@ -351,8 +355,10 @@ select {
 .source-option:hover,
 .drive-mode-picker:hover,
 .fullscreen-toggle:hover,
+.about-toggle:hover,
 .settings-toggle:hover,
 .settings-close:hover,
+.about-close:hover,
 .play-toggle:hover,
 .volume-toggle:hover {
   border-color: rgb(217 247 255 / 46%);
@@ -497,6 +503,118 @@ select {
   padding: 0;
 }
 
+.about-modal {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgb(2 8 10 / 54%);
+  backdrop-filter: blur(12px);
+}
+
+.about-modal[hidden] {
+  display: none;
+}
+
+.about-panel {
+  width: min(420px, 100%);
+  border: 1px solid rgb(217 247 255 / 18%);
+  border-radius: 8px;
+  background: rgb(8 14 16 / 90%);
+  box-shadow: 0 24px 70px rgb(0 0 0 / 48%);
+  color: #eefaff;
+  overflow: hidden;
+}
+
+.about-panel:focus {
+  outline: none;
+}
+
+.about-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 14px 12px 16px;
+  border-bottom: 1px solid rgb(255 255 255 / 10%);
+}
+
+.about-panel-header h2 {
+  flex: 1;
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.about-close {
+  width: 34px;
+  justify-content: center;
+  padding: 0;
+}
+
+.about-body {
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+}
+
+.about-kicker,
+.about-copy,
+.about-credit {
+  margin: 0;
+}
+
+.about-kicker {
+  color: rgb(166 236 255 / 88%);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.about-copy {
+  color: rgb(238 250 255 / 82%);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.about-credit {
+  color: rgb(238 250 255 / 70%);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.about-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: fit-content;
+  margin-top: 2px;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid rgb(217 247 255 / 20%);
+  border-radius: 6px;
+  background: rgb(217 247 255 / 8%);
+  color: #eefaff;
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.about-link:hover,
+.about-link:focus-visible {
+  border-color: rgb(217 247 255 / 46%);
+  background: rgb(20 38 44 / 78%);
+}
+
+.about-link:focus-visible {
+  outline: 2px solid rgb(166 236 255 / 70%);
+  outline-offset: 2px;
+}
+
 .pane-host {
   width: 100%;
   max-height: inherit;
@@ -530,7 +648,8 @@ select {
   background: rgb(217 247 255 / 56%);
 }
 
-.fullscreen-toggle {
+.fullscreen-toggle,
+.about-toggle {
   width: 34px;
   justify-content: center;
   padding: 0;
@@ -538,6 +657,7 @@ select {
 
 #app.is-fullscreen:not(.is-fullscreen-ui-visible) .topbar,
 #app.is-fullscreen:not(.is-fullscreen-ui-visible) .settings-modal,
+#app.is-fullscreen:not(.is-fullscreen-ui-visible) .about-modal,
 #app.is-fullscreen:not(.is-fullscreen-ui-visible) .diagnostics-strip,
 #app.is-fullscreen:not(.is-fullscreen-ui-visible) .transport {
   display: none;
@@ -1280,8 +1400,10 @@ select {
   .source-option,
   .drive-mode-picker,
   .fullscreen-toggle,
+  .about-toggle,
   .settings-toggle,
   .settings-close,
+  .about-close,
   .play-toggle,
   .volume-toggle {
     height: 32px;
@@ -1340,8 +1462,10 @@ select {
   .play-toggle,
   .volume-toggle,
   .fullscreen-toggle,
+  .about-toggle,
   .settings-toggle,
   .settings-close,
+  .about-close,
   .volume-control {
     width: 32px;
     height: 32px;
