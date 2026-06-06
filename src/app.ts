@@ -235,10 +235,8 @@ export class WavefieldApp {
     this.addEventListener(this.ui.drivePane, "toggle", () => {
       this.manualDriveSettingsPane.refresh();
     });
-    this.addEventListener(this.ui.canvas, "click", () => {
-      if (this.ui.drivePane.open) {
-        this.ui.drivePane.open = false;
-      }
+    this.addEventListener(this.ui.canvas, "pointerdown", () => {
+      this.overlayController.collapseDrivePane();
     });
   }
 

@@ -118,6 +118,12 @@ export class OverlayController {
     this.options.root.classList.toggle("is-fullscreen-ui-visible", isVisible);
   }
 
+  collapseDrivePane() {
+    if (this.options.ui.drivePane.open) {
+      this.options.ui.drivePane.open = false;
+    }
+  }
+
   async toggleFullscreen() {
     try {
       if (document.fullscreenElement) {
