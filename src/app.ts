@@ -174,8 +174,11 @@ export class WavefieldApp {
   private readonly aboutCloseButton: HTMLButtonElement;
   private readonly settingsButton: HTMLButtonElement;
   private readonly boundaryInputs: HTMLInputElement[];
+  private readonly boundaryMorphControls: HTMLElement;
   private readonly boundaryMorphInput: HTMLInputElement;
   private readonly boundaryMorphPaneHost: HTMLElement;
+  private readonly desktopBoundaryTransitionHost: HTMLElement;
+  private readonly mobileBoundaryTransitionHost: HTMLElement;
   private readonly settingsModal: HTMLElement;
   private readonly settingsPanel: HTMLElement;
   private readonly settingsCloseButton: HTMLButtonElement;
@@ -257,11 +260,20 @@ export class WavefieldApp {
     this.boundaryInputs = Array.from(
       this.root.querySelectorAll<HTMLInputElement>(".boundary-radio-input"),
     );
+    this.boundaryMorphControls = this.query<HTMLElement>(
+      ".boundary-morph-controls",
+    );
     this.boundaryMorphInput = this.query<HTMLInputElement>(
       ".boundary-morph-input",
     );
     this.boundaryMorphPaneHost = this.query<HTMLElement>(
       ".boundary-morph-pane-host",
+    );
+    this.desktopBoundaryTransitionHost = this.query<HTMLElement>(
+      ".desktop-boundary-transition-host",
+    );
+    this.mobileBoundaryTransitionHost = this.query<HTMLElement>(
+      ".mobile-boundary-transition-host",
     );
     this.settingsModal = this.query<HTMLElement>(".settings-modal");
     this.settingsPanel = this.query<HTMLElement>(".settings-panel");
@@ -434,17 +446,20 @@ export class WavefieldApp {
               `,
             ).join("")}
           </div>
-          <div class="boundary-morph-controls" aria-label="Resonance morph controls">
-            <label class="boundary-morph-toggle" title="Lerp direct resonance changes">
-              <input
-                class="boundary-morph-input"
-                type="checkbox"
-                ${this.boundaryTransitionConfig.enabled ? "checked" : ""}
-              />
-              <span>Morph</span>
-            </label>
+          <div class="desktop-boundary-transition-host">
+            <div class="boundary-morph-controls" aria-label="Resonance morph controls">
+              <label class="boundary-morph-toggle" title="Lerp direct resonance changes">
+                <input
+                  class="boundary-morph-input"
+                  type="checkbox"
+                  ${this.boundaryTransitionConfig.enabled ? "checked" : ""}
+                />
+                <span class="boundary-morph-label-short">Morph</span>
+                <span class="boundary-morph-label-long">Morph transition</span>
+              </label>
+            </div>
+            <div class="boundary-morph-pane-host" aria-label="Resonance morph settings" hidden></div>
           </div>
-          <div class="boundary-morph-pane-host" aria-label="Resonance morph settings" hidden></div>
           <button
             class="settings-toggle"
             type="button"
@@ -475,6 +490,7 @@ export class WavefieldApp {
                 <i class="ph ph-x" aria-hidden="true"></i>
               </button>
             </header>
+            <div class="mobile-boundary-transition-host" aria-label="Resonance transition settings"></div>
             <div class="mobile-drive-host" aria-label="Drive settings"></div>
             <div class="pane-host" aria-label="Wavefield shader settings"></div>
           </aside>
@@ -1142,6 +1158,7 @@ export class WavefieldApp {
 
     this.isMobileSettings = isMobileSettings;
     this.syncDriveSettingsLocation();
+    this.syncBoundaryTransitionLocation();
     this.syncSettingsModal();
   }
 
@@ -1211,6 +1228,15 @@ export class WavefieldApp {
       : this.desktopDriveHost;
     if (this.drivePane.parentElement !== targetHost) {
       targetHost.append(this.drivePane);
+    }
+  }
+
+  private syncBoundaryTransitionLocation() {
+    const targetHost = this.isMobileSettings
+      ? this.mobileBoundaryTransitionHost
+      : this.desktopBoundaryTransitionHost;
+    if (this.boundaryMorphControls.parentElement !== targetHost) {
+      targetHost.append(this.boundaryMorphControls, this.boundaryMorphPaneHost);
     }
   }
 
@@ -2154,7 +2180,9 @@ export class WavefieldApp {
   }
 
   private syncBoundaryMorphPane() {
-    if (!this.boundaryTransitionConfig.enabled) {
+    const shouldShowPane =
+      this.boundaryTransitionConfig.enabled || this.isMobileSettings;
+    if (!shouldShowPane) {
       this.boundaryMorphPaneHost.hidden = true;
       this.disposeBoundaryMorphPane();
       return;
