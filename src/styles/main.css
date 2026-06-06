@@ -560,6 +560,14 @@ select {
   padding: 18px;
 }
 
+.about-image {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin-bottom: 4px;
+  image-rendering: pixelated;
+}
+
 .about-kicker,
 .about-copy,
 .about-credit {

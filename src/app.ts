@@ -499,6 +499,11 @@ export class WavefieldApp {
               </button>
             </header>
             <div class="about-body">
+              <img
+                class="about-image"
+                src="/wavefield.png"
+                alt="Pixelated red cymatic wavefield pattern"
+              />
               <p class="about-copy">
                 Wavefield explores the visible patterns that emerge when vibration organizes matter into
                 standing waves, nodal lines, and shifting fields of resonance. While not true to physics, Wavefield takes inspiration from cymatics, the study of visible sound and vibration.
