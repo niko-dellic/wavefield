@@ -12,6 +12,7 @@ import {
 import { coerceBoundaryTransitionConfig } from "../src/boundaryTransition.ts";
 import {
   cloneEffectiveCymaticSettings,
+  coerceTemplateTransitionConfig,
   createEffectiveCymaticSettings,
   createTemplateTransition,
   advanceTemplateTransition,
@@ -118,6 +119,43 @@ test("template transition preserves drive mode", () => {
 
   assert.equal(result.settings.driveMode, "audio");
   assert.equal(result.settings.cymaticBrightness, 2);
+});
+
+test("template transition config applies resonance changes by default", () => {
+  const defaultConfig = coerceTemplateTransitionConfig({});
+  const disabledConfig = coerceTemplateTransitionConfig({
+    durationSeconds: 0.75,
+    easing: "easeOut",
+    applyBoundaryMode: false,
+  });
+
+  assert.equal(defaultConfig.applyBoundaryMode, true);
+  assert.equal(disabledConfig.applyBoundaryMode, false);
+  assert.equal(disabledConfig.durationSeconds, 0.75);
+  assert.equal(disabledConfig.easing, "easeOut");
+});
+
+test("template transition can preserve current resonance type", () => {
+  const from = createEffectiveCymaticSettings({
+    ...DEFAULT_SETTINGS,
+    boundaryMode: "freePlate",
+  });
+  const target: CymaticSettings = {
+    ...DEFAULT_SETTINGS,
+    boundaryMode: "dirichlet",
+    cymaticBrightness: 3,
+  };
+  const transition = createTemplateTransition(from, target, {
+    durationSeconds: 1,
+    easing: "linear",
+    applyBoundaryMode: false,
+  });
+  const result = advanceTemplateTransition(transition, 1);
+
+  assert.equal(result.settings.boundaryMode, "freePlate");
+  assert.equal(result.settings.boundaryWeights.freePlate, 1);
+  assert.equal(result.settings.boundaryWeights.dirichlet, 0);
+  assert.equal(result.settings.cymaticBrightness, 3);
 });
 
 test("template snapshots exclude drive mode settings", () => {

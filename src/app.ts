@@ -333,7 +333,7 @@ export class WavefieldApp {
     window.removeEventListener("resize", this.resize);
     document.removeEventListener("mousemove", this.handleScreenPointerLockedMouseMove);
     document.removeEventListener("mouseup", this.handleScreenPointerLockedMouseUp);
-    document.removeEventListener("keydown", this.handleKeyDown);
+    document.removeEventListener("keydown", this.handleKeyDown, true);
     document.removeEventListener("fullscreenchange", this.handleFullscreenChange);
     document.removeEventListener("pointerlockchange", this.handlePointerLockChange);
     document.removeEventListener("pointerlockerror", this.handlePointerLockError);
@@ -573,7 +573,7 @@ export class WavefieldApp {
 
     document.addEventListener("mousemove", this.handleScreenPointerLockedMouseMove);
     document.addEventListener("mouseup", this.handleScreenPointerLockedMouseUp);
-    document.addEventListener("keydown", this.handleKeyDown);
+    document.addEventListener("keydown", this.handleKeyDown, true);
     document.addEventListener("fullscreenchange", this.handleFullscreenChange);
     document.addEventListener("pointerlockchange", this.handlePointerLockChange);
     document.addEventListener("pointerlockerror", this.handlePointerLockError);
@@ -741,13 +741,13 @@ export class WavefieldApp {
       return;
     }
 
-    if (isEditableKeyboardTarget(event.target)) {
-      return;
-    }
-
     const keyCode = getKeyboardEventCode(event);
     const command = getCommandForKey(this.keyCommands, this.keyBindings, keyCode);
     if (!command) {
+      return;
+    }
+
+    if (isTextEntryKeyboardTarget(event.target)) {
       return;
     }
 
@@ -1500,6 +1500,7 @@ export class WavefieldApp {
       template.settings,
       this.settings,
     );
+    const shouldApplyBoundaryMode = this.templateTransitionConfig.applyBoundaryMode;
     this.boundaryTransition = null;
     this.templateTransition = createTemplateTransition(
       this.effectiveSettings,
@@ -1508,7 +1509,12 @@ export class WavefieldApp {
     );
     this.activeTemplateSlug = template.slug;
     this.setStatus(`Template: ${template.name}`);
-    this.controls.refresh();
+    if (shouldApplyBoundaryMode) {
+      this.settings.boundaryMode = nextSettings.boundaryMode;
+      this.syncHeaderControls();
+    } else {
+      this.controls.refresh();
+    }
   }
 
   private updateTemplateTransition(deltaSeconds: number) {
@@ -2098,13 +2104,25 @@ function getFieldSettingsKey(settings: CymaticSettings) {
   return [settings.driveMode, settings.boundaryMode].join(":");
 }
 
-function isEditableKeyboardTarget(target: EventTarget | null) {
+function isTextEntryKeyboardTarget(target: EventTarget | null) {
   if (!(target instanceof Element)) {
     return false;
   }
 
-  return Boolean(
-    target.closest("input, select, textarea, [contenteditable=''], [contenteditable='true']"),
+  const editable = target.closest<HTMLElement>(
+    "textarea, [contenteditable=''], [contenteditable='true'], [contenteditable='plaintext-only']",
+  );
+  if (editable) {
+    return true;
+  }
+
+  const input = target.closest<HTMLInputElement>("input");
+  if (!input) {
+    return false;
+  }
+
+  return !["button", "checkbox", "radio", "reset", "submit"].includes(
+    input.type,
   );
 }
 

@@ -500,6 +500,9 @@ function getTemplateLayoutKey(templateControls?: TemplateControlsOptions) {
     templateControls.isDev ? "dev" : "prod",
     templateControls.transitionConfig.durationSeconds,
     templateControls.transitionConfig.easing,
+    templateControls.transitionConfig.applyBoundaryMode
+      ? "resonance:on"
+      : "resonance:off",
     templateControls.capturingKeybindSlug ?? "",
     templateControls.activeTemplateSlug ?? "",
     JSON.stringify(templateControls.keyBindings),
@@ -672,7 +675,25 @@ function createTemplateTransitionPanel(
   });
   easingLabel.append(easingText, easingSelect);
 
-  panel.append(durationLabel, easingLabel);
+  const resonanceLabel = document.createElement("label");
+  resonanceLabel.className =
+    "template-transition-field template-resonance-toggle";
+  resonanceLabel.title = "Allow templates to change the resonance type";
+  const resonanceInput = document.createElement("input");
+  resonanceInput.type = "checkbox";
+  resonanceInput.checked = templateControls.transitionConfig.applyBoundaryMode;
+  resonanceInput.setAttribute("aria-label", "Apply template resonance type");
+  resonanceInput.addEventListener("change", () => {
+    templateControls.onTransitionConfigChange({
+      ...templateControls.transitionConfig,
+      applyBoundaryMode: resonanceInput.checked,
+    });
+  });
+  const resonanceText = document.createElement("span");
+  resonanceText.textContent = "apply resonance type";
+  resonanceLabel.append(resonanceInput, resonanceText);
+
+  panel.append(durationLabel, easingLabel, resonanceLabel);
   return panel;
 }
 

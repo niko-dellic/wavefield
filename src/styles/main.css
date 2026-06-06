@@ -794,7 +794,7 @@ select {
   text-transform: uppercase;
 }
 
-.template-transition-field input,
+.template-transition-field input:not([type="checkbox"]),
 .template-transition-field select {
   min-width: 0;
   height: 28px;
@@ -806,6 +806,21 @@ select {
   color: #eefaff;
   font-size: 11px;
   text-transform: none;
+}
+
+.template-resonance-toggle {
+  grid-column: 1 / -1;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  min-height: 28px;
+  text-transform: none;
+}
+
+.template-resonance-toggle input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: #7be4ff;
 }
 
 .template-transition-field select option {

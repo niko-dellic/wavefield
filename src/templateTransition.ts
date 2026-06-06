@@ -18,6 +18,7 @@ export type TemplateTransitionEasing =
 export type TemplateTransitionConfig = {
   durationSeconds: number;
   easing: TemplateTransitionEasing;
+  applyBoundaryMode: boolean;
 };
 
 export type TemplateTransitionState = {
@@ -28,12 +29,19 @@ export type TemplateTransitionState = {
   easing: TemplateTransitionEasing;
 };
 
+type TemplateTransitionTimingConfig = {
+  durationSeconds: number;
+  easing: TemplateTransitionEasing;
+  applyBoundaryMode?: boolean;
+};
+
 export const TEMPLATE_TRANSITION_STORAGE_KEY =
   "wavefield:template-transition:v1";
 
 export const DEFAULT_TEMPLATE_TRANSITION_CONFIG: TemplateTransitionConfig = {
   durationSeconds: 1.25,
   easing: "easeInOut",
+  applyBoundaryMode: true,
 };
 
 const BOUNDARY_MODES = [
@@ -83,10 +91,14 @@ export function createEffectiveCymaticSettings(
 export function createTemplateTransition(
   from: EffectiveCymaticSettings,
   target: CymaticSettings,
-  config: TemplateTransitionConfig,
+  config: TemplateTransitionTimingConfig,
 ): TemplateTransitionState {
   const to = createEffectiveCymaticSettings({
     ...target,
+    boundaryMode:
+      (config.applyBoundaryMode ?? true)
+        ? target.boundaryMode
+        : from.boundaryMode,
     driveMode: from.driveMode,
   });
   return {
@@ -230,8 +242,12 @@ export function coerceTemplateTransitionConfig(
     source.easing === "easeInOut"
       ? source.easing
       : DEFAULT_TEMPLATE_TRANSITION_CONFIG.easing;
+  const applyBoundaryMode =
+    typeof source.applyBoundaryMode === "boolean"
+      ? source.applyBoundaryMode
+      : DEFAULT_TEMPLATE_TRANSITION_CONFIG.applyBoundaryMode;
 
-  return { durationSeconds, easing };
+  return { durationSeconds, easing, applyBoundaryMode };
 }
 
 export function cloneEffectiveCymaticSettings(
