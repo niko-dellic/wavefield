@@ -5,6 +5,8 @@ import type {
   BoundaryWeights,
   CymaticSettings,
   EffectiveCymaticSettings,
+  FieldModel,
+  FieldModelWeights,
   PostEffectAmounts,
   PostEffectId,
 } from "./types.ts";
@@ -51,6 +53,13 @@ const BOUNDARY_MODES = [
   "clamped",
   "supported",
 ] satisfies BoundaryMode[];
+
+const FIELD_MODELS = [
+  "modalPlate",
+  "radialPlate",
+  "faradayPulse",
+  "spiralPhase",
+] satisfies FieldModel[];
 
 const POST_EFFECT_IDS = [
   "bloom",
@@ -101,6 +110,7 @@ export function createEffectiveCymaticSettings(
   const cloned = cloneCymaticSettings(settings);
   return {
     ...cloned,
+    fieldModelWeights: getFieldModelWeights(cloned.fieldModel),
     boundaryWeights: getBoundaryWeights(cloned.boundaryMode),
     postEffectAmounts: getPostEffectAmounts(cloned),
   };
@@ -221,6 +231,11 @@ export function interpolateEffectiveSettings(
     to.boundaryWeights,
     t,
   );
+  result.fieldModelWeights = interpolateFieldModelWeights(
+    from.fieldModelWeights,
+    to.fieldModelWeights,
+    t,
+  );
   result.postEffectAmounts = interpolatePostEffectAmounts(
     from.postEffectAmounts,
     to.postEffectAmounts,
@@ -280,8 +295,21 @@ export function cloneEffectiveCymaticSettings(
 ): EffectiveCymaticSettings {
   return {
     ...cloneCymaticSettings(settings),
+    fieldModelWeights: {
+      ...getFieldModelWeights(settings.fieldModel),
+      ...settings.fieldModelWeights,
+    },
     boundaryWeights: { ...settings.boundaryWeights },
     postEffectAmounts: { ...settings.postEffectAmounts },
+  };
+}
+
+function getFieldModelWeights(fieldModel: FieldModel): FieldModelWeights {
+  return {
+    modalPlate: fieldModel === "modalPlate" ? 1 : 0,
+    radialPlate: fieldModel === "radialPlate" ? 1 : 0,
+    faradayPulse: fieldModel === "faradayPulse" ? 1 : 0,
+    spiralPhase: fieldModel === "spiralPhase" ? 1 : 0,
   };
 }
 
@@ -309,6 +337,19 @@ function isPostEffectEnabled(settings: CymaticSettings, effectId: PostEffectId) 
   return Boolean(
     settings.postProcessingEnabled && settings[POST_EFFECT_ENABLED_KEYS[effectId]],
   );
+}
+
+function interpolateFieldModelWeights(
+  from: FieldModelWeights,
+  to: FieldModelWeights,
+  progress: number,
+): FieldModelWeights {
+  return {
+    modalPlate: lerp(from.modalPlate, to.modalPlate, progress),
+    radialPlate: lerp(from.radialPlate, to.radialPlate, progress),
+    faradayPulse: lerp(from.faradayPulse, to.faradayPulse, progress),
+    spiralPhase: lerp(from.spiralPhase, to.spiralPhase, progress),
+  };
 }
 
 function interpolateBoundaryWeights(

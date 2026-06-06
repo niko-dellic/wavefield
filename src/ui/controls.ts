@@ -22,7 +22,12 @@ import type {
   TemplateTransitionConfig,
   TemplateTransitionEasing,
 } from "../templateTransition";
-import type { BoundaryMode, CymaticSettings, PostEffectId } from "../types";
+import type {
+  BoundaryMode,
+  CymaticSettings,
+  FieldModel,
+  PostEffectId,
+} from "../types";
 
 /** Live, read-only state surfaced by the Status monitor folder. */
 export type MonitorState = {
@@ -59,6 +64,7 @@ for (const controls of Object.values(POST_EFFECT_CONTROLS)) {
 // Bindings whose label is defined inline (selects / toggles).
 for (const [label, key] of [
   ["projection", "projectionMode"],
+  ["model", "fieldModel"],
   ["color", "colorMode"],
   ["palette", "heatmapPalette"],
   ["background", "backgroundColor"],
@@ -232,6 +238,7 @@ export function createControls(
   templateControls?: TemplateControlsSource,
   transitionControls?: TransitionControlsOptions,
   onBoundaryModeChange?: (boundaryMode: BoundaryMode) => void,
+  onFieldModelChange?: (fieldModel: FieldModel) => void,
 ): ControlsManager {
   let pane: Pane | null = null;
   let monitorPane: Pane | null = null;
@@ -287,6 +294,21 @@ export function createControls(
         Sphere: "sphere",
       },
     });
+    const fieldModelBinding = engine.addBinding(settings, "fieldModel", {
+      label: "model",
+      options: {
+        "Modal Plate": "modalPlate",
+        "Radial Plate": "radialPlate",
+        "Faraday Pulse": "faradayPulse",
+        "Spiral Phase": "spiralPhase",
+      },
+    });
+    if (onFieldModelChange) {
+      ignoredPaneChangeTargets.add(fieldModelBinding);
+      fieldModelBinding.on("change", (event) => {
+        onFieldModelChange(event.value as FieldModel);
+      });
+    }
     engine.addBinding(settings, "colorMode", {
       label: "color",
       options: {

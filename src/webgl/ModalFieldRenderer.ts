@@ -14,6 +14,8 @@ import type {
   BoundaryMode,
   ColorMode,
   EffectiveCymaticSettings,
+  FieldModel,
+  FieldModelWeights,
   HeatmapPalette,
   PostEffectAmounts,
   PostEffectId,
@@ -90,6 +92,7 @@ const FRAGMENT_SHADER = `
   uniform vec2 uResolution;
   uniform float uTime;
   uniform int uModeCount;
+  uniform vec4 uFieldModelWeights;
   uniform vec4 uBoundaryWeights;
   uniform float uBoundaryClampedWeight;
   uniform int uColorMode;
@@ -284,13 +287,63 @@ const FRAGMENT_SHADER = `
     return supportedChladniValue(m, n, p) * edgeEnvelope(p);
   }
 
-  float chladniValue(float m, float n, vec2 p) {
+  float modalPlateValue(float m, float n, vec2 p) {
     return
       freeChladniValue(m, n, p) * uBoundaryWeights.x +
       dirichletChladniValue(m, n, p) * uBoundaryWeights.y +
       neumannChladniValue(m, n, p) * uBoundaryWeights.z +
       supportedChladniValue(m, n, p) * uBoundaryWeights.w +
       clampedChladniValue(m, n, p) * uBoundaryClampedWeight;
+  }
+
+  float radialPlateValue(float m, float n, vec2 p) {
+    vec2 centered = (p - 0.5) * 2.0;
+    float radius = length(centered);
+    float angle = atan(centered.y, centered.x);
+    float rings = max(1.0, floor((m + n) * 0.62));
+    float spokes = max(1.0, floor(abs(m - n) + 2.0));
+    float edge = 1.0 - smoothstep(0.92, 1.18, radius);
+    float ringField = cos(rings * PI * radius - uTime * (0.03 + uDrift * 0.08));
+    float spokeField = cos(spokes * angle + n * 0.37);
+    return (ringField * 0.72 + ringField * spokeField * 0.54) * edge;
+  }
+
+  float faradayPulseValue(float m, float n, vec2 p) {
+    vec2 centered = (p - 0.5) * 2.0;
+    float waveScale = max(2.0, floor((m + n) * 0.72));
+    float pulse =
+      0.72 +
+      0.28 * cos(
+        uTime * (0.9 + uFeatureSignals.w * 2.4 + uRms * 1.2) +
+        uFeatureSignals.y * 2.0
+      );
+    vec2 d0 = vec2(1.0, 0.0);
+    vec2 d1 = vec2(0.5, 0.86602540378);
+    vec2 d2 = vec2(-0.5, 0.86602540378);
+    float a = cos(waveScale * PI * dot(centered, d0) * pulse);
+    float b = cos((waveScale + 1.0) * PI * dot(centered, d1) * pulse + m * 0.21);
+    float c = cos((waveScale + 2.0) * PI * dot(centered, d2) * pulse - n * 0.17);
+    return (a + b + c) * 0.28 + a * b * c * 0.42;
+  }
+
+  float spiralPhaseValue(float m, float n, vec2 p) {
+    vec2 centered = (p - 0.5) * 2.0;
+    float radius = length(centered);
+    float angle = atan(centered.y, centered.x);
+    float arms = max(2.0, floor(mod(m + n, 6.0) + 2.0));
+    float twist = arms * angle + radius * PI * (m * 0.85 + n * 0.35);
+    float counterTwist = radius * PI * (n * 0.72 + 1.0) - arms * angle * 0.68;
+    float motion = uTime * (0.08 + uDrift * 0.18 + uFeatureSignals.z * 0.08);
+    float edge = 1.0 - smoothstep(1.0, 1.34, radius);
+    return sin(twist + motion) * cos(counterTwist - motion * 0.72) * edge;
+  }
+
+  float chladniValue(float m, float n, vec2 p) {
+    return
+      modalPlateValue(m, n, p) * uFieldModelWeights.x +
+      radialPlateValue(m, n, p) * uFieldModelWeights.y +
+      faradayPulseValue(m, n, p) * uFieldModelWeights.z +
+      spiralPhaseValue(m, n, p) * uFieldModelWeights.w;
   }
 
   vec2 freeChladniGradient(float m, float n, vec2 p) {
@@ -348,12 +401,32 @@ const FRAGMENT_SHADER = `
   }
 
   vec2 chladniGradient(float m, float n, vec2 p) {
+    vec2 stepSize = vec2(0.002, 0.0);
+    float dx =
+      chladniValue(m, n, p + stepSize.xy) -
+      chladniValue(m, n, p - stepSize.xy);
+    float dy =
+      chladniValue(m, n, p + stepSize.yx) -
+      chladniValue(m, n, p - stepSize.yx);
+    return vec2(dx, dy) / (2.0 * stepSize.x);
+  }
+
+  float nonModalFieldValue(float m, float n, vec2 p) {
     return
-      freeChladniGradient(m, n, p) * uBoundaryWeights.x +
-      dirichletChladniGradient(m, n, p) * uBoundaryWeights.y +
-      neumannChladniGradient(m, n, p) * uBoundaryWeights.z +
-      supportedChladniGradient(m, n, p) * uBoundaryWeights.w +
-      clampedChladniGradient(m, n, p) * uBoundaryClampedWeight;
+      radialPlateValue(m, n, p) * uFieldModelWeights.y +
+      faradayPulseValue(m, n, p) * uFieldModelWeights.z +
+      spiralPhaseValue(m, n, p) * uFieldModelWeights.w;
+  }
+
+  vec2 nonModalFieldGradient(float m, float n, vec2 p) {
+    vec2 stepSize = vec2(0.002, 0.0);
+    float dx =
+      nonModalFieldValue(m, n, p + stepSize.xy) -
+      nonModalFieldValue(m, n, p - stepSize.xy);
+    float dy =
+      nonModalFieldValue(m, n, p + stepSize.yx) -
+      nonModalFieldValue(m, n, p - stepSize.yx);
+    return vec2(dx, dy) / (2.0 * stepSize.x);
   }
 
   float clampedCavityEnvelope(float coordinate) {
@@ -470,6 +543,33 @@ const FRAGMENT_SHADER = `
           familyField *= 0.40824829046;
           familyGradient *= 0.40824829046;
         }
+      }
+
+      float nonModalWeight = clamp(
+        uFieldModelWeights.y + uFieldModelWeights.z + uFieldModelWeights.w,
+        0.0,
+        1.0
+      );
+      if (nonModalWeight > 0.0001) {
+        vec2 xy = p.xy * 0.5 + 0.5;
+        vec2 yz = p.yz * 0.5 + 0.5;
+        vec2 zx = p.zx * 0.5 + 0.5;
+        float projectedField =
+          (
+            nonModalFieldValue(u, v, xy) +
+            nonModalFieldValue(v, w, yz) +
+            nonModalFieldValue(w, u, zx)
+          ) * 0.57735026919;
+        float projectedGrad =
+          (
+            length(nonModalFieldGradient(u, v, xy)) +
+            length(nonModalFieldGradient(v, w, yz)) +
+            length(nonModalFieldGradient(w, u, zx))
+          ) * 0.33333333333;
+        familyField = familyField * uFieldModelWeights.x + projectedField;
+        familyGradient =
+          familyGradient * uFieldModelWeights.x +
+          vec3(projectedGrad * nonModalWeight);
       }
 
       float phaseMotion = cos(
@@ -913,6 +1013,7 @@ export class ModalFieldRenderer {
       uResolution: { value: new THREE.Vector2(1, 1) },
       uTime: { value: 0 },
       uModeCount: { value: 0 },
+      uFieldModelWeights: { value: new THREE.Vector4(1, 0, 0, 0) },
       uBoundaryWeights: { value: new THREE.Vector4(1, 0, 0, 0) },
       uBoundaryClampedWeight: { value: 0 },
       uColorMode: { value: COLOR_MODE_INDEX.chromesthesia },
@@ -1015,6 +1116,8 @@ export class ModalFieldRenderer {
 
   requestReset() {
     this.elapsedSeconds = 0;
+    this.alphaDecayPass?.resetHistory();
+    this.alphaDecayResetKey = "";
   }
 
   render(
@@ -1186,6 +1289,7 @@ export class ModalFieldRenderer {
   private resetAlphaDecayHistoryIfNeeded(settings: EffectiveCymaticSettings) {
     const resetKey = [
       settings.projectionMode,
+      settings.fieldModel,
       settings.sphereFieldMode,
       settings.sphereBackgroundTransparent,
       settings.backgroundColor,
@@ -1302,6 +1406,10 @@ export class ModalFieldRenderer {
 
     this.material.uniforms.uTime.value = this.elapsedSeconds;
     this.material.uniforms.uModeCount.value = modes.length;
+    setFieldModelWeightsUniform(
+      this.material.uniforms.uFieldModelWeights.value,
+      settings.fieldModelWeights,
+    );
     setBoundaryWeightsUniform(
       this.material.uniforms.uBoundaryWeights.value,
       this.material.uniforms.uBoundaryClampedWeight,
@@ -1432,6 +1540,28 @@ function setBoundaryWeightsUniform(
     safeWeights.supported,
   );
   clampedUniform.value = safeWeights.clamped;
+}
+
+function setFieldModelWeightsUniform(
+  target: THREE.Vector4,
+  weights: FieldModelWeights | undefined,
+) {
+  const safeWeights = weights ?? getFieldModelWeights("modalPlate");
+  target.set(
+    safeWeights.modalPlate,
+    safeWeights.radialPlate,
+    safeWeights.faradayPulse,
+    safeWeights.spiralPhase,
+  );
+}
+
+function getFieldModelWeights(fieldModel: FieldModel): FieldModelWeights {
+  return {
+    modalPlate: fieldModel === "modalPlate" ? 1 : 0,
+    radialPlate: fieldModel === "radialPlate" ? 1 : 0,
+    faradayPulse: fieldModel === "faradayPulse" ? 1 : 0,
+    spiralPhase: fieldModel === "spiralPhase" ? 1 : 0,
+  };
 }
 
 function getBoundaryWeights(boundaryMode: BoundaryMode): BoundaryWeights {

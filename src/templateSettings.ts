@@ -5,6 +5,7 @@ import type {
   ColorMode,
   CymaticSettings,
   DriveMode,
+  FieldModel,
   HeatmapPalette,
   MonitorSignal,
   PostEffectId,
@@ -43,6 +44,12 @@ const FALLBACK_CREATED_AT = "1970-01-01T00:00:00.000Z";
 
 const STRING_OPTIONS: Partial<Record<keyof CymaticSettings, readonly string[]>> = {
   projectionMode: ["screen", "sphere"] satisfies ProjectionMode[],
+  fieldModel: [
+    "modalPlate",
+    "radialPlate",
+    "faradayPulse",
+    "spiralPhase",
+  ] satisfies FieldModel[],
   boundaryMode: [
     "freePlate",
     "dirichlet",
@@ -104,10 +111,14 @@ const POST_EFFECT_IDS = [
 export function cloneCymaticSettings(
   settings: CymaticSettings,
 ): CymaticSettings {
-  return {
-    ...settings,
-    postEffectOrder: [...settings.postEffectOrder],
-  };
+  const cloned = {} as CymaticSettings;
+  for (const key of Object.keys(DEFAULT_SETTINGS) as Array<
+    keyof CymaticSettings
+  >) {
+    (cloned[key] as CymaticSettings[typeof key]) = settings[key];
+  }
+  cloned.postEffectOrder = [...settings.postEffectOrder];
+  return cloned;
 }
 
 export function cloneTemplateSettings(settings: unknown): TemplateSettings {

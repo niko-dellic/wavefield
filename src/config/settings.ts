@@ -1,12 +1,14 @@
 import type {
   AlphaDecayBlendMode,
   CymaticSettings,
+  FieldModel,
   MonitorSignal,
   PostEffectId,
 } from "../types";
 
 export const DEFAULT_SETTINGS: CymaticSettings = {
   projectionMode: "screen",
+  fieldModel: "modalPlate",
   boundaryMode: "freePlate",
   colorMode: "heatmap",
   sphereFieldMode: "surface",
@@ -461,6 +463,8 @@ export const SETTING_DESCRIPTIONS: Partial<
 > = {
   projectionMode:
     "Render the field on a flat screen plate or wrapped onto a sphere.",
+  fieldModel:
+    "Overall pattern family: Modal Plate, Radial Plate, Faraday Pulse, or Spiral Phase.",
   colorMode:
     "How the field is colored: chromesthesia (pitch-mapped hue), mono, frequency-band split, thermal phase, or heatmap.",
   heatmapPalette:

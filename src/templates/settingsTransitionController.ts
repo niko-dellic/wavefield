@@ -24,6 +24,7 @@ import type {
   BoundaryMode,
   CymaticSettings,
   EffectiveCymaticSettings,
+  FieldModel,
 } from "../types.ts";
 
 export type SettingsTransitionAdvanceResult = {
@@ -32,7 +33,7 @@ export type SettingsTransitionAdvanceResult = {
   didFinishBoundary: boolean;
 };
 
-export type BoundaryModeResult =
+export type ResonanceTransitionResult =
   | { changed: false; reason: "unchanged" }
   | { changed: true; morphed: boolean };
 
@@ -151,8 +152,12 @@ export class SettingsTransitionController {
     };
   }
 
-  setBoundaryMode(boundaryMode: BoundaryMode): BoundaryModeResult {
-    if (this.settings.boundaryMode === boundaryMode && !this.hasActiveTransition) {
+  setBoundaryMode(boundaryMode: BoundaryMode): ResonanceTransitionResult {
+    if (
+      this.settings.boundaryMode === boundaryMode &&
+      this.effectiveSettings.boundaryMode === boundaryMode &&
+      !this.hasActiveTransition
+    ) {
       return { changed: false, reason: "unchanged" };
     }
 
@@ -170,6 +175,20 @@ export class SettingsTransitionController {
       return { changed: true, morphed: true };
     }
 
+    this.resetToCurrentSettings();
+    return { changed: true, morphed: false };
+  }
+
+  setFieldModel(fieldModel: FieldModel): ResonanceTransitionResult {
+    if (
+      this.settings.fieldModel === fieldModel &&
+      this.effectiveSettings.fieldModel === fieldModel &&
+      !this.hasActiveTransition
+    ) {
+      return { changed: false, reason: "unchanged" };
+    }
+
+    this.settings.fieldModel = fieldModel;
     this.resetToCurrentSettings();
     return { changed: true, morphed: false };
   }

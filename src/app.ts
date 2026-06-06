@@ -50,6 +50,7 @@ import type {
   BoundaryMode,
   CymaticSettings,
   DriveMode,
+  FieldModel,
 } from "./types";
 
 const FIXTURES = Object.entries(
@@ -163,6 +164,8 @@ export class WavefieldApp {
           this.syncHeaderControls();
         },
       },
+      (boundaryMode) => this.setBoundaryMode(boundaryMode),
+      (fieldModel) => this.setFieldModel(fieldModel),
     );
 
     this.overlayController = new OverlayController({
@@ -467,6 +470,23 @@ export class WavefieldApp {
     this.setStatus(`Resonance: ${formatBoundaryMode(boundaryMode)}`);
   }
 
+  private setFieldModel(fieldModel: FieldModel) {
+    const result = this.settingsTransitions.setFieldModel(fieldModel);
+    if (!result.changed) {
+      this.controls.refresh();
+      return;
+    }
+
+    this.templates.clearActiveTemplate();
+    if (result.morphed) {
+      this.syncBackgroundColor(this.settingsTransitions.effectiveSettings);
+      this.controls.refresh();
+    } else {
+      this.handleSettingsChange();
+    }
+    this.setStatus(`Model: ${fieldModel}`);
+  }
+
   private async setDriveMode(driveMode: DriveMode, announce = true) {
     const shouldRestartLive =
       driveMode === "live" &&
@@ -554,7 +574,7 @@ export class WavefieldApp {
 }
 
 function getFieldSettingsKey(settings: CymaticSettings) {
-  return [settings.driveMode, settings.boundaryMode].join(":");
+  return [settings.driveMode, settings.boundaryMode, settings.fieldModel].join(":");
 }
 
 function isTextEntryKeyboardTarget(target: EventTarget | null) {

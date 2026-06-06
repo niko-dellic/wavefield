@@ -20,13 +20,14 @@ import {
 } from "../src/templateTransition.ts";
 import { DEFAULT_SETTINGS } from "../src/config/settings.ts";
 import {
+  cloneCymaticSettings,
   cloneTemplateSettings,
   coerceCymaticSettings,
   createSettingsFromTemplate,
   getCycledTemplateIndex,
   type WavefieldTemplate,
 } from "../src/templateSettings.ts";
-import type { BoundaryMode, CymaticSettings } from "../src/types.ts";
+import type { BoundaryMode, CymaticSettings, FieldModel } from "../src/types.ts";
 
 const TEMPLATES: WavefieldTemplate[] = [
   createTemplate("alpha", "Alpha"),
@@ -199,6 +200,12 @@ test("template snapshots exclude transition and derived runtime settings", () =>
       clamped: 0,
       supported: 0,
     },
+    fieldModelWeights: {
+      modalPlate: 0,
+      radialPlate: 1,
+      faradayPulse: 0,
+      spiralPhase: 0,
+    },
     postEffectAmounts: {
       bloom: 1,
       pixelation: 0,
@@ -215,6 +222,45 @@ test("template snapshots exclude transition and derived runtime settings", () =>
   assert.equal("templateTransitionConfig" in settings, false);
   assert.equal("boundaryTransitionConfig" in settings, false);
   assert.equal("boundaryWeights" in settings, false);
+  assert.equal("fieldModelWeights" in settings, false);
+  assert.equal("postEffectAmounts" in settings, false);
+});
+
+test("settings clones exclude transition and derived runtime settings", () => {
+  const settings = cloneCymaticSettings({
+    ...DEFAULT_SETTINGS,
+    durationSeconds: 4,
+    easing: "linear",
+    enabled: false,
+    applyBoundaryMode: false,
+    boundaryWeights: {
+      freePlate: 0,
+      dirichlet: 1,
+      neumann: 0,
+      clamped: 0,
+      supported: 0,
+    },
+    fieldModelWeights: {
+      modalPlate: 0,
+      radialPlate: 1,
+      faradayPulse: 0,
+      spiralPhase: 0,
+    },
+    postEffectAmounts: {
+      bloom: 1,
+      pixelation: 0,
+      fisheye: 0,
+      alphaDecay: 0,
+      terminal: 0,
+    },
+  });
+
+  assert.equal("durationSeconds" in settings, false);
+  assert.equal("easing" in settings, false);
+  assert.equal("enabled" in settings, false);
+  assert.equal("applyBoundaryMode" in settings, false);
+  assert.equal("boundaryWeights" in settings, false);
+  assert.equal("fieldModelWeights" in settings, false);
   assert.equal("postEffectAmounts" in settings, false);
 });
 
@@ -285,6 +331,36 @@ test("template settings accept all resonance styles", () => {
     });
     assert.equal(settings.boundaryMode, boundaryMode);
   }
+});
+
+test("template settings accept all field models", () => {
+  const models = [
+    "modalPlate",
+    "radialPlate",
+    "faradayPulse",
+    "spiralPhase",
+  ] satisfies FieldModel[];
+
+  for (const fieldModel of models) {
+    const settings = coerceCymaticSettings({
+      ...DEFAULT_SETTINGS,
+      fieldModel,
+    });
+    assert.equal(settings.fieldModel, fieldModel);
+  }
+});
+
+test("template application preserves field model from template", () => {
+  const templateSettings = cloneTemplateSettings({
+    ...DEFAULT_SETTINGS,
+    fieldModel: "faradayPulse",
+  });
+  const applied = createSettingsFromTemplate(templateSettings, {
+    ...DEFAULT_SETTINGS,
+    fieldModel: "modalPlate",
+  });
+
+  assert.equal(applied.fieldModel, "faradayPulse");
 });
 
 test("boundary transition config preserves enabled and coerces timing", () => {
@@ -491,6 +567,46 @@ test("all resonance styles produce one-hot boundary weights", () => {
       );
     }
   }
+});
+
+test("all field models produce one-hot field model weights", () => {
+  const models = [
+    "modalPlate",
+    "radialPlate",
+    "faradayPulse",
+    "spiralPhase",
+  ] satisfies FieldModel[];
+
+  for (const fieldModel of models) {
+    const effective = createEffectiveCymaticSettings({
+      ...DEFAULT_SETTINGS,
+      fieldModel,
+    });
+
+    for (const model of models) {
+      assert.equal(
+        effective.fieldModelWeights[model],
+        model === fieldModel ? 1 : 0,
+      );
+    }
+  }
+});
+
+test("template transition interpolates field model weights", () => {
+  const from = createEffectiveCymaticSettings({
+    ...DEFAULT_SETTINGS,
+    fieldModel: "modalPlate",
+  });
+  const to = createEffectiveCymaticSettings({
+    ...DEFAULT_SETTINGS,
+    fieldModel: "spiralPhase",
+  });
+  const interpolated = interpolateEffectiveSettings(from, to, 0.25);
+
+  assert.equal(interpolated.fieldModelWeights.modalPlate, 0.75);
+  assert.equal(interpolated.fieldModelWeights.spiralPhase, 0.25);
+  assert.equal(interpolated.fieldModelWeights.radialPlate, 0);
+  assert.equal(interpolated.fieldModelWeights.faradayPulse, 0);
 });
 
 test("boundary retargeting starts from current effective weights", () => {

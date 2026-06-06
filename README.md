@@ -1,6 +1,6 @@
 # Wavefield
 
-<img src="./showcase/demo3.webp" alt="Wavefield animated demo preview" width="100%">
+<img src="./showcase/demo.webp" alt="Wavefield animated demo preview" width="100%">
 
 Wavefield is a browser-based cymatic audio visualizer. It listens to music,
 extracts frequency features, and turns them into Chladni-style modal patterns

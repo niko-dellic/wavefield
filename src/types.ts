@@ -1,5 +1,10 @@
 export type FrequencyBand = "low" | "mid" | "high";
 export type ProjectionMode = "screen" | "sphere";
+export type FieldModel =
+  | "modalPlate"
+  | "radialPlate"
+  | "faradayPulse"
+  | "spiralPhase";
 export type BoundaryMode =
   | "freePlate"
   | "dirichlet"
@@ -32,6 +37,7 @@ export type PostEffectId =
   | "fisheye"
   | "alphaDecay"
   | "terminal";
+export type FieldModelWeights = Record<FieldModel, number>;
 export type BoundaryWeights = Record<BoundaryMode, number>;
 export type PostEffectAmounts = Record<PostEffectId, number>;
 export type AlphaDecayBlendMode =
@@ -100,6 +106,7 @@ export type AudioAnalysis = {
 
 export type CymaticSettings = {
   projectionMode: ProjectionMode;
+  fieldModel: FieldModel;
   boundaryMode: BoundaryMode;
   colorMode: ColorMode;
   sphereFieldMode: SphereFieldMode;
@@ -168,6 +175,7 @@ export type CymaticSettings = {
 };
 
 export type EffectiveCymaticSettings = CymaticSettings & {
+  fieldModelWeights: FieldModelWeights;
   boundaryWeights: BoundaryWeights;
   postEffectAmounts: PostEffectAmounts;
 };
