@@ -110,10 +110,8 @@ export function cloneCymaticSettings(
   };
 }
 
-export function cloneTemplateSettings(
-  settings: CymaticSettings,
-): TemplateSettings {
-  const templateSettings = cloneCymaticSettings(settings);
+export function cloneTemplateSettings(settings: unknown): TemplateSettings {
+  const templateSettings = cloneCymaticSettings(coerceCymaticSettings(settings));
   for (const key of TEMPLATE_EXCLUDED_SETTING_KEYS) {
     delete templateSettings[key];
   }

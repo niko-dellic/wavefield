@@ -35,6 +35,7 @@ import {
   createControls,
   type ControlsManager,
   type MonitorState,
+  type TransitionControlsConfig,
 } from "./ui/controls";
 import {
   cloneCymaticSettings,
@@ -54,7 +55,6 @@ import {
   createEffectiveCymaticSettings,
   createTemplateTransition,
   type TemplateTransitionConfig,
-  type TemplateTransitionEasing,
   type TemplateTransitionState,
 } from "./templateTransition";
 import {
@@ -130,13 +130,7 @@ const BOUNDARY_OPTIONS = [
   shortcut: string;
   title: string;
 }>;
-const TRANSITION_EASING_OPTIONS = [
-  { label: "Linear", value: "linear" },
-  { label: "Ease in", value: "easeIn" },
-  { label: "Ease out", value: "easeOut" },
-  { label: "Ease in/out", value: "easeInOut" },
-] satisfies Array<{ label: string; value: TemplateTransitionEasing }>;
-
+const TRANSITION_DEBUG_STORAGE_KEY = "wavefield:debug-transitions";
 export class WavefieldApp {
   private readonly settings: CymaticSettings = { ...DEFAULT_SETTINGS };
   private effectiveSettings: EffectiveCymaticSettings =
@@ -146,9 +140,11 @@ export class WavefieldApp {
   private templateTransitionConfig: TemplateTransitionConfig =
     loadTemplateTransitionConfig();
   private templateTransition: TemplateTransitionState | null = null;
+  private templateTransitionDebugBucket = -1;
   private boundaryTransitionConfig: BoundaryTransitionConfig =
     loadBoundaryTransitionConfig();
   private boundaryTransition: TemplateTransitionState | null = null;
+  private boundaryTransitionDebugBucket = -1;
   private keyCommands: KeyCommand[] = buildKeyCommands(this.templates);
   private keyBindings: KeyBindingMap = loadKeyBindings(this.keyCommands);
   private capturingKeybindSlug: string | null = null;
@@ -174,11 +170,6 @@ export class WavefieldApp {
   private readonly aboutCloseButton: HTMLButtonElement;
   private readonly settingsButton: HTMLButtonElement;
   private readonly boundaryInputs: HTMLInputElement[];
-  private readonly boundaryMorphControls: HTMLElement;
-  private readonly boundaryMorphInput: HTMLInputElement;
-  private readonly boundaryMorphPaneHost: HTMLElement;
-  private readonly desktopBoundaryTransitionHost: HTMLElement;
-  private readonly mobileBoundaryTransitionHost: HTMLElement;
   private readonly settingsModal: HTMLElement;
   private readonly settingsPanel: HTMLElement;
   private readonly settingsCloseButton: HTMLButtonElement;
@@ -195,7 +186,6 @@ export class WavefieldApp {
   );
   private modeSettingsPane: Pane | null = null;
   private modeSettingsLayoutKey = "";
-  private boundaryMorphPane: Pane | null = null;
   private isAboutOpen = false;
   private isSettingsOpen = false;
   private isMobileSettings = false;
@@ -260,21 +250,6 @@ export class WavefieldApp {
     this.boundaryInputs = Array.from(
       this.root.querySelectorAll<HTMLInputElement>(".boundary-radio-input"),
     );
-    this.boundaryMorphControls = this.query<HTMLElement>(
-      ".boundary-morph-controls",
-    );
-    this.boundaryMorphInput = this.query<HTMLInputElement>(
-      ".boundary-morph-input",
-    );
-    this.boundaryMorphPaneHost = this.query<HTMLElement>(
-      ".boundary-morph-pane-host",
-    );
-    this.desktopBoundaryTransitionHost = this.query<HTMLElement>(
-      ".desktop-boundary-transition-host",
-    );
-    this.mobileBoundaryTransitionHost = this.query<HTMLElement>(
-      ".mobile-boundary-transition-host",
-    );
     this.settingsModal = this.query<HTMLElement>(".settings-modal");
     this.settingsPanel = this.query<HTMLElement>(".settings-panel");
     this.settingsCloseButton = this.query<HTMLButtonElement>(".settings-close");
@@ -317,7 +292,6 @@ export class WavefieldApp {
       () => ({
         isDev: import.meta.env.DEV,
         saveState: this.templateSaveState,
-        transitionConfig: this.templateTransitionConfig,
         keyBindings: this.keyBindings,
         capturingKeybindSlug: this.capturingKeybindSlug,
         activeTemplateSlug: this.activeTemplateSlug,
@@ -328,9 +302,12 @@ export class WavefieldApp {
         onSaveTemplate: (name) => this.saveTemplate(name),
         onStartTemplateKeyCapture: (template) =>
           this.startTemplateKeyCapture(template),
-        onTransitionConfigChange: (config) =>
-          this.setTemplateTransitionConfig(config),
       }),
+      {
+        config: this.getTransitionControlsConfig(),
+        onChange: (config) => this.setTransitionControlsConfig(config),
+      },
+      (boundaryMode) => this.setBoundaryMode(boundaryMode, true),
     );
 
     this.bindUi();
@@ -391,7 +368,6 @@ export class WavefieldApp {
     );
     this.releaseScreenPointerLock();
     this.controls.dispose();
-    this.disposeBoundaryMorphPane();
     this.disposeModeSettingsPane();
     this.liveAnalyzer.stop();
     this.modalRenderer.dispose();
@@ -446,20 +422,6 @@ export class WavefieldApp {
               `,
             ).join("")}
           </div>
-          <div class="desktop-boundary-transition-host">
-            <div class="boundary-morph-controls" aria-label="Resonance morph controls">
-              <label class="boundary-morph-toggle" title="Lerp direct resonance changes">
-                <input
-                  class="boundary-morph-input"
-                  type="checkbox"
-                  ${this.boundaryTransitionConfig.enabled ? "checked" : ""}
-                />
-                <span class="boundary-morph-label-short">Morph</span>
-                <span class="boundary-morph-label-long">Morph transition</span>
-              </label>
-            </div>
-            <div class="boundary-morph-pane-host" aria-label="Resonance morph settings" hidden></div>
-          </div>
           <button
             class="settings-toggle"
             type="button"
@@ -490,7 +452,6 @@ export class WavefieldApp {
                 <i class="ph ph-x" aria-hidden="true"></i>
               </button>
             </header>
-            <div class="mobile-boundary-transition-host" aria-label="Resonance transition settings"></div>
             <div class="mobile-drive-host" aria-label="Drive settings"></div>
             <div class="pane-host" aria-label="Wavefield shader settings"></div>
           </aside>
@@ -628,15 +589,6 @@ export class WavefieldApp {
         }
       });
     });
-    this.boundaryMorphInput.addEventListener("change", () => {
-      this.setBoundaryTransitionConfig({
-        ...this.boundaryTransitionConfig,
-        enabled: this.boundaryMorphInput.checked,
-      });
-    });
-    this.boundaryMorphPaneHost.addEventListener("change", (event) => {
-      blurControlTarget(event.target);
-    });
 
     this.drivePane.addEventListener("toggle", () => {
       this.modeSettingsPane?.refresh();
@@ -669,9 +621,6 @@ export class WavefieldApp {
     });
 
     this.settingsButton.addEventListener("click", () => {
-      if (!this.isMobileSettings) {
-        return;
-      }
       this.setSettingsOpen(!this.isSettingsOpen, this.settingsButton);
     });
 
@@ -1158,12 +1107,11 @@ export class WavefieldApp {
 
     this.isMobileSettings = isMobileSettings;
     this.syncDriveSettingsLocation();
-    this.syncBoundaryTransitionLocation();
     this.syncSettingsModal();
   }
 
   private syncSettingsModal() {
-    const shouldShowMobileModal = this.isMobileSettings && this.isSettingsOpen;
+    const shouldShowSettings = this.isSettingsOpen;
     this.settingsModal.hidden = !this.isSettingsOpen;
     this.settingsModal.setAttribute(
       "aria-hidden",
@@ -1178,14 +1126,13 @@ export class WavefieldApp {
     } else {
       this.settingsPanel.removeAttribute("aria-modal");
     }
-    this.settingsButton.hidden = !this.isMobileSettings;
     this.settingsButton.setAttribute(
       "aria-expanded",
-      String(shouldShowMobileModal),
+      String(shouldShowSettings),
     );
     this.settingsButton.setAttribute(
       "aria-label",
-      shouldShowMobileModal ? "Close settings" : "Open settings",
+      shouldShowSettings ? "Close settings" : "Open settings",
     );
     this.root.classList.toggle("is-settings-open", this.isSettingsOpen);
     this.root.classList.toggle("is-mobile-settings", this.isMobileSettings);
@@ -1228,15 +1175,6 @@ export class WavefieldApp {
       : this.desktopDriveHost;
     if (this.drivePane.parentElement !== targetHost) {
       targetHost.append(this.drivePane);
-    }
-  }
-
-  private syncBoundaryTransitionLocation() {
-    const targetHost = this.isMobileSettings
-      ? this.mobileBoundaryTransitionHost
-      : this.desktopBoundaryTransitionHost;
-    if (this.boundaryMorphControls.parentElement !== targetHost) {
-      targetHost.append(this.boundaryMorphControls, this.boundaryMorphPaneHost);
     }
   }
 
@@ -1346,7 +1284,7 @@ export class WavefieldApp {
           ? this.getPlatePoint(event.clientX, event.clientY)
           : null;
       this.canvas.classList.add("is-panning-screen");
-      this.canvas.setPointerCapture(event.pointerId);
+      this.captureCanvasPointer(event.pointerId);
       if (this.screenTouchPointers.size >= 2) {
         this.resetScreenPinchGesture();
       }
@@ -1362,7 +1300,7 @@ export class WavefieldApp {
     this.screenPanButtonMask = event.button === 2 ? 2 : 1;
     this.lastScreenPanPoint = this.getPlatePoint(event.clientX, event.clientY);
     this.canvas.classList.add("is-panning-screen");
-    this.canvas.setPointerCapture(event.pointerId);
+    this.captureCanvasPointer(event.pointerId);
     if (event.pointerType === "mouse") {
       this.requestScreenPointerLock();
     }
@@ -1425,9 +1363,7 @@ export class WavefieldApp {
       }
 
       this.screenTouchPointers.delete(event.pointerId);
-      if (this.canvas.hasPointerCapture(event.pointerId)) {
-        this.canvas.releasePointerCapture(event.pointerId);
-      }
+      this.releaseCanvasPointer(event.pointerId);
 
       if (this.screenTouchPointers.size >= 2) {
         this.resetScreenPinchGesture();
@@ -1453,9 +1389,7 @@ export class WavefieldApp {
     this.screenPanButtonMask = 0;
     this.lastScreenPanPoint = null;
     this.canvas.classList.remove("is-panning-screen");
-    if (this.canvas.hasPointerCapture(event.pointerId)) {
-      this.canvas.releasePointerCapture(event.pointerId);
-    }
+    this.releaseCanvasPointer(event.pointerId);
     this.releaseScreenPointerLock();
   };
 
@@ -1574,7 +1508,12 @@ export class WavefieldApp {
     }
 
     try {
-      this.canvas.requestPointerLock();
+      const lockRequest = this.canvas.requestPointerLock() as
+        | Promise<void>
+        | undefined;
+      lockRequest?.catch(() => {
+        this.isScreenPointerLocked = false;
+      });
     } catch {
       this.isScreenPointerLocked = false;
     }
@@ -1596,10 +1535,29 @@ export class WavefieldApp {
     this.screenPanButtonMask = 0;
     this.lastScreenPanPoint = null;
     this.canvas.classList.remove("is-panning-screen");
-    if (pointerId !== null && this.canvas.hasPointerCapture(pointerId)) {
-      this.canvas.releasePointerCapture(pointerId);
+    if (pointerId !== null) {
+      this.releaseCanvasPointer(pointerId);
     }
     this.releaseScreenPointerLock();
+  }
+
+  private captureCanvasPointer(pointerId: number) {
+    try {
+      this.canvas.setPointerCapture(pointerId);
+    } catch {
+      // Some browsers can report a pointerdown after the pointer is no longer
+      // capturable. Keep screen panning alive instead of crashing the handler.
+    }
+  }
+
+  private releaseCanvasPointer(pointerId: number) {
+    try {
+      if (this.canvas.hasPointerCapture(pointerId)) {
+        this.canvas.releasePointerCapture(pointerId);
+      }
+    } catch {
+      // Pointer capture may already be invalidated by cancellation or pointer lock.
+    }
   }
 
   private resetScreenPinchGesture() {
@@ -1729,6 +1687,15 @@ export class WavefieldApp {
       nextSettings,
       this.templateTransitionConfig,
     );
+    this.templateTransitionDebugBucket = -1;
+    debugTransition("template:start", {
+      template: template.name,
+      durationSeconds: this.templateTransition.durationSeconds,
+      easing: this.templateTransition.easing,
+      applyBoundaryMode: this.templateTransitionConfig.applyBoundaryMode,
+      fromBoundaryMode: this.effectiveSettings.boundaryMode,
+      toBoundaryMode: nextSettings.boundaryMode,
+    });
     this.activeTemplateSlug = template.slug;
     this.setStatus(`Template: ${template.name}`);
     if (shouldApplyBoundaryMode) {
@@ -1752,6 +1719,12 @@ export class WavefieldApp {
       this.templateTransition = result.done ? null : result.transition;
       this.effectiveSettings = result.settings;
       this.syncBackgroundColor(this.effectiveSettings);
+      this.templateTransitionDebugBucket = debugTransitionProgress(
+        "template",
+        result.transition,
+        this.templateTransitionDebugBucket,
+        result.done,
+      );
 
       if (result.done) {
         this.commitEffectiveSettings(result.settings);
@@ -1769,6 +1742,12 @@ export class WavefieldApp {
     this.boundaryTransition = result.done ? null : result.transition;
     this.effectiveSettings = result.settings;
     this.syncBackgroundColor(this.effectiveSettings);
+    this.boundaryTransitionDebugBucket = debugTransitionProgress(
+      "boundary",
+      result.transition,
+      this.boundaryTransitionDebugBucket,
+      result.done,
+    );
 
     if (result.done) {
       this.effectiveSettings = createEffectiveCymaticSettings(this.settings);
@@ -1921,19 +1900,29 @@ export class WavefieldApp {
     saveJsonToLocalStorage(KEYBIND_STORAGE_KEY, this.keyBindings);
   }
 
-  private setTemplateTransitionConfig(config: TemplateTransitionConfig) {
-    this.templateTransitionConfig = coerceTemplateTransitionConfig(config);
+  private getTransitionControlsConfig(): TransitionControlsConfig {
+    return {
+      enabled: this.boundaryTransitionConfig.enabled,
+      durationSeconds: this.templateTransitionConfig.durationSeconds,
+      easing: this.templateTransitionConfig.easing,
+      applyBoundaryMode: this.templateTransitionConfig.applyBoundaryMode,
+    };
+  }
+
+  private setTransitionControlsConfig(config: TransitionControlsConfig) {
+    const timingConfig = coerceTemplateTransitionConfig(config);
+    Object.assign(this.templateTransitionConfig, timingConfig);
     saveJsonToLocalStorage(
       TEMPLATE_TRANSITION_STORAGE_KEY,
       this.templateTransitionConfig,
     );
-    this.controls.refresh();
-  }
-
-  private setBoundaryTransitionConfig(config: BoundaryTransitionConfig) {
     Object.assign(
       this.boundaryTransitionConfig,
-      coerceBoundaryTransitionConfig(config),
+      coerceBoundaryTransitionConfig({
+        enabled: config.enabled,
+        durationSeconds: timingConfig.durationSeconds,
+        easing: timingConfig.easing,
+      }),
     );
     saveJsonToLocalStorage(
       BOUNDARY_TRANSITION_STORAGE_KEY,
@@ -2038,6 +2027,13 @@ export class WavefieldApp {
   }
 
   private handleSettingsChange() {
+    if (this.templateTransition || this.boundaryTransition) {
+      debugTransition("settings:cancel-active-transition", {
+        hasTemplateTransition: this.templateTransition !== null,
+        hasBoundaryTransition: this.boundaryTransition !== null,
+        boundaryMode: this.settings.boundaryMode,
+      });
+    }
     this.templateTransition = null;
     this.boundaryTransition = null;
     this.effectiveSettings = createEffectiveCymaticSettings(this.settings);
@@ -2078,7 +2074,6 @@ export class WavefieldApp {
     this.boundaryInputs.forEach((input) => {
       input.checked = input.value === this.settings.boundaryMode;
     });
-    this.boundaryMorphInput.checked = this.boundaryTransitionConfig.enabled;
     this.driveSummaryValue.textContent = formatDriveMode(
       this.settings.driveMode,
     );
@@ -2092,7 +2087,6 @@ export class WavefieldApp {
       "is-live-recording",
       this.settings.driveMode === "live" && this.liveAnalyzer.isActive,
     );
-    this.syncBoundaryMorphPane();
     this.syncModeSettingsPane();
     this.controls.refresh();
   }
@@ -2101,10 +2095,14 @@ export class WavefieldApp {
     this.modalRenderer.requestReset();
   }
 
-  private setBoundaryMode(boundaryMode: BoundaryMode) {
+  private setBoundaryMode(boundaryMode: BoundaryMode, forceTransition = false) {
     const hasActiveTransition =
       this.templateTransition !== null || this.boundaryTransition !== null;
-    if (this.settings.boundaryMode === boundaryMode && !hasActiveTransition) {
+    if (
+      this.settings.boundaryMode === boundaryMode &&
+      !hasActiveTransition &&
+      !forceTransition
+    ) {
       this.syncHeaderControls();
       return;
     }
@@ -2113,15 +2111,27 @@ export class WavefieldApp {
     const shouldMorph = this.boundaryTransitionConfig.enabled;
     this.activeTemplateSlug = null;
     this.settings.boundaryMode = boundaryMode;
-    this.handleSettingsChange();
     if (shouldMorph) {
+      this.templateTransition = null;
       this.boundaryTransition = createTemplateTransition(
         sourceSettings,
         this.settings,
         this.boundaryTransitionConfig,
       );
+      this.boundaryTransitionDebugBucket = -1;
+      debugTransition("boundary:start", {
+        boundaryMode,
+        durationSeconds: this.boundaryTransition.durationSeconds,
+        easing: this.boundaryTransition.easing,
+        fromWeights: sourceSettings.boundaryWeights,
+        toWeights: this.boundaryTransition.to.boundaryWeights,
+      });
       this.effectiveSettings = sourceSettings;
+      this.fieldSettingsKey = getFieldSettingsKey(this.settings);
       this.syncBackgroundColor(this.effectiveSettings);
+      this.syncHeaderControls();
+    } else {
+      this.handleSettingsChange();
     }
     this.setStatus(`Resonance: ${formatBoundaryMode(boundaryMode)}`);
   }
@@ -2179,44 +2189,6 @@ export class WavefieldApp {
     }
   }
 
-  private syncBoundaryMorphPane() {
-    const shouldShowPane =
-      this.boundaryTransitionConfig.enabled || this.isMobileSettings;
-    if (!shouldShowPane) {
-      this.boundaryMorphPaneHost.hidden = true;
-      this.disposeBoundaryMorphPane();
-      return;
-    }
-
-    this.boundaryMorphPaneHost.hidden = false;
-    if (this.boundaryMorphPane) {
-      this.boundaryMorphPane.refresh();
-      return;
-    }
-
-    this.boundaryMorphPane = new Pane({
-      container: this.boundaryMorphPaneHost,
-    });
-    this.boundaryMorphPane.addBinding(
-      this.boundaryTransitionConfig,
-      "durationSeconds",
-      {
-        label: "duration",
-        min: 0,
-        max: 12,
-        step: 0.05,
-      },
-    );
-    this.boundaryMorphPane.addBinding(this.boundaryTransitionConfig, "easing", {
-      label: "easing",
-      options: getTransitionEasingOptions(),
-    });
-    this.boundaryMorphPane.on("change", () => {
-      this.setBoundaryTransitionConfig(this.boundaryTransitionConfig);
-    });
-    applyTooltipsByLabel(this.boundaryMorphPaneHost);
-  }
-
   private syncModeSettingsPane() {
     if (this.settings.driveMode !== "manual") {
       this.modeSettingsHost.hidden = true;
@@ -2271,10 +2243,6 @@ export class WavefieldApp {
     this.modeSettingsLayoutKey = "";
   }
 
-  private disposeBoundaryMorphPane() {
-    this.boundaryMorphPane?.dispose();
-    this.boundaryMorphPane = null;
-  }
 }
 
 function formatDuration(duration: number) {
@@ -2300,12 +2268,6 @@ function formatBoundaryMode(boundaryMode: BoundaryMode) {
     BOUNDARY_OPTIONS.find((option) => option.value === boundaryMode)?.label ??
     boundaryMode
   );
-}
-
-function getTransitionEasingOptions() {
-  return Object.fromEntries(
-    TRANSITION_EASING_OPTIONS.map((option) => [option.label, option.value]),
-  ) as Record<string, TemplateTransitionEasing>;
 }
 
 function clamp(value: number, min: number, max: number) {
@@ -2361,15 +2323,6 @@ function isTextEntryKeyboardTarget(target: EventTarget | null) {
   );
 }
 
-function blurControlTarget(target: EventTarget | null) {
-  if (
-    target instanceof HTMLInputElement ||
-    target instanceof HTMLSelectElement
-  ) {
-    target.blur();
-  }
-}
-
 function normalizeHexColor(color: string) {
   return /^#[0-9a-f]{6}$/i.test(color)
     ? color
@@ -2396,9 +2349,12 @@ function loadTemplateTransitionConfig() {
     const rawValue = window.localStorage.getItem(
       TEMPLATE_TRANSITION_STORAGE_KEY,
     );
-    return coerceTemplateTransitionConfig(
+    const config = coerceTemplateTransitionConfig(
       rawValue ? JSON.parse(rawValue) : DEFAULT_TEMPLATE_TRANSITION_CONFIG,
     );
+    config.applyBoundaryMode = true;
+    saveJsonToLocalStorage(TEMPLATE_TRANSITION_STORAGE_KEY, config);
+    return config;
   } catch {
     return { ...DEFAULT_TEMPLATE_TRANSITION_CONFIG };
   }
@@ -2432,6 +2388,49 @@ function saveJsonToLocalStorage(key: string, value: unknown) {
   } catch {
     // Local persistence is a convenience; storage failures should not break
     // rendering or controls.
+  }
+}
+
+function debugTransition(label: string, detail: Record<string, unknown>) {
+  if (!isTransitionDebugEnabled()) {
+    return;
+  }
+  console.debug(`[wavefield transition] ${label}`, detail);
+}
+
+function debugTransitionProgress(
+  label: string,
+  transition: TemplateTransitionState,
+  lastBucket: number,
+  done: boolean,
+) {
+  if (!isTransitionDebugEnabled()) {
+    return lastBucket;
+  }
+
+  const durationSeconds = Math.max(0, transition.durationSeconds);
+  const progress =
+    durationSeconds <= 0
+      ? 1
+      : Math.min(1, transition.elapsedSeconds / durationSeconds);
+  const bucket = done ? 100 : Math.floor(progress * 4) * 25;
+  if (bucket !== lastBucket || done) {
+    console.debug(`[wavefield transition] ${label}:progress`, {
+      elapsedSeconds: transition.elapsedSeconds,
+      durationSeconds,
+      progress,
+      easing: transition.easing,
+      done,
+    });
+  }
+  return bucket;
+}
+
+function isTransitionDebugEnabled() {
+  try {
+    return window.localStorage.getItem(TRANSITION_DEBUG_STORAGE_KEY) === "1";
+  } catch {
+    return false;
   }
 }
 

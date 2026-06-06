@@ -22,7 +22,7 @@ import type {
   TemplateTransitionConfig,
   TemplateTransitionEasing,
 } from "../templateTransition";
-import type { CymaticSettings, PostEffectId } from "../types";
+import type { BoundaryMode, CymaticSettings, PostEffectId } from "../types";
 
 /** Live, read-only state surfaced by the Status monitor folder. */
 export type MonitorState = {
@@ -75,6 +75,25 @@ for (const [label, key] of [
 ] satisfies Array<[string, keyof CymaticSettings]>) {
   LABEL_TO_KEY.set(label, key);
 }
+
+const LABEL_DESCRIPTIONS = new Map<string, string>([
+  [
+    "morph",
+    "Smooth direct resonance changes instead of snapping immediately to the new resonance shape.",
+  ],
+  [
+    "duration",
+    "How long a direct resonance morph takes to blend from the current shape to the new one.",
+  ],
+  [
+    "easing",
+    "The timing curve used during direct resonance morphs.",
+  ],
+  [
+    "apply resonance",
+    "Allow templates to change the current resonance type during template transitions.",
+  ],
+]);
 
 const TOOLTIP_ATTR = "data-wf-tooltip";
 const FOLDER_STATE_STORAGE_KEY = "wavefield:tweakpane-folder-state:v1";
@@ -158,12 +177,14 @@ function bindTooltipDelegation() {
 export function applyTooltipsByLabel(root: HTMLElement) {
   bindTooltipDelegation();
   for (const label of root.querySelectorAll<HTMLElement>(".tp-lblv_l")) {
-    const key = LABEL_TO_KEY.get(label.textContent?.trim() ?? "");
+    const labelText = label.textContent?.trim() ?? "";
+    const key = LABEL_TO_KEY.get(labelText);
     const description = key ? SETTING_DESCRIPTIONS[key] : undefined;
-    if (description) {
+    const labelDescription = description ?? LABEL_DESCRIPTIONS.get(labelText);
+    if (labelDescription) {
       (label.closest<HTMLElement>(".tp-lblv") ?? label).setAttribute(
         TOOLTIP_ATTR,
-        description,
+        labelDescription,
       );
     }
   }
@@ -179,7 +200,6 @@ export type TemplateControlsOptions = {
   saveState: {
     name: string;
   };
-  transitionConfig: TemplateTransitionConfig;
   keyBindings: KeyBindingMap;
   capturingKeybindSlug: string | null;
   activeTemplateSlug: string | null;
@@ -189,12 +209,20 @@ export type TemplateControlsOptions = {
   onResaveTemplate: (template: WavefieldTemplate) => void | Promise<void>;
   onSaveTemplate: (name: string) => void | Promise<void>;
   onStartTemplateKeyCapture: (template: WavefieldTemplate) => void;
-  onTransitionConfigChange: (config: TemplateTransitionConfig) => void;
 };
 
 type TemplateControlsSource =
   | TemplateControlsOptions
   | (() => TemplateControlsOptions);
+
+export type TransitionControlsConfig = TemplateTransitionConfig & {
+  enabled: boolean;
+};
+
+export type TransitionControlsOptions = {
+  config: TransitionControlsConfig;
+  onChange: (config: TransitionControlsConfig) => void;
+};
 
 export function createControls(
   container: HTMLElement,
@@ -202,11 +230,14 @@ export function createControls(
   onChange: () => void,
   monitorState: MonitorState,
   templateControls?: TemplateControlsSource,
+  transitionControls?: TransitionControlsOptions,
+  onBoundaryModeChange?: (boundaryMode: BoundaryMode) => void,
 ): ControlsManager {
   let pane: Pane | null = null;
   let monitorPane: Pane | null = null;
   let postPanes: Pane[] = [];
   let layoutKey = "";
+  let ignoredPaneChangeTargets = new Set<unknown>();
   const folderExpansionState = loadFolderExpansionState();
   const persistFolderExpansion = (id: string, expanded: boolean) => {
     folderExpansionState[id] = expanded;
@@ -232,6 +263,7 @@ export function createControls(
     );
 
   const build = () => {
+    ignoredPaneChangeTargets = new Set<unknown>();
     postPanes = removePostPanel(container, postPanes);
     monitorPane?.dispose();
     monitorPane = null;
@@ -287,7 +319,7 @@ export function createControls(
       });
     }
 
-    engine.addBinding(settings, "boundaryMode", {
+    const boundaryModeBinding = engine.addBinding(settings, "boundaryMode", {
       label: "resonance",
       options: {
         "Free Plate": "freePlate",
@@ -297,6 +329,12 @@ export function createControls(
         Supported: "supported",
       },
     });
+    if (onBoundaryModeChange) {
+      ignoredPaneChangeTargets.add(boundaryModeBinding);
+      boundaryModeBinding.on("change", (event) => {
+        onBoundaryModeChange(event.value as BoundaryMode);
+      });
+    }
     if (settings.projectionMode === "screen") {
       engine.addBinding(settings, "screenAspectMode", {
         label: "aspect",
@@ -306,6 +344,64 @@ export function createControls(
         },
       });
     }
+
+    if (transitionControls) {
+      const transitionState = {
+        morph: transitionControls.config.enabled,
+        duration: transitionControls.config.durationSeconds,
+        easing: transitionControls.config.easing,
+        applyResonance: transitionControls.config.applyBoundaryMode,
+      };
+      const syncTransitionConfig = () => {
+        transitionControls.onChange({
+          enabled: transitionState.morph,
+          durationSeconds: transitionState.duration,
+          easing: transitionState.easing,
+          applyBoundaryMode: transitionState.applyResonance,
+        });
+      };
+      const transition = addPersistentFolder(
+        pane,
+        "folder:Transition",
+        "Transition",
+      );
+      const morphBinding = transition.addBinding(transitionState, "morph", {
+        label: "morph",
+      });
+      const durationBinding = transition.addBinding(
+        transitionState,
+        "duration",
+        {
+          label: "duration",
+          min: 0,
+          max: 12,
+          step: 0.05,
+        },
+      );
+      const easingBinding = transition.addBinding(transitionState, "easing", {
+        label: "easing",
+        options: getTransitionEasingOptions(),
+      });
+      const applyResonanceBinding = transition.addBinding(
+        transitionState,
+        "applyResonance",
+        {
+          label: "apply resonance",
+        },
+      );
+      for (const binding of [
+        morphBinding,
+        durationBinding,
+        easingBinding,
+        applyResonanceBinding,
+      ]) {
+        ignoredPaneChangeTargets.add(binding);
+      }
+      transition.on("change", () => {
+        syncTransitionConfig();
+      });
+    }
+
     const topology = addPersistentFolder(pane, "folder:Topology", "Topology");
     addNumericBinding(topology, settings, ENGINE_CONTROLS.modalCount);
     addNumericBinding(topology, settings, AUDIO_CONTROLS.sensitivity);
@@ -380,7 +476,12 @@ export function createControls(
       );
     }
 
-    pane.on("change", onChange);
+    pane.on("change", (event) => {
+      if (ignoredPaneChangeTargets.has(event.target)) {
+        return;
+      }
+      onChange();
+    });
 
     // Live monitors live in their own pane: their 50ms ticks emit change events
     // that must NOT reach the input pane's change/refresh path (that recurses).
@@ -498,11 +599,6 @@ function getTemplateLayoutKey(templateControls?: TemplateControlsOptions) {
 
   return [
     templateControls.isDev ? "dev" : "prod",
-    templateControls.transitionConfig.durationSeconds,
-    templateControls.transitionConfig.easing,
-    templateControls.transitionConfig.applyBoundaryMode
-      ? "resonance:on"
-      : "resonance:off",
     templateControls.capturingKeybindSlug ?? "",
     templateControls.activeTemplateSlug ?? "",
     JSON.stringify(templateControls.keyBindings),
@@ -558,7 +654,6 @@ function mountTemplatePanel(
   if (templateControls.isDev) {
     root.append(createTemplateSavePanel(templateControls));
   }
-  root.append(createTemplateTransitionPanel(templateControls));
 
   const list = document.createElement("div");
   list.className = "template-list";
@@ -622,79 +717,6 @@ function createTemplateSavePanel(templateControls: TemplateControlsOptions) {
 
   savePanel.append(input, saveButton);
   return savePanel;
-}
-
-function createTemplateTransitionPanel(
-  templateControls: TemplateControlsOptions,
-) {
-  const panel = document.createElement("div");
-  panel.className = "template-transition-panel";
-
-  const durationLabel = document.createElement("label");
-  durationLabel.className = "template-transition-field";
-  const durationText = document.createElement("span");
-  durationText.textContent = "duration";
-  const durationInput = document.createElement("input");
-  durationInput.type = "number";
-  durationInput.min = "0";
-  durationInput.max = "12";
-  durationInput.step = "0.05";
-  durationInput.value = String(templateControls.transitionConfig.durationSeconds);
-  durationInput.setAttribute("aria-label", "Template transition duration");
-  durationInput.addEventListener("change", () => {
-    templateControls.onTransitionConfigChange({
-      ...templateControls.transitionConfig,
-      durationSeconds: Math.max(0, Number(durationInput.value) || 0),
-    });
-  });
-  durationLabel.append(durationText, durationInput);
-
-  const easingLabel = document.createElement("label");
-  easingLabel.className = "template-transition-field";
-  const easingText = document.createElement("span");
-  easingText.textContent = "easing";
-  const easingSelect = document.createElement("select");
-  easingSelect.setAttribute("aria-label", "Template transition easing");
-  for (const easing of [
-    "linear",
-    "easeIn",
-    "easeOut",
-    "easeInOut",
-  ] satisfies TemplateTransitionEasing[]) {
-    const option = document.createElement("option");
-    option.value = easing;
-    option.textContent = formatEasingLabel(easing);
-    option.selected = templateControls.transitionConfig.easing === easing;
-    easingSelect.append(option);
-  }
-  easingSelect.addEventListener("change", () => {
-    templateControls.onTransitionConfigChange({
-      ...templateControls.transitionConfig,
-      easing: easingSelect.value as TemplateTransitionEasing,
-    });
-  });
-  easingLabel.append(easingText, easingSelect);
-
-  const resonanceLabel = document.createElement("label");
-  resonanceLabel.className =
-    "template-transition-field template-resonance-toggle";
-  resonanceLabel.title = "Allow templates to change the resonance type";
-  const resonanceInput = document.createElement("input");
-  resonanceInput.type = "checkbox";
-  resonanceInput.checked = templateControls.transitionConfig.applyBoundaryMode;
-  resonanceInput.setAttribute("aria-label", "Apply template resonance type");
-  resonanceInput.addEventListener("change", () => {
-    templateControls.onTransitionConfigChange({
-      ...templateControls.transitionConfig,
-      applyBoundaryMode: resonanceInput.checked,
-    });
-  });
-  const resonanceText = document.createElement("span");
-  resonanceText.textContent = "apply resonance type";
-  resonanceLabel.append(resonanceInput, resonanceText);
-
-  panel.append(durationLabel, easingLabel, resonanceLabel);
-  return panel;
 }
 
 function createTemplateRow(
@@ -778,6 +800,18 @@ function formatEasingLabel(easing: TemplateTransitionEasing) {
     case "easeInOut":
       return "Ease in/out";
   }
+}
+
+function getTransitionEasingOptions() {
+  const options = [
+    "linear",
+    "easeIn",
+    "easeOut",
+    "easeInOut",
+  ] satisfies TemplateTransitionEasing[];
+  return Object.fromEntries(
+    options.map((easing) => [formatEasingLabel(easing), easing]),
+  ) as Record<string, TemplateTransitionEasing>;
 }
 
 function runTemplateAction(

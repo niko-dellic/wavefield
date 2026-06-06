@@ -175,6 +175,49 @@ test("template snapshots exclude drive mode settings", () => {
   assert.equal("frequencySweepRange" in settings, false);
 });
 
+test("template snapshots exclude transition and derived runtime settings", () => {
+  const settings = cloneTemplateSettings({
+    ...DEFAULT_SETTINGS,
+    durationSeconds: 4,
+    easing: "linear",
+    enabled: false,
+    applyBoundaryMode: false,
+    templateTransitionConfig: {
+      durationSeconds: 4,
+      easing: "linear",
+      applyBoundaryMode: false,
+    },
+    boundaryTransitionConfig: {
+      enabled: false,
+      durationSeconds: 4,
+      easing: "linear",
+    },
+    boundaryWeights: {
+      freePlate: 0,
+      dirichlet: 1,
+      neumann: 0,
+      clamped: 0,
+      supported: 0,
+    },
+    postEffectAmounts: {
+      bloom: 1,
+      pixelation: 0,
+      fisheye: 0,
+      alphaDecay: 0,
+      terminal: 0,
+    },
+  });
+
+  assert.equal("durationSeconds" in settings, false);
+  assert.equal("easing" in settings, false);
+  assert.equal("enabled" in settings, false);
+  assert.equal("applyBoundaryMode" in settings, false);
+  assert.equal("templateTransitionConfig" in settings, false);
+  assert.equal("boundaryTransitionConfig" in settings, false);
+  assert.equal("boundaryWeights" in settings, false);
+  assert.equal("postEffectAmounts" in settings, false);
+});
+
 test("template application preserves current drive mode settings", () => {
   const templateSettings = cloneTemplateSettings({
     ...DEFAULT_SETTINGS,
@@ -198,6 +241,32 @@ test("template application preserves current drive mode settings", () => {
   assert.equal(applied.frequencySweepRate, 0.1);
   assert.equal(applied.frequencySweepRange, 0.5);
   assert.equal(applied.cymaticBrightness, 2);
+});
+
+test("template application ignores transition settings from raw template data", () => {
+  const applied = createSettingsFromTemplate(
+    {
+      ...DEFAULT_SETTINGS,
+      cymaticBrightness: 2,
+      durationSeconds: 4,
+      easing: "linear",
+      enabled: false,
+      applyBoundaryMode: false,
+      boundaryTransitionConfig: {
+        enabled: false,
+        durationSeconds: 4,
+        easing: "linear",
+      },
+    },
+    DEFAULT_SETTINGS,
+  );
+
+  assert.equal(applied.cymaticBrightness, 2);
+  assert.equal("durationSeconds" in applied, false);
+  assert.equal("easing" in applied, false);
+  assert.equal("enabled" in applied, false);
+  assert.equal("applyBoundaryMode" in applied, false);
+  assert.equal("boundaryTransitionConfig" in applied, false);
 });
 
 test("template settings accept all resonance styles", () => {

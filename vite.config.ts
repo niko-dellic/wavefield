@@ -5,6 +5,8 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig, type Plugin } from "vite";
 
+import { cloneTemplateSettings } from "./src/templateSettings.ts";
+
 const ROOT_DIR = fileURLToPath(new URL(".", import.meta.url));
 const TEMPLATE_DIR = resolve(ROOT_DIR, "src/templates");
 const MAX_TEMPLATE_BODY_BYTES = 1_000_000;
@@ -73,7 +75,7 @@ async function handleSaveTemplate(
   const template = {
     name,
     createdAt: new Date().toISOString(),
-    settings: payload.settings,
+    settings: cloneTemplateSettings(payload.settings),
   };
   await mkdir(TEMPLATE_DIR, { recursive: true });
   await writeFile(
