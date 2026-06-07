@@ -120,7 +120,7 @@ const COPY_FRAGMENT_SHADER = `
   }
 `;
 
-function createRenderTarget(width = 1, height = 1) {
+function createRenderTarget(width = 1, height = 1): THREE.WebGLRenderTarget {
   const target = new THREE.WebGLRenderTarget(width, height, {
     depthBuffer: false,
     stencilBuffer: false,
@@ -173,7 +173,7 @@ export class AlphaDecayPass extends Pass {
     this.fullscreenMaterial = this.blendMaterial;
   }
 
-  updateSettings(settings: CymaticSettings, amount = 1) {
+  updateSettings(settings: CymaticSettings, amount = 1): void {
     this.blendMaterial.uniforms.decay.value = this.getDecayForFrames(
       settings.postAlphaDecayFrames,
     );
@@ -182,7 +182,7 @@ export class AlphaDecayPass extends Pass {
     this.blendMaterial.uniforms.amount.value = amount;
   }
 
-  resetHistory() {
+  resetHistory(): void {
     this.hasHistory = false;
   }
 
@@ -190,8 +190,8 @@ export class AlphaDecayPass extends Pass {
     renderer: THREE.WebGLRenderer,
     inputBuffer: THREE.WebGLRenderTarget | null,
     outputBuffer: THREE.WebGLRenderTarget | null,
-  ) {
-    if (!inputBuffer || !outputBuffer) {
+  ): void {
+    if (!inputBuffer || (!outputBuffer && !this.renderToScreen)) {
       return;
     }
 
@@ -199,13 +199,15 @@ export class AlphaDecayPass extends Pass {
     this.blendMaterial.uniforms.inputBuffer.value = inputBuffer.texture;
     this.blendMaterial.uniforms.historyBuffer.value = this.historyA.texture;
     this.blendMaterial.uniforms.hasHistory.value = this.hasHistory ? 1 : 0;
-    renderer.setRenderTarget(outputBuffer);
+    renderer.setRenderTarget(this.renderToScreen ? this.historyB : outputBuffer);
     renderer.render(this.scene, this.camera);
 
-    this.fullscreenMaterial = this.copyMaterial;
-    this.copyMaterial.uniforms.inputBuffer.value = outputBuffer.texture;
-    renderer.setRenderTarget(this.historyB);
-    renderer.render(this.scene, this.camera);
+    if (!this.renderToScreen && outputBuffer) {
+      this.fullscreenMaterial = this.copyMaterial;
+      this.copyMaterial.uniforms.inputBuffer.value = outputBuffer.texture;
+      renderer.setRenderTarget(this.historyB);
+      renderer.render(this.scene, this.camera);
+    }
 
     const previousHistory = this.historyA;
     this.historyA = this.historyB;
@@ -219,7 +221,7 @@ export class AlphaDecayPass extends Pass {
     }
   }
 
-  setSize(width: number, height: number) {
+  setSize(width: number, height: number): void {
     const targetWidth = Math.max(1, Math.floor(width));
     const targetHeight = Math.max(1, Math.floor(height));
     this.historyA.setSize(targetWidth, targetHeight);
@@ -227,7 +229,7 @@ export class AlphaDecayPass extends Pass {
     this.resetHistory();
   }
 
-  dispose() {
+  dispose(): void {
     this.blendMaterial.dispose();
     this.copyMaterial.dispose();
     this.historyA.dispose();
@@ -235,7 +237,7 @@ export class AlphaDecayPass extends Pass {
     super.dispose();
   }
 
-  private getDecayForFrames(frames: number) {
+  private getDecayForFrames(frames: number): number {
     return Math.pow(0.01, 1 / Math.max(1, frames));
   }
 }

@@ -1,18 +1,16 @@
 import * as THREE from "three";
 import {
   BloomEffect,
+  Effect,
   EffectComposer,
   EffectPass,
   PixelationEffect,
   RenderPass,
-  type Pass,
 } from "postprocessing";
 
 import {
+  getActivePostEffectIds,
   getPostEffectAmount,
-  getPostEffectAmounts,
-  hasActivePostEffectAmount,
-  isPostEffectEnabled,
 } from "../effectiveSettings";
 import type {
   EffectiveCymaticSettings,
@@ -27,29 +25,22 @@ export type PostProcessingRenderStats = {
   rendered: boolean;
 };
 
+type ActiveStandardEffect = {
+  effectId: Exclude<PostEffectId, "alphaDecay">;
+  effect: Effect;
+  pass: EffectPass;
+};
+
 /** Owns postprocessing composer state, pass ordering, and transition fade amounts. */
 export class PostProcessingPipeline {
   private composer: EffectComposer | null = null;
   private renderPass: RenderPass | null = null;
-  private pixelationPass: EffectPass | null = null;
-  private bloomPass: EffectPass | null = null;
-  private fisheyePass: EffectPass | null = null;
   private alphaDecayPass: AlphaDecayPass | null = null;
-  private terminalPass: EffectPass | null = null;
+  private standardEffects: ActiveStandardEffect[] = [];
   private postPipelineKey = "";
   private alphaDecayResetKey = "";
   private currentWidth = 1;
   private currentHeight = 1;
-  private readonly pixelationEffect = new PixelationEffect(6);
-  private readonly bloomEffect = new BloomEffect({
-    intensity: 0.72,
-    luminanceThreshold: 0.02,
-    luminanceSmoothing: 0.18,
-    mipmapBlur: true,
-    radius: 0.72,
-  });
-  private readonly fisheyeEffect = new FisheyeEffect();
-  private readonly terminalContourEffect = new TerminalContourEffect();
   private lastRenderStats: PostProcessingRenderStats = {
     activeEffects: [],
     rendered: false,
@@ -60,9 +51,10 @@ export class PostProcessingPipeline {
     this.currentWidth = width;
     this.currentHeight = height;
     this.composer?.setSize(width, height, false);
-    this.fisheyeEffect.setSize(width, height);
+    for (const controller of this.standardEffects) {
+      controller.pass.setSize(width, height);
+    }
     this.alphaDecayPass?.setSize(width, height);
-    this.terminalContourEffect.setSize(width, height);
   }
 
   /** Clears temporal history so reset actions do not leave stale trails. */
@@ -79,8 +71,9 @@ export class PostProcessingPipeline {
     settings: EffectiveCymaticSettings,
     deltaSeconds: number,
   ): PostProcessingRenderStats {
-    const enabledPostEffects = this.getEnabledPostEffects(settings);
+    const enabledPostEffects = getActivePostEffectIds(settings);
     if (enabledPostEffects.length === 0) {
+      this.clearPostPipeline();
       this.lastRenderStats = { activeEffects: [], rendered: false };
       return this.lastRenderStats;
     }
@@ -101,6 +94,8 @@ export class PostProcessingPipeline {
 
   /** Releases composer resources owned by the postprocessing package. */
   public dispose(): void {
+    this.disposeActivePipeline();
+    this.composer?.removeAllPasses();
     this.composer?.dispose();
   }
 
@@ -118,11 +113,6 @@ export class PostProcessingPipeline {
       multisampling: 0,
     });
     this.renderPass = new RenderPass(scene, camera);
-    this.pixelationPass = new EffectPass(camera, this.pixelationEffect);
-    this.bloomPass = new EffectPass(camera, this.bloomEffect);
-    this.fisheyePass = new EffectPass(camera, this.fisheyeEffect);
-    this.alphaDecayPass = new AlphaDecayPass();
-    this.terminalPass = new EffectPass(camera, this.terminalContourEffect);
     this.setSize(this.currentWidth, this.currentHeight);
   }
 
@@ -134,26 +124,14 @@ export class PostProcessingPipeline {
     enabledPostEffects: PostEffectId[],
   ): void {
     this.ensureComposer(renderer, scene, camera);
+    this.rebuildPostPipeline(enabledPostEffects);
     this.updateSceneAndCamera(scene, camera);
-
-    this.pixelationEffect.granularity = THREE.MathUtils.lerp(
-      1,
-      settings.postPixelSize,
-      getPostEffectAmount(settings, "pixelation"),
-    );
-    this.bloomEffect.intensity =
-      settings.postBloomIntensity * getPostEffectAmount(settings, "bloom");
-    this.fisheyeEffect.updateSettings(settings, getPostEffectAmount(settings, "fisheye"));
+    this.updateStandardEffects(settings);
     this.alphaDecayPass?.updateSettings(
       settings,
       getPostEffectAmount(settings, "alphaDecay"),
     );
     this.resetAlphaDecayHistoryIfNeeded(settings);
-    this.terminalContourEffect.updateSettings(
-      settings,
-      getPostEffectAmount(settings, "terminal"),
-    );
-    this.rebuildPostPipeline(enabledPostEffects);
   }
 
   /** Keeps reusable passes pointed at the current screen or sphere camera. */
@@ -166,24 +144,12 @@ export class PostProcessingPipeline {
       this.renderPass.mainScene = scene;
       this.renderPass.mainCamera = camera;
     }
-    if (this.pixelationPass) {
-      this.pixelationPass.mainCamera = camera;
-      this.pixelationPass.enabled = true;
-    }
-    if (this.bloomPass) {
-      this.bloomPass.mainCamera = camera;
-      this.bloomPass.enabled = true;
-    }
-    if (this.fisheyePass) {
-      this.fisheyePass.mainCamera = camera;
-      this.fisheyePass.enabled = true;
+    for (const controller of this.standardEffects) {
+      controller.pass.mainCamera = camera;
+      controller.pass.enabled = true;
     }
     if (this.alphaDecayPass) {
       this.alphaDecayPass.enabled = true;
-    }
-    if (this.terminalPass) {
-      this.terminalPass.mainCamera = camera;
-      this.terminalPass.enabled = true;
     }
   }
 
@@ -216,47 +182,114 @@ export class PostProcessingPipeline {
       return;
     }
 
+    this.disposeActivePipeline();
     this.composer.removeAllPasses();
     this.composer.addPass(this.renderPass);
+
     for (const effectId of enabledPostEffects) {
-      const pass = this.getPostPass(effectId);
-      if (pass) {
-        this.composer.addPass(pass);
+      if (effectId === "alphaDecay") {
+        this.alphaDecayPass = new AlphaDecayPass();
+        this.alphaDecayPass.setSize(this.currentWidth, this.currentHeight);
+        if (this.alphaDecayPass) {
+          this.composer.addPass(this.alphaDecayPass);
+        }
+        continue;
       }
+
+      const controller = this.createStandardEffectController(effectId);
+      this.standardEffects.push(controller);
+      this.composer.addPass(controller.pass);
     }
     this.postPipelineKey = pipelineKey;
   }
 
-  private getPostPass(effectId: PostEffectId): Pass | null {
+  private createStandardEffectController(
+    effectId: Exclude<PostEffectId, "alphaDecay">,
+  ): ActiveStandardEffect {
+    if (!this.renderPass) {
+      throw new Error("RenderPass must exist before creating post effects");
+    }
+
+    const effect = this.createStandardEffect(effectId);
+    const pass = new EffectPass(this.renderPass.mainCamera, effect);
+    pass.setSize(this.currentWidth, this.currentHeight);
+    return { effectId, effect, pass };
+  }
+
+  private createStandardEffect(effectId: Exclude<PostEffectId, "alphaDecay">): Effect {
     switch (effectId) {
       case "bloom":
-        return this.bloomPass;
+        return new BloomEffect({
+          intensity: 0.72,
+          luminanceThreshold: 0.02,
+          luminanceSmoothing: 0.18,
+          mipmapBlur: true,
+          radius: 0.72,
+        });
       case "pixelation":
-        return this.pixelationPass;
+        return new PixelationEffect(6);
       case "fisheye":
-        return this.fisheyePass;
-      case "alphaDecay":
-        return this.alphaDecayPass;
+        return new FisheyeEffect();
       case "terminal":
-        return this.terminalPass;
+        return new TerminalContourEffect();
     }
   }
 
-  private getEnabledPostEffects(settings: EffectiveCymaticSettings): PostEffectId[] {
-    const amounts = getPostEffectAmounts(settings);
-    const hasEnabledEffect = settings.postEffectOrder.some(
-      (effectId: PostEffectId): boolean => isPostEffectEnabled(settings, effectId),
-    );
-    if (
-      !settings.postProcessingEnabled &&
-      !hasEnabledEffect &&
-      !hasActivePostEffectAmount(amounts)
-    ) {
-      return [];
+  private updateStandardEffects(settings: EffectiveCymaticSettings): void {
+    for (const controller of this.standardEffects) {
+      switch (controller.effectId) {
+        case "bloom":
+          if (controller.effect instanceof BloomEffect) {
+            controller.effect.intensity =
+              settings.postBloomIntensity * getPostEffectAmount(settings, "bloom");
+          }
+          break;
+        case "pixelation":
+          if (controller.effect instanceof PixelationEffect) {
+            controller.effect.granularity = THREE.MathUtils.lerp(
+              1,
+              settings.postPixelSize,
+              getPostEffectAmount(settings, "pixelation"),
+            );
+          }
+          break;
+        case "fisheye":
+          if (controller.effect instanceof FisheyeEffect) {
+            controller.effect.updateSettings(
+              settings,
+              getPostEffectAmount(settings, "fisheye"),
+            );
+          }
+          break;
+        case "terminal":
+          if (controller.effect instanceof TerminalContourEffect) {
+            controller.effect.updateSettings(
+              settings,
+              getPostEffectAmount(settings, "terminal"),
+            );
+          }
+          break;
+      }
+    }
+  }
+
+  private disposeActivePipeline(): void {
+    for (const controller of this.standardEffects) {
+      controller.pass.dispose();
+    }
+    this.standardEffects = [];
+    this.alphaDecayPass?.dispose();
+    this.alphaDecayPass = null;
+  }
+
+  private clearPostPipeline(): void {
+    if (!this.composer || this.postPipelineKey === "") {
+      return;
     }
 
-    return settings.postEffectOrder.filter((effectId: PostEffectId): boolean => {
-      return isPostEffectEnabled(settings, effectId) || amounts[effectId] > 0.001;
-    });
+    this.disposeActivePipeline();
+    this.composer.removeAllPasses();
+    this.postPipelineKey = "";
+    this.alphaDecayResetKey = "";
   }
 }

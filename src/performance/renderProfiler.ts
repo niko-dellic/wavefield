@@ -24,7 +24,7 @@ export type RenderProfilerFrameContext = {
 
 type RenderProfilerOptions = {
   overlay: boolean;
-  logIntervalMilliseconds: number;
+  summaryIntervalMilliseconds: number;
 };
 
 type MetricSnapshot = {
@@ -58,7 +58,7 @@ export class RenderProfiler {
   private readonly overlayElement: HTMLDivElement | null;
   private activeGpuQuery: WebGLQuery | null = null;
   private frameStartMilliseconds = 0;
-  private lastLogMilliseconds = performance.now();
+  private lastSummaryMilliseconds = performance.now();
   private latestContext: RenderProfilerFrameContext | null = null;
 
   public constructor(
@@ -70,10 +70,10 @@ export class RenderProfiler {
     this.gpuTimer =
       this.gl?.getExtension("EXT_disjoint_timer_query_webgl2") ?? null;
     this.overlayElement = options.overlay ? createOverlayElement() : null;
-    this.logIntervalMilliseconds = options.logIntervalMilliseconds;
+    this.summaryIntervalMilliseconds = options.summaryIntervalMilliseconds;
   }
 
-  private readonly logIntervalMilliseconds: number;
+  private readonly summaryIntervalMilliseconds: number;
 
   /** Marks the start of a frame for rolling frame-time accounting. */
   public beginFrame(nowMilliseconds: number): void {
@@ -131,7 +131,7 @@ export class RenderProfiler {
     };
   }
 
-  /** Completes frame accounting and emits rolling summaries at a low cadence. */
+  /** Completes frame accounting and updates the optional overlay at a low cadence. */
   public endFrame(
     nowMilliseconds: number,
     context: RenderProfilerFrameContext,
@@ -139,13 +139,15 @@ export class RenderProfiler {
     this.latestContext = context;
     this.frameMetric.add(nowMilliseconds - this.frameStartMilliseconds);
 
-    if (nowMilliseconds - this.lastLogMilliseconds < this.logIntervalMilliseconds) {
+    if (
+      nowMilliseconds - this.lastSummaryMilliseconds <
+      this.summaryIntervalMilliseconds
+    ) {
       return;
     }
 
-    this.lastLogMilliseconds = nowMilliseconds;
+    this.lastSummaryMilliseconds = nowMilliseconds;
     const summary = this.createSummary(context);
-    console.info("[wavefield profile]", summary);
     this.updateOverlay(summary);
     this.resetMetrics();
   }
@@ -274,7 +276,7 @@ export function createRenderProfiler(
 
   return new RenderProfiler(renderer, {
     overlay: requestedProfile,
-    logIntervalMilliseconds: requestedProfile ? 2_000 : 5_000,
+    summaryIntervalMilliseconds: requestedProfile ? 2_000 : 5_000,
   });
 }
 

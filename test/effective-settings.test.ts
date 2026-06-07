@@ -10,18 +10,40 @@ import {
   FIELD_MODELS,
   POST_EFFECT_IDS,
   createEffectiveCymaticSettings,
+  getActivePostEffectIds,
   getBoundaryWeights,
   getFieldModelWeights,
   getPostEffectAmounts,
   hasActivePostEffectAmount,
 } from "../src/effectiveSettings.ts";
-import type { BoundaryMode, FieldModel, PostEffectId } from "../src/types.ts";
+import type {
+  BoundaryMode,
+  EffectiveCymaticSettings,
+  FieldModel,
+  PostEffectId,
+} from "../src/types.ts";
 
 const TEST_DIR = dirname(fileURLToPath(import.meta.url));
 const FIELD_MODEL_SHADER_PATH = resolve(
   TEST_DIR,
   "../src/webgl/shaders/fragmentFieldModels.ts",
 );
+
+function createPostSettings(
+  enabledEffects: readonly PostEffectId[],
+): EffectiveCymaticSettings {
+  const enabledSet = new Set<PostEffectId>(enabledEffects);
+  return createEffectiveCymaticSettings({
+    ...DEFAULT_SETTINGS,
+    postProcessingEnabled: true,
+    postEffectOrder: [...POST_EFFECT_IDS],
+    postBloomEnabled: enabledSet.has("bloom"),
+    postPixelationEnabled: enabledSet.has("pixelation"),
+    postFisheyeEnabled: enabledSet.has("fisheye"),
+    postAlphaDecayEnabled: enabledSet.has("alphaDecay"),
+    terminalContourEnabled: enabledSet.has("terminal"),
+  });
+}
 
 test("all resonance styles produce one-hot effective weights", () => {
   for (const boundaryMode of BOUNDARY_MODES) {
@@ -84,6 +106,32 @@ test("post-effect amounts are zero when global post processing is disabled", () 
     assert.equal(settings.postEffectAmounts[effectId], 0);
   }
   assert.equal(hasActivePostEffectAmount(settings.postEffectAmounts), false);
+});
+
+test("active post-effect stack derives each effect independently", () => {
+  for (const effectId of POST_EFFECT_IDS) {
+    const settings = createPostSettings([effectId]);
+    assert.deepEqual(getActivePostEffectIds(settings), [effectId]);
+  }
+
+  assert.deepEqual(
+    getActivePostEffectIds(createPostSettings(["pixelation", "terminal"])),
+    ["pixelation", "terminal"],
+  );
+
+  assert.deepEqual(getActivePostEffectIds(createPostSettings([])), []);
+});
+
+test("active post-effect stack only keeps disabled effects with transition amounts", () => {
+  for (const effectId of POST_EFFECT_IDS) {
+    const settings = createPostSettings([]);
+    settings.postEffectAmounts[effectId] = 0.25;
+
+    assert.deepEqual(getActivePostEffectIds(settings), [effectId]);
+
+    settings.postEffectAmounts[effectId] = 0;
+    assert.deepEqual(getActivePostEffectIds(settings), []);
+  }
 });
 
 test("effective settings accept every model and resonance combination", () => {

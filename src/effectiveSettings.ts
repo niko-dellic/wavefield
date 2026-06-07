@@ -141,6 +141,31 @@ export function hasActivePostEffectAmount(amounts: PostEffectAmounts): boolean {
   return Object.values(amounts).some((amount: number): boolean => amount > 0.001);
 }
 
+/**
+ * Returns the exact post-effect stack that should be rendered this frame.
+ * During transitions this may include fading effects whose base toggle is off,
+ * but disabled effects with zero amount are excluded.
+ */
+export function getActivePostEffectIds(
+  settings: CymaticSettings | EffectiveCymaticSettings,
+): PostEffectId[] {
+  const amounts = getPostEffectAmounts(settings);
+  const hasEnabledEffect = settings.postEffectOrder.some(
+    (effectId: PostEffectId): boolean => isPostEffectEnabled(settings, effectId),
+  );
+  if (
+    !settings.postProcessingEnabled &&
+    !hasEnabledEffect &&
+    !hasActivePostEffectAmount(amounts)
+  ) {
+    return [];
+  }
+
+  return settings.postEffectOrder.filter((effectId: PostEffectId): boolean => {
+    return isPostEffectEnabled(settings, effectId) || amounts[effectId] > 0.001;
+  });
+}
+
 /** Fallback effective settings used by tests or callers that need a complete shape. */
 export const DEFAULT_EFFECTIVE_SETTINGS: EffectiveCymaticSettings =
   createEffectiveCymaticSettings(DEFAULT_SETTINGS);

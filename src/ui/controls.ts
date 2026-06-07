@@ -845,6 +845,11 @@ function getLayoutKey(
     settings.screenAspectMode,
     settings.postProcessingEnabled,
     settings.postEffectOrder.join(","),
+    settings.postBloomEnabled ? "bloom:on" : "bloom:off",
+    settings.postPixelationEnabled ? "pixelation:on" : "pixelation:off",
+    settings.postFisheyeEnabled ? "fisheye:on" : "fisheye:off",
+    settings.terminalContourEnabled ? "terminal:on" : "terminal:off",
+    settings.postAlphaDecayEnabled ? "alphaDecay:on" : "alphaDecay:off",
     `wander:${wanderEnabled ? "on" : "off"}`,
     getTemplateLayoutKey(templateControls),
   ].join(":");

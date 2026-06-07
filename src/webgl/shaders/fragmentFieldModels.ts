@@ -102,6 +102,22 @@ export const FIELD_MODEL_FRAGMENT: string = `  vec2 plateUvFromScreen(vec2 uv) {
   }
 
   float modalPlateValue(float m, float n, vec2 p) {
+    if (uBoundaryWeights.x > 0.999) {
+      return freeChladniValue(m, n, p);
+    }
+    if (uBoundaryWeights.y > 0.999) {
+      return dirichletChladniValue(m, n, p);
+    }
+    if (uBoundaryWeights.z > 0.999) {
+      return neumannChladniValue(m, n, p);
+    }
+    if (uBoundaryWeights.w > 0.999) {
+      return supportedChladniValue(m, n, p);
+    }
+    if (uBoundaryClampedWeight > 0.999) {
+      return clampedChladniValue(m, n, p);
+    }
+
     return
       freeChladniValue(m, n, p) * uBoundaryWeights.x +
       dirichletChladniValue(m, n, p) * uBoundaryWeights.y +
@@ -203,6 +219,19 @@ export const FIELD_MODEL_FRAGMENT: string = `  vec2 plateUvFromScreen(vec2 uv) {
   }
 
   float chladniValue(float m, float n, vec2 p) {
+    if (uFieldModelWeights.x > 0.999) {
+      return modalPlateValue(m, n, p);
+    }
+    if (uFieldModelWeights.y > 0.999) {
+      return radialPlateValue(m, n, p);
+    }
+    if (uFieldModelWeights.z > 0.999) {
+      return faradayPulseValue(m, n, p);
+    }
+    if (uFieldModelWeights.w > 0.999) {
+      return spiralPhaseValue(m, n, p);
+    }
+
     return
       modalPlateValue(m, n, p) * uFieldModelWeights.x +
       radialPlateValue(m, n, p) * uFieldModelWeights.y +
@@ -264,7 +293,36 @@ export const FIELD_MODEL_FRAGMENT: string = `  vec2 plateUvFromScreen(vec2 uv) {
       supported * edgeEnvelopeGradient(p);
   }
 
+  vec2 modalPlateGradient(float m, float n, vec2 p) {
+    if (uBoundaryWeights.x > 0.999) {
+      return freeChladniGradient(m, n, p);
+    }
+    if (uBoundaryWeights.y > 0.999) {
+      return dirichletChladniGradient(m, n, p);
+    }
+    if (uBoundaryWeights.z > 0.999) {
+      return neumannChladniGradient(m, n, p);
+    }
+    if (uBoundaryWeights.w > 0.999) {
+      return supportedChladniGradient(m, n, p);
+    }
+    if (uBoundaryClampedWeight > 0.999) {
+      return clampedChladniGradient(m, n, p);
+    }
+
+    return
+      freeChladniGradient(m, n, p) * uBoundaryWeights.x +
+      dirichletChladniGradient(m, n, p) * uBoundaryWeights.y +
+      neumannChladniGradient(m, n, p) * uBoundaryWeights.z +
+      supportedChladniGradient(m, n, p) * uBoundaryWeights.w +
+      clampedChladniGradient(m, n, p) * uBoundaryClampedWeight;
+  }
+
   vec2 chladniGradient(float m, float n, vec2 p) {
+    if (uFieldModelWeights.x > 0.999) {
+      return modalPlateGradient(m, n, p);
+    }
+
     vec2 stepSize = vec2(0.002, 0.0);
     float dx =
       chladniValue(m, n, p + stepSize.xy) -
@@ -276,6 +334,16 @@ export const FIELD_MODEL_FRAGMENT: string = `  vec2 plateUvFromScreen(vec2 uv) {
   }
 
   float nonModalFieldValue(float m, float n, vec2 p) {
+    if (uFieldModelWeights.y > 0.999) {
+      return radialPlateValue(m, n, p);
+    }
+    if (uFieldModelWeights.z > 0.999) {
+      return faradayPulseValue(m, n, p);
+    }
+    if (uFieldModelWeights.w > 0.999) {
+      return spiralPhaseValue(m, n, p);
+    }
+
     return
       radialPlateValue(m, n, p) * uFieldModelWeights.y +
       faradayPulseValue(m, n, p) * uFieldModelWeights.z +
