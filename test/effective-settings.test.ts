@@ -7,15 +7,16 @@ import { fileURLToPath } from "node:url";
 import { DEFAULT_SETTINGS } from "../src/config/settings.ts";
 import {
   BOUNDARY_MODES,
+  COMPOSER_POST_EFFECT_IDS,
   FIELD_MODELS,
   POST_EFFECT_IDS,
   createEffectiveCymaticSettings,
-  getActivePostEffectIds,
+  getActiveComposerPostEffectIds,
   getBoundaryWeights,
+  getComposerPostEffectRenderAmount,
   getFieldModelWeights,
   getPostEffectAmounts,
-  getPostEffectRenderAmount,
-  hasActivePostEffectAmount,
+  hasActiveComposerPostEffectAmount,
 } from "../src/effectiveSettings.ts";
 import type {
   BoundaryMode,
@@ -89,7 +90,7 @@ test("effective settings centralize post-effect amounts", () => {
   };
 
   assert.deepEqual(getPostEffectAmounts(settings), expected);
-  assert.equal(hasActivePostEffectAmount(settings.postEffectAmounts), true);
+  assert.equal(hasActiveComposerPostEffectAmount(settings.postEffectAmounts), true);
 });
 
 test("post-effect amounts are zero when global post processing is disabled", () => {
@@ -106,51 +107,52 @@ test("post-effect amounts are zero when global post processing is disabled", () 
   for (const effectId of POST_EFFECT_IDS) {
     assert.equal(settings.postEffectAmounts[effectId], 0);
   }
-  assert.equal(hasActivePostEffectAmount(settings.postEffectAmounts), false);
+  assert.equal(hasActiveComposerPostEffectAmount(settings.postEffectAmounts), false);
 });
 
-test("active post-effect stack derives each effect independently", () => {
-  for (const effectId of POST_EFFECT_IDS.filter(
-    (id) => id !== "fisheye",
-  )) {
+test("active composer post-effect stack derives each composer effect independently", () => {
+  for (const effectId of COMPOSER_POST_EFFECT_IDS) {
     const settings = createPostSettings([effectId]);
-    assert.deepEqual(getActivePostEffectIds(settings), [effectId]);
+    assert.deepEqual(getActiveComposerPostEffectIds(settings), [effectId]);
   }
 
-  assert.deepEqual(getActivePostEffectIds(createPostSettings(["fisheye"])), []);
+  assert.deepEqual(
+    getActiveComposerPostEffectIds(createPostSettings(["fisheye"])),
+    [],
+  );
 
   assert.deepEqual(
-    getActivePostEffectIds(createPostSettings(["pixelation", "terminal"])),
+    getActiveComposerPostEffectIds(
+      createPostSettings(["pixelation", "terminal"]),
+    ),
     ["pixelation", "terminal"],
   );
 
-  assert.deepEqual(getActivePostEffectIds(createPostSettings([])), []);
+  assert.deepEqual(getActiveComposerPostEffectIds(createPostSettings([])), []);
 });
 
-test("active post-effect stack only keeps disabled effects with transition amounts", () => {
-  for (const effectId of POST_EFFECT_IDS.filter(
-    (id) => id !== "fisheye",
-  )) {
+test("active composer post-effect stack only keeps disabled effects with transition amounts", () => {
+  for (const effectId of COMPOSER_POST_EFFECT_IDS) {
     const settings = createPostSettings([]);
     settings.postEffectAmounts[effectId] = 0.25;
 
-    assert.deepEqual(getActivePostEffectIds(settings), [effectId]);
+    assert.deepEqual(getActiveComposerPostEffectIds(settings), [effectId]);
 
     settings.postEffectAmounts[effectId] = 0;
-    assert.deepEqual(getActivePostEffectIds(settings), []);
+    assert.deepEqual(getActiveComposerPostEffectIds(settings), []);
   }
 });
 
-test("active post-effect stack skips neutral post-effect values", () => {
+test("active composer post-effect stack skips neutral effect values", () => {
   const bloom = createPostSettings(["bloom"]);
   bloom.postBloomIntensity = 0;
-  assert.equal(getPostEffectRenderAmount(bloom, "bloom"), 0);
-  assert.deepEqual(getActivePostEffectIds(bloom), []);
+  assert.equal(getComposerPostEffectRenderAmount(bloom, "bloom"), 0);
+  assert.deepEqual(getActiveComposerPostEffectIds(bloom), []);
 
   const pixelation = createPostSettings(["pixelation"]);
   pixelation.postPixelSize = 1;
-  assert.equal(getPostEffectRenderAmount(pixelation, "pixelation"), 0);
-  assert.deepEqual(getActivePostEffectIds(pixelation), []);
+  assert.equal(getComposerPostEffectRenderAmount(pixelation, "pixelation"), 0);
+  assert.deepEqual(getActiveComposerPostEffectIds(pixelation), []);
 });
 
 test("effective settings accept every model and resonance combination", () => {

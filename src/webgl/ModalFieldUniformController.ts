@@ -4,7 +4,6 @@ import { MAX_MODAL_MODES, type ModalFieldFrame } from "../audio/ModalField";
 import {
   getBoundaryWeights,
   getFieldModelWeights,
-  getPostEffectAmount,
 } from "../effectiveSettings";
 import type {
   BoundaryWeights,
@@ -18,9 +17,8 @@ import type {
   SphereProjectionType,
 } from "../types";
 import { setColorUniform } from "./colorUniforms";
+import { getFisheyeUniformState } from "./fisheyeUniforms";
 import type { ScreenViewTransform } from "./renderTypes";
-
-export { setColorUniform } from "./colorUniforms";
 
 const COLOR_MODE_INDEX: Record<ColorMode, number> = {
   chromesthesia: 0,
@@ -247,14 +245,9 @@ export class ModalFieldUniformController {
     this.uniforms.uSphereAbsorption.value = settings.sphereAbsorption;
     this.uniforms.uSphereShellBias.value = settings.sphereShellBias;
     this.uniforms.uSphereInteriorGlow.value = settings.sphereInteriorGlow;
-    this.uniforms.uFisheyeParams.value.set(
-      settings.postFisheyeK1,
-      settings.postFisheyeK1Aspect ? 1 : 0,
-      settings.postFisheyeK2,
-      settings.postFisheyeK2Aspect ? 1 : 0,
-    );
-    this.uniforms.uFisheyeStrength.value =
-      settings.postFisheyeStrength * getPostEffectAmount(settings, "fisheye");
+    const fisheye = getFisheyeUniformState(settings);
+    this.uniforms.uFisheyeParams.value.set(...fisheye.params);
+    this.uniforms.uFisheyeStrength.value = fisheye.strength;
 
     if (settings.projectionMode === "sphere") {
       sphereCamera.updateMatrixWorld();

@@ -24,5 +24,5 @@ test("fisheye is shader-native and does not enter the post composer", () => {
     /plateUvFromScreen\s*\(\s*fisheyeUv\s*\(\s*uv\s*\)\s*\)/,
   );
   assert.doesNotMatch(postPipelineSource, /new\s+FisheyeEffect/);
-  assert.match(postPipelineSource, /effectId\s*===\s*"fisheye"/);
+  assert.doesNotMatch(postPipelineSource, /fisheye/i);
 });

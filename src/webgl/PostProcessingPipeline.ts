@@ -9,22 +9,20 @@ import {
 } from "postprocessing";
 
 import {
-  getActivePostEffectIds,
+  getActiveComposerPostEffectIds,
   getPostEffectAmount,
+  type ComposerPostEffectId,
 } from "../effectiveSettings";
-import type {
-  EffectiveCymaticSettings,
-  PostEffectId,
-} from "../types";
+import type { EffectiveCymaticSettings } from "../types";
 import { AlphaDecayPass } from "./AlphaDecayPass";
 import { TerminalContourEffect } from "./TerminalContourEffect";
 
 export type PostProcessingRenderStats = {
-  activeEffects: PostEffectId[];
+  activeEffects: ComposerPostEffectId[];
   rendered: boolean;
 };
 
-type StandardPostEffectId = Exclude<PostEffectId, "alphaDecay" | "fisheye">;
+type StandardPostEffectId = Exclude<ComposerPostEffectId, "alphaDecay">;
 
 type ActiveStandardEffect = {
   effectId: StandardPostEffectId;
@@ -72,7 +70,7 @@ export class PostProcessingPipeline {
     settings: EffectiveCymaticSettings,
     deltaSeconds: number,
   ): PostProcessingRenderStats {
-    const enabledPostEffects = getActivePostEffectIds(settings);
+    const enabledPostEffects = getActiveComposerPostEffectIds(settings);
     if (enabledPostEffects.length === 0) {
       this.clearPostPipeline();
       this.lastRenderStats = { activeEffects: [], rendered: false };
@@ -123,7 +121,7 @@ export class PostProcessingPipeline {
     scene: THREE.Scene,
     camera: THREE.Camera,
     settings: EffectiveCymaticSettings,
-    enabledPostEffects: PostEffectId[],
+    enabledPostEffects: ComposerPostEffectId[],
   ): void {
     this.ensureComposer(renderer, scene, camera);
     this.rebuildPostPipeline(enabledPostEffects);
@@ -174,7 +172,7 @@ export class PostProcessingPipeline {
     }
   }
 
-  private rebuildPostPipeline(enabledPostEffects: PostEffectId[]): void {
+  private rebuildPostPipeline(enabledPostEffects: ComposerPostEffectId[]): void {
     if (!this.composer || !this.renderPass) {
       return;
     }
@@ -197,10 +195,6 @@ export class PostProcessingPipeline {
         }
         continue;
       }
-      if (effectId === "fisheye") {
-        continue;
-      }
-
       const controller = this.createStandardEffectController(effectId);
       this.standardEffects.push(controller);
       this.composer.addPass(controller.pass);

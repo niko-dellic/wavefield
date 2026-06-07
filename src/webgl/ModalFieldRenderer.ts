@@ -2,10 +2,8 @@ import * as THREE from "three";
 
 import type { ModalFieldFrame } from "../audio/ModalField";
 import type { EffectiveCymaticSettings } from "../types";
-import {
-  ModalFieldUniformController,
-  setColorUniform,
-} from "./ModalFieldUniformController";
+import { setColorUniform } from "./colorUniforms";
+import { ModalFieldUniformController } from "./ModalFieldUniformController";
 import {
   PostProcessingPipeline,
   type PostProcessingRenderStats,

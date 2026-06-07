@@ -11,6 +11,8 @@ import type {
   PostEffectId,
 } from "./types.ts";
 
+export type ComposerPostEffectId = Exclude<PostEffectId, "fisheye">;
+
 export const BOUNDARY_MODES = [
   "freePlate",
   "dirichlet",
@@ -33,6 +35,13 @@ export const POST_EFFECT_IDS = [
   "alphaDecay",
   "terminal",
 ] satisfies PostEffectId[];
+
+export const COMPOSER_POST_EFFECT_IDS = [
+  "bloom",
+  "pixelation",
+  "alphaDecay",
+  "terminal",
+] satisfies ComposerPostEffectId[];
 
 export const POST_EFFECT_ENABLED_KEYS = {
   bloom: "postBloomEnabled",
@@ -126,10 +135,10 @@ export function getPostEffectAmount(
   return getPostEffectAmounts(settings)[effectId];
 }
 
-/** Returns the visual amount that makes an effect worth rendering as a post pass. */
-export function getPostEffectRenderAmount(
+/** Returns the visual amount that makes a composer-owned effect worth rendering. */
+export function getComposerPostEffectRenderAmount(
   settings: CymaticSettings | EffectiveCymaticSettings,
-  effectId: PostEffectId,
+  effectId: ComposerPostEffectId,
 ): number {
   const amount = getPostEffectAmount(settings, effectId);
   switch (effectId) {
@@ -137,12 +146,6 @@ export function getPostEffectRenderAmount(
       return amount * Math.max(0, settings.postBloomIntensity);
     case "pixelation":
       return amount * Math.max(0, settings.postPixelSize - 1);
-    case "fisheye":
-      return (
-        amount *
-        Math.max(0, settings.postFisheyeStrength) *
-        (Math.abs(settings.postFisheyeK1) + Math.abs(settings.postFisheyeK2))
-      );
     case "alphaDecay":
       return amount;
     case "terminal":
@@ -161,40 +164,57 @@ export function isPostEffectEnabled(
 }
 
 /** True when any transition amount still requires a post pass to render. */
-export function hasActivePostEffectAmount(amounts: PostEffectAmounts): boolean {
-  return Object.values(amounts).some((amount: number): boolean => amount > 0.001);
+export function hasActiveComposerPostEffectAmount(
+  amounts: PostEffectAmounts,
+): boolean {
+  return COMPOSER_POST_EFFECT_IDS.some(
+    (effectId: ComposerPostEffectId): boolean => amounts[effectId] > 0.001,
+  );
 }
 
 /**
- * Returns the exact post-effect stack that should be rendered this frame.
- * During transitions this may include fading effects whose base toggle is off,
- * but disabled effects with zero amount are excluded.
+ * Returns the exact composer-owned post-effect stack that should render this frame.
+ *
+ * Fisheye is intentionally excluded because it is a shader-native lens warp,
+ * not a composer pass. During transitions this may include fading composer
+ * effects whose base toggle is off, but disabled effects with zero visual
+ * amount are excluded.
  */
-export function getActivePostEffectIds(
+export function getActiveComposerPostEffectIds(
   settings: CymaticSettings | EffectiveCymaticSettings,
-): PostEffectId[] {
+): ComposerPostEffectId[] {
   const amounts = getPostEffectAmounts(settings);
-  const hasEnabledEffect = settings.postEffectOrder.some(
-    (effectId: PostEffectId): boolean => isPostEffectEnabled(settings, effectId),
+  const hasEnabledComposerEffect = COMPOSER_POST_EFFECT_IDS.some(
+    (effectId: ComposerPostEffectId): boolean =>
+      isPostEffectEnabled(settings, effectId),
   );
   if (
     !settings.postProcessingEnabled &&
-    !hasEnabledEffect &&
-    !hasActivePostEffectAmount(amounts)
+    !hasEnabledComposerEffect &&
+    !hasActiveComposerPostEffectAmount(amounts)
   ) {
     return [];
   }
 
-  return settings.postEffectOrder.filter((effectId: PostEffectId): boolean => {
-    if (effectId === "fisheye") {
-      return false;
-    }
+  return settings.postEffectOrder.flatMap(
+    (effectId: PostEffectId): ComposerPostEffectId[] => {
+      if (!isComposerPostEffectId(effectId)) {
+        return [];
+      }
 
-    return (
-      (isPostEffectEnabled(settings, effectId) || amounts[effectId] > 0.001) &&
-      getPostEffectRenderAmount(settings, effectId) > 0.001
-    );
-  });
+      const isActive =
+        (isPostEffectEnabled(settings, effectId) || amounts[effectId] > 0.001) &&
+        getComposerPostEffectRenderAmount(settings, effectId) > 0.001;
+      return isActive ? [effectId] : [];
+    },
+  );
+}
+
+/** True when an effect is implemented by the postprocessing composer. */
+export function isComposerPostEffectId(
+  effectId: PostEffectId,
+): effectId is ComposerPostEffectId {
+  return COMPOSER_POST_EFFECT_IDS.includes(effectId as ComposerPostEffectId);
 }
 
 /** Fallback effective settings used by tests or callers that need a complete shape. */
