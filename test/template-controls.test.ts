@@ -193,6 +193,10 @@ test("template snapshots exclude transition and derived runtime settings", () =>
       durationSeconds: 4,
       easing: "linear",
     },
+    wanderConfig: {
+      panEnabled: true,
+      depthEnabled: true,
+    },
     boundaryWeights: {
       freePlate: 0,
       dirichlet: 1,
@@ -221,6 +225,7 @@ test("template snapshots exclude transition and derived runtime settings", () =>
   assert.equal("applyBoundaryMode" in settings, false);
   assert.equal("templateTransitionConfig" in settings, false);
   assert.equal("boundaryTransitionConfig" in settings, false);
+  assert.equal("wanderConfig" in settings, false);
   assert.equal("boundaryWeights" in settings, false);
   assert.equal("fieldModelWeights" in settings, false);
   assert.equal("postEffectAmounts" in settings, false);
@@ -303,6 +308,10 @@ test("template application ignores transition settings from raw template data", 
         durationSeconds: 4,
         easing: "linear",
       },
+      wanderConfig: {
+        panEnabled: true,
+        depthEnabled: true,
+      },
     },
     DEFAULT_SETTINGS,
   );
@@ -313,6 +322,7 @@ test("template application ignores transition settings from raw template data", 
   assert.equal("enabled" in applied, false);
   assert.equal("applyBoundaryMode" in applied, false);
   assert.equal("boundaryTransitionConfig" in applied, false);
+  assert.equal("wanderConfig" in applied, false);
 });
 
 test("template settings accept all resonance styles", () => {

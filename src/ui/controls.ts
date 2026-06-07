@@ -9,8 +9,10 @@ import {
   SETTING_DESCRIPTIONS,
   SHADER_CONTROLS,
   SPHERE_CONTROLS,
+  type BooleanControlConfig,
   type NumericControlConfig,
   type PostEffectControlConfig,
+  type SelectControlConfig,
 } from "../config/settings";
 import {
   createTemplateApplyCommandId,
@@ -28,6 +30,7 @@ import type {
   FieldModel,
   PostEffectId,
 } from "../types";
+import type { WanderConfig } from "../wander";
 
 /** Live, read-only state surfaced by the Status monitor folder. */
 export type MonitorState = {
@@ -99,6 +102,28 @@ const LABEL_DESCRIPTIONS = new Map<string, string>([
     "apply resonance",
     "Allow templates to change the current resonance type during template transitions.",
   ],
+  [
+    "pan wander",
+    "Slowly drifts the screen canvas when you are not interacting.",
+  ],
+  [
+    "depth wander",
+    "Slowly eases the screen canvas in and out when you are not interacting.",
+  ],
+  ["wander", "Enable autonomous screen movement."],
+  [
+    "rotate wander",
+    "Slowly rotates the screen canvas when you are not interacting.",
+  ],
+  [
+    "resume delay",
+    "Seconds to wait before wandering resumes after manual canvas movement.",
+  ],
+  ["pan speed", "Speed multiplier for autonomous screen drift."],
+  ["depth speed", "Speed multiplier for autonomous zoom drift."],
+  ["rotate speed", "Speed multiplier for autonomous screen rotation."],
+  ["min depth", "Smallest zoom scale the depth wander can reach."],
+  ["max depth", "Largest zoom scale the depth wander can reach."],
 ]);
 
 const TOOLTIP_ATTR = "data-wf-tooltip";
@@ -230,6 +255,11 @@ export type TransitionControlsOptions = {
   onChange: (config: TransitionControlsConfig) => void;
 };
 
+export type WanderControlsOptions = {
+  config: WanderConfig;
+  onChange: (config: WanderConfig) => void;
+};
+
 export function createControls(
   container: HTMLElement,
   settings: CymaticSettings,
@@ -237,6 +267,7 @@ export function createControls(
   monitorState: MonitorState,
   templateControls?: TemplateControlsSource,
   transitionControls?: TransitionControlsOptions,
+  wanderControls?: WanderControlsOptions,
   onBoundaryModeChange?: (boundaryMode: BoundaryMode) => void,
   onFieldModelChange?: (fieldModel: FieldModel) => void,
 ): ControlsManager {
@@ -411,17 +442,103 @@ export function createControls(
           label: "apply resonance",
         },
       );
-      for (const binding of [
+      const transitionBindings = [
         morphBinding,
         durationBinding,
         easingBinding,
         applyResonanceBinding,
-      ]) {
+      ];
+      for (const binding of transitionBindings) {
         ignoredPaneChangeTargets.add(binding);
+        binding.on("change", syncTransitionConfig);
       }
-      transition.on("change", () => {
-        syncTransitionConfig();
+    }
+
+    if (wanderControls && settings.projectionMode === "screen") {
+      const wanderState = {
+        enabled: wanderControls.config.enabled,
+        panWander: wanderControls.config.panEnabled,
+        panSpeed: wanderControls.config.panSpeed,
+        depthWander: wanderControls.config.depthEnabled,
+        depthSpeed: wanderControls.config.depthSpeed,
+        minDepth: wanderControls.config.minDepth,
+        maxDepth: wanderControls.config.maxDepth,
+        rotateWander: wanderControls.config.rotateEnabled,
+        rotateSpeed: wanderControls.config.rotateSpeed,
+        resumeDelay: wanderControls.config.resumeDelaySeconds,
+      };
+      const syncWanderConfig = () => {
+        wanderControls.onChange({
+          enabled: wanderState.enabled,
+          panEnabled: wanderState.panWander,
+          panSpeed: wanderState.panSpeed,
+          depthEnabled: wanderState.depthWander,
+          depthSpeed: wanderState.depthSpeed,
+          minDepth: wanderState.minDepth,
+          maxDepth: wanderState.maxDepth,
+          rotateEnabled: wanderState.rotateWander,
+          rotateSpeed: wanderState.rotateSpeed,
+          resumeDelaySeconds: wanderState.resumeDelay,
+        });
+      };
+      const wander = addPersistentFolder(pane, "folder:Wander", "Wander");
+      const enabledBinding = wander.addBinding(wanderState, "enabled", {
+        label: "wander",
       });
+      ignoredPaneChangeTargets.add(enabledBinding);
+      enabledBinding.on("change", syncWanderConfig);
+
+      if (wanderState.enabled) {
+        const wanderBindings = [
+          wander.addBinding(wanderState, "panWander", { label: "pan wander" }),
+          wander.addBinding(wanderState, "panSpeed", {
+            label: "pan speed",
+            min: 0,
+            max: 10,
+            step: 0.01,
+          }),
+          wander.addBinding(wanderState, "depthWander", {
+            label: "depth wander",
+          }),
+          wander.addBinding(wanderState, "depthSpeed", {
+            label: "depth speed",
+            min: 0,
+            max: 10,
+            step: 0.01,
+          }),
+          wander.addBinding(wanderState, "minDepth", {
+            label: "min depth",
+            min: 0.05,
+            max: 16,
+            step: 0.01,
+          }),
+          wander.addBinding(wanderState, "maxDepth", {
+            label: "max depth",
+            min: 0.05,
+            max: 16,
+            step: 0.01,
+          }),
+          wander.addBinding(wanderState, "rotateWander", {
+            label: "rotate wander",
+          }),
+          wander.addBinding(wanderState, "rotateSpeed", {
+            label: "rotate speed",
+            min: 0,
+            max: 10,
+            step: 0.01,
+          }),
+          wander.addBinding(wanderState, "resumeDelay", {
+            label: "resume delay",
+            min: 0,
+            max: 10,
+            step: 0.1,
+          }),
+        ];
+        for (const binding of wanderBindings) {
+          ignoredPaneChangeTargets.add(binding);
+          binding.on("change", syncWanderConfig);
+        }
+      }
     }
 
     const topology = addPersistentFolder(pane, "folder:Topology", "Topology");
@@ -570,6 +687,7 @@ export function createControls(
     const nextLayoutKey = getLayoutKey(
       settings,
       resolveTemplateControls(templateControls),
+      wanderControls?.config.enabled,
     );
     if (!pane || nextLayoutKey !== layoutKey) {
       layoutKey = nextLayoutKey;
@@ -597,6 +715,7 @@ export function createControls(
 function getLayoutKey(
   settings: CymaticSettings,
   templateControls?: TemplateControlsOptions,
+  wanderEnabled = false,
 ) {
   return [
     settings.projectionMode,
@@ -610,6 +729,7 @@ function getLayoutKey(
     settings.postAlphaDecayEnabled,
     settings.terminalContourEnabled,
     settings.postEffectOrder.join(","),
+    `wander:${wanderEnabled ? "on" : "off"}`,
     getTemplateLayoutKey(templateControls),
   ].join(":");
 }
@@ -921,6 +1041,18 @@ function isNumericControl(
   return "min" in control;
 }
 
+function isSelectControl(
+  control: PostEffectControlConfig,
+): control is SelectControlConfig {
+  return "options" in control;
+}
+
+function isBooleanControl(
+  control: PostEffectControlConfig,
+): control is BooleanControlConfig {
+  return !isNumericControl(control) && !isSelectControl(control);
+}
+
 function mountPostPanel(
   container: HTMLElement,
   settings: CymaticSettings,
@@ -1023,11 +1155,16 @@ function mountPostPanel(
             min: control.min,
             step: control.step,
           });
-        } else {
+        } else if (isSelectControl(control)) {
           effectPane.addBinding(settings, control.key, {
             disabled: !settings.postProcessingEnabled,
             label: control.label,
             options: control.options,
+          });
+        } else if (isBooleanControl(control)) {
+          effectPane.addBinding(settings, control.key, {
+            disabled: !settings.postProcessingEnabled,
+            label: control.label,
           });
         }
       }

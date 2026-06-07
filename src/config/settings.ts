@@ -64,7 +64,9 @@ export const DEFAULT_SETTINGS: CymaticSettings = {
   postPixelSize: 6,
   postFisheyeEnabled: true,
   postFisheyeK1: -0.33,
+  postFisheyeK1Aspect: false,
   postFisheyeK2: 0,
+  postFisheyeK2Aspect: false,
   postFisheyeStrength: 1,
   postAlphaDecayEnabled: true,
   postAlphaDecayFrames: 75,
@@ -90,9 +92,15 @@ export type SelectControlConfig = {
   options: Record<string, string>;
 };
 
+export type BooleanControlConfig = {
+  key: keyof CymaticSettings;
+  label: string;
+};
+
 export type PostEffectControlConfig =
   | NumericControlConfig
-  | SelectControlConfig;
+  | SelectControlConfig
+  | BooleanControlConfig;
 
 export const ALPHA_DECAY_BLEND_OPTIONS: Record<string, AlphaDecayBlendMode> = {
   Normal: "normal",
@@ -396,11 +404,19 @@ export const POST_EFFECT_CONTROLS: Record<
       step: 0.01,
     },
     {
+      key: "postFisheyeK1Aspect",
+      label: "K1 aspect",
+    },
+    {
       key: "postFisheyeK2",
       label: "K2",
       min: -1,
       max: 1,
       step: 0.01,
+    },
+    {
+      key: "postFisheyeK2Aspect",
+      label: "K2 aspect",
     },
     {
       key: "postFisheyeStrength",
@@ -547,7 +563,11 @@ export const SETTING_DESCRIPTIONS: Partial<
   postBloomIntensity: "Strength of the bloom glow.",
   postPixelSize: "Size of the pixelation blocks.",
   postFisheyeK1: "Primary fisheye lens distortion coefficient.",
+  postFisheyeK1Aspect:
+    "Use the canvas aspect ratio for the K1 radius instead of a pixel-correct circular lens.",
   postFisheyeK2: "Secondary fisheye lens distortion coefficient.",
+  postFisheyeK2Aspect:
+    "Use the canvas aspect ratio for the K2 radius instead of a pixel-correct circular lens.",
   postFisheyeStrength: "Overall strength of the fisheye distortion.",
   postAlphaDecayFrames:
     "Approximate frame count for the alpha-decay trail. Higher values linger longer.",

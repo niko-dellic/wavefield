@@ -11,7 +11,14 @@ export const FIELD_MODEL_FRAGMENT: string = `  vec2 plateUvFromScreen(vec2 uv) {
 
   vec2 screenFieldUv(vec2 uv) {
     vec2 p = plateUvFromScreen(uv);
-    return (p - 0.5) / max(0.0001, uScreenViewScale) + 0.5 + uScreenViewOffset;
+    vec2 centered = p - 0.5;
+    float c = cos(uScreenViewRotation);
+    float s = sin(uScreenViewRotation);
+    vec2 rotated = vec2(
+      c * centered.x + s * centered.y,
+      -s * centered.x + c * centered.y
+    );
+    return rotated / max(0.0001, uScreenViewScale) + 0.5 + uScreenViewOffset;
   }
 
   float freeChladniValue(float m, float n, vec2 p) {

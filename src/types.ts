@@ -162,7 +162,9 @@ export type CymaticSettings = {
   postPixelSize: number;
   postFisheyeEnabled: boolean;
   postFisheyeK1: number;
+  postFisheyeK1Aspect: boolean;
   postFisheyeK2: number;
+  postFisheyeK2Aspect: boolean;
   postFisheyeStrength: number;
   postAlphaDecayEnabled: boolean;
   postAlphaDecayFrames: number;

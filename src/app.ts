@@ -45,6 +45,11 @@ import {
   ModalFieldRenderer,
   type ScreenViewTransform,
 } from "./webgl/ModalFieldRenderer";
+import {
+  loadWanderConfig,
+  saveWanderConfig,
+  type WanderConfig,
+} from "./wander";
 import type {
   AudioAnalysis,
   BoundaryMode,
@@ -73,6 +78,7 @@ export class WavefieldApp {
   private readonly settingsTransitions = new SettingsTransitionController(
     this.settings,
   );
+  private readonly wanderConfig: WanderConfig = loadWanderConfig();
   private readonly modalEngine = new ModalFieldEngine();
   private readonly liveAnalyzer = new LiveAudioAnalyzer();
   private readonly renderer: THREE.WebGLRenderer;
@@ -151,6 +157,14 @@ export class WavefieldApp {
       onStatus: (message) => this.setStatus(message),
     });
 
+    this.screenView = new ScreenViewController(
+      this.ui.canvas,
+      () => ({
+        projectionMode: this.settings.projectionMode,
+        screenAspectMode: this.settings.screenAspectMode,
+      }),
+      this.wanderConfig,
+    );
     this.controls = createControls(
       this.ui.guiHost,
       this.settings,
@@ -164,6 +178,15 @@ export class WavefieldApp {
           this.syncHeaderControls();
         },
       },
+      {
+        config: this.wanderConfig,
+        onChange: (config) => {
+          Object.assign(this.wanderConfig, config);
+          saveWanderConfig(this.wanderConfig);
+          this.screenView.setWanderConfig(this.wanderConfig);
+          this.controls.refresh();
+        },
+      },
       (boundaryMode) => this.setBoundaryMode(boundaryMode),
       (fieldModel) => this.setFieldModel(fieldModel),
     );
@@ -174,10 +197,6 @@ export class WavefieldApp {
       controls: this.controls,
       onStatus: (message) => this.setStatus(message),
     });
-    this.screenView = new ScreenViewController(this.ui.canvas, () => ({
-      projectionMode: this.settings.projectionMode,
-      screenAspectMode: this.settings.screenAspectMode,
-    }));
     this.manualDriveSettingsPane = new ManualDriveSettingsPane(
       this.ui.modeSettingsHost,
       () => this.handleSettingsChange(),
