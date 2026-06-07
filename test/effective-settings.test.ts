@@ -14,6 +14,7 @@ import {
   getBoundaryWeights,
   getFieldModelWeights,
   getPostEffectAmounts,
+  getPostEffectRenderAmount,
   hasActivePostEffectAmount,
 } from "../src/effectiveSettings.ts";
 import type {
@@ -109,10 +110,14 @@ test("post-effect amounts are zero when global post processing is disabled", () 
 });
 
 test("active post-effect stack derives each effect independently", () => {
-  for (const effectId of POST_EFFECT_IDS) {
+  for (const effectId of POST_EFFECT_IDS.filter(
+    (id) => id !== "fisheye",
+  )) {
     const settings = createPostSettings([effectId]);
     assert.deepEqual(getActivePostEffectIds(settings), [effectId]);
   }
+
+  assert.deepEqual(getActivePostEffectIds(createPostSettings(["fisheye"])), []);
 
   assert.deepEqual(
     getActivePostEffectIds(createPostSettings(["pixelation", "terminal"])),
@@ -123,7 +128,9 @@ test("active post-effect stack derives each effect independently", () => {
 });
 
 test("active post-effect stack only keeps disabled effects with transition amounts", () => {
-  for (const effectId of POST_EFFECT_IDS) {
+  for (const effectId of POST_EFFECT_IDS.filter(
+    (id) => id !== "fisheye",
+  )) {
     const settings = createPostSettings([]);
     settings.postEffectAmounts[effectId] = 0.25;
 
@@ -132,6 +139,18 @@ test("active post-effect stack only keeps disabled effects with transition amoun
     settings.postEffectAmounts[effectId] = 0;
     assert.deepEqual(getActivePostEffectIds(settings), []);
   }
+});
+
+test("active post-effect stack skips neutral post-effect values", () => {
+  const bloom = createPostSettings(["bloom"]);
+  bloom.postBloomIntensity = 0;
+  assert.equal(getPostEffectRenderAmount(bloom, "bloom"), 0);
+  assert.deepEqual(getActivePostEffectIds(bloom), []);
+
+  const pixelation = createPostSettings(["pixelation"]);
+  pixelation.postPixelSize = 1;
+  assert.equal(getPostEffectRenderAmount(pixelation, "pixelation"), 0);
+  assert.deepEqual(getActivePostEffectIds(pixelation), []);
 });
 
 test("effective settings accept every model and resonance combination", () => {

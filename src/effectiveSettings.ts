@@ -126,6 +126,30 @@ export function getPostEffectAmount(
   return getPostEffectAmounts(settings)[effectId];
 }
 
+/** Returns the visual amount that makes an effect worth rendering as a post pass. */
+export function getPostEffectRenderAmount(
+  settings: CymaticSettings | EffectiveCymaticSettings,
+  effectId: PostEffectId,
+): number {
+  const amount = getPostEffectAmount(settings, effectId);
+  switch (effectId) {
+    case "bloom":
+      return amount * Math.max(0, settings.postBloomIntensity);
+    case "pixelation":
+      return amount * Math.max(0, settings.postPixelSize - 1);
+    case "fisheye":
+      return (
+        amount *
+        Math.max(0, settings.postFisheyeStrength) *
+        (Math.abs(settings.postFisheyeK1) + Math.abs(settings.postFisheyeK2))
+      );
+    case "alphaDecay":
+      return amount;
+    case "terminal":
+      return amount * Math.max(0, settings.terminalContourStrength);
+  }
+}
+
 /** True when a post effect is enabled in the base settings. */
 export function isPostEffectEnabled(
   settings: CymaticSettings | EffectiveCymaticSettings,
@@ -162,7 +186,14 @@ export function getActivePostEffectIds(
   }
 
   return settings.postEffectOrder.filter((effectId: PostEffectId): boolean => {
-    return isPostEffectEnabled(settings, effectId) || amounts[effectId] > 0.001;
+    if (effectId === "fisheye") {
+      return false;
+    }
+
+    return (
+      (isPostEffectEnabled(settings, effectId) || amounts[effectId] > 0.001) &&
+      getPostEffectRenderAmount(settings, effectId) > 0.001
+    );
   });
 }
 

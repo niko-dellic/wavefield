@@ -2,7 +2,6 @@ import * as THREE from "three";
 import {
   EMPTY_MODAL_FIELD_FRAME,
   ModalFieldEngine,
-  createAmbientModalFieldFrame,
   type ModalFieldFrame,
 } from "./audio/ModalField";
 import { getFirstMeaningfulFrameTime } from "./audio/analysisPreview";
@@ -101,7 +100,6 @@ export class WavefieldApp {
   private analysis: AudioAnalysis | null = null;
   private animationFrame = 0;
   private lastFrameTime = performance.now();
-  private ambientSeconds = 0;
   private manualSeconds = 0;
   private liveSeconds = 0;
   private analysisPreviewTime = 0;
@@ -289,7 +287,6 @@ export class WavefieldApp {
     this.analysisPreviewTime = 0;
     this.modalEngine.setAnalysis(null);
     this.lastModalFieldFrame = EMPTY_MODAL_FIELD_FRAME;
-    this.ambientSeconds = 0;
     this.manualSeconds = 0;
     this.liveSeconds = 0;
     this.audio.setPlayButton(false);
@@ -351,7 +348,6 @@ export class WavefieldApp {
     const isLiveDrive = renderSettings.driveMode === "live";
     let fieldFrame = this.lastModalFieldFrame;
     let renderDeltaSeconds = 0;
-    let isIdlePreview = false;
 
     if (isManualDrive) {
       this.manualSeconds += deltaSeconds;
@@ -374,16 +370,12 @@ export class WavefieldApp {
         this.lastModalFieldFrame = fieldFrame;
         renderDeltaSeconds = deltaSeconds;
       } else {
-        this.ambientSeconds += deltaSeconds;
-        fieldFrame = createAmbientModalFieldFrame(this.ambientSeconds);
-        renderDeltaSeconds = deltaSeconds;
-        isIdlePreview = true;
+        fieldFrame = EMPTY_MODAL_FIELD_FRAME;
+        this.lastModalFieldFrame = fieldFrame;
       }
     } else if (!this.analysis) {
-      this.ambientSeconds += deltaSeconds;
-      fieldFrame = createAmbientModalFieldFrame(this.ambientSeconds);
-      renderDeltaSeconds = deltaSeconds;
-      isIdlePreview = true;
+      fieldFrame = EMPTY_MODAL_FIELD_FRAME;
+      this.lastModalFieldFrame = fieldFrame;
     } else if (isPlaying) {
       fieldFrame = this.modalEngine.update(time, renderSettings, deltaSeconds);
       this.lastModalFieldFrame = fieldFrame;
@@ -425,7 +417,7 @@ export class WavefieldApp {
       renderSettings,
       this.screenView.view as ScreenViewTransform,
       renderDeltaSeconds,
-      isIdlePreview,
+      false,
     );
     finishGpuRenderProfile?.();
     const renderMilliseconds = finishRenderProfile?.() ?? 0;
@@ -568,7 +560,6 @@ export class WavefieldApp {
       this.liveAnalyzer.stop();
     }
 
-    this.ambientSeconds = 0;
     this.manualSeconds = 0;
     this.liveSeconds = 0;
     this.lastModalFieldFrame = EMPTY_MODAL_FIELD_FRAME;

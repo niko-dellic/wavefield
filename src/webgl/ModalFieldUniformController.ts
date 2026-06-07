@@ -4,6 +4,7 @@ import { MAX_MODAL_MODES, type ModalFieldFrame } from "../audio/ModalField";
 import {
   getBoundaryWeights,
   getFieldModelWeights,
+  getPostEffectAmount,
 } from "../effectiveSettings";
 import type {
   BoundaryWeights,
@@ -16,7 +17,10 @@ import type {
   SphereFieldMode,
   SphereProjectionType,
 } from "../types";
+import { setColorUniform } from "./colorUniforms";
 import type { ScreenViewTransform } from "./renderTypes";
+
+export { setColorUniform } from "./colorUniforms";
 
 const COLOR_MODE_INDEX: Record<ColorMode, number> = {
   chromesthesia: 0,
@@ -99,6 +103,8 @@ export type ModalFieldShaderUniforms = Record<string, THREE.IUniform> & {
   uSphereAbsorption: THREE.IUniform<number>;
   uSphereShellBias: THREE.IUniform<number>;
   uSphereInteriorGlow: THREE.IUniform<number>;
+  uFisheyeParams: THREE.IUniform<THREE.Vector4>;
+  uFisheyeStrength: THREE.IUniform<number>;
 };
 
 /** Inputs required to sync one frame of runtime state into shader uniforms. */
@@ -241,6 +247,14 @@ export class ModalFieldUniformController {
     this.uniforms.uSphereAbsorption.value = settings.sphereAbsorption;
     this.uniforms.uSphereShellBias.value = settings.sphereShellBias;
     this.uniforms.uSphereInteriorGlow.value = settings.sphereInteriorGlow;
+    this.uniforms.uFisheyeParams.value.set(
+      settings.postFisheyeK1,
+      settings.postFisheyeK1Aspect ? 1 : 0,
+      settings.postFisheyeK2,
+      settings.postFisheyeK2Aspect ? 1 : 0,
+    );
+    this.uniforms.uFisheyeStrength.value =
+      settings.postFisheyeStrength * getPostEffectAmount(settings, "fisheye");
 
     if (settings.projectionMode === "sphere") {
       sphereCamera.updateMatrixWorld();
@@ -343,6 +357,8 @@ export class ModalFieldUniformController {
       uSphereAbsorption: { value: 1.35 },
       uSphereShellBias: { value: 0.65 },
       uSphereInteriorGlow: { value: 0.35 },
+      uFisheyeParams: { value: new THREE.Vector4() },
+      uFisheyeStrength: { value: 0 },
     };
   }
 }
@@ -357,19 +373,6 @@ function getBandIndex(band: FrequencyBand): number {
   }
 
   return 2;
-}
-
-/** Applies a validated CSS hex color to a Three.js color uniform, falling back when invalid. */
-export function setColorUniform(
-  target: THREE.Color,
-  color: string,
-  fallback: number,
-): void {
-  if (/^#[\da-f]{6}$/i.test(color)) {
-    target.set(color);
-  } else {
-    target.set(fallback);
-  }
 }
 
 function setBoundaryWeightsUniform(

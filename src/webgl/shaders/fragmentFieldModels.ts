@@ -9,8 +9,28 @@ export const FIELD_MODEL_FRAGMENT: string = `  vec2 plateUvFromScreen(vec2 uv) {
     return uv;
   }
 
+  vec2 fisheyeUv(vec2 uv) {
+    if (uFisheyeStrength <= 0.0001) {
+      return uv;
+    }
+
+    vec2 safeResolution = max(uResolution, vec2(1.0));
+    float aspect = safeResolution.x / safeResolution.y;
+    vec2 centered = uv - 0.5;
+    vec2 circleRadial = vec2(centered.x * aspect, centered.y);
+    float circleR2 = dot(circleRadial, circleRadial) * 4.0;
+    float aspectR2 = dot(centered, centered) * 4.0;
+    float k1R2 = mix(circleR2, aspectR2, uFisheyeParams.y);
+    float k2R2 = mix(circleR2, aspectR2, uFisheyeParams.w);
+    float scale =
+      1.0 +
+      (uFisheyeParams.x * k1R2 + uFisheyeParams.z * k2R2 * k2R2) *
+        uFisheyeStrength;
+    return clamp(centered * scale + 0.5, vec2(0.0), vec2(1.0));
+  }
+
   vec2 screenFieldUv(vec2 uv) {
-    vec2 p = plateUvFromScreen(uv);
+    vec2 p = plateUvFromScreen(fisheyeUv(uv));
     vec2 centered = p - 0.5;
     float c = cos(uScreenViewRotation);
     float s = sin(uScreenViewRotation);

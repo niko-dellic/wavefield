@@ -53,6 +53,8 @@ export const SHARED_FRAGMENT: string = `
   uniform float uSphereAbsorption;
   uniform float uSphereShellBias;
   uniform float uSphereInteriorGlow;
+  uniform vec4 uFisheyeParams;
+  uniform float uFisheyeStrength;
   varying vec2 vUv;
   varying vec3 vLocalPosition;
   varying vec3 vWorldNormal;

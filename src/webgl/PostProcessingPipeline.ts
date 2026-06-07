@@ -17,7 +17,6 @@ import type {
   PostEffectId,
 } from "../types";
 import { AlphaDecayPass } from "./AlphaDecayPass";
-import { FisheyeEffect } from "./FisheyeEffect";
 import { TerminalContourEffect } from "./TerminalContourEffect";
 
 export type PostProcessingRenderStats = {
@@ -25,8 +24,10 @@ export type PostProcessingRenderStats = {
   rendered: boolean;
 };
 
+type StandardPostEffectId = Exclude<PostEffectId, "alphaDecay" | "fisheye">;
+
 type ActiveStandardEffect = {
-  effectId: Exclude<PostEffectId, "alphaDecay">;
+  effectId: StandardPostEffectId;
   effect: Effect;
   pass: EffectPass;
 };
@@ -110,6 +111,7 @@ export class PostProcessingPipeline {
 
     this.composer = new EffectComposer(renderer, {
       depthBuffer: true,
+      frameBufferType: THREE.HalfFloatType,
       multisampling: 0,
     });
     this.renderPass = new RenderPass(scene, camera);
@@ -195,6 +197,9 @@ export class PostProcessingPipeline {
         }
         continue;
       }
+      if (effectId === "fisheye") {
+        continue;
+      }
 
       const controller = this.createStandardEffectController(effectId);
       this.standardEffects.push(controller);
@@ -204,7 +209,7 @@ export class PostProcessingPipeline {
   }
 
   private createStandardEffectController(
-    effectId: Exclude<PostEffectId, "alphaDecay">,
+    effectId: StandardPostEffectId,
   ): ActiveStandardEffect {
     if (!this.renderPass) {
       throw new Error("RenderPass must exist before creating post effects");
@@ -216,7 +221,7 @@ export class PostProcessingPipeline {
     return { effectId, effect, pass };
   }
 
-  private createStandardEffect(effectId: Exclude<PostEffectId, "alphaDecay">): Effect {
+  private createStandardEffect(effectId: StandardPostEffectId): Effect {
     switch (effectId) {
       case "bloom":
         return new BloomEffect({
@@ -228,8 +233,6 @@ export class PostProcessingPipeline {
         });
       case "pixelation":
         return new PixelationEffect(6);
-      case "fisheye":
-        return new FisheyeEffect();
       case "terminal":
         return new TerminalContourEffect();
     }
@@ -250,14 +253,6 @@ export class PostProcessingPipeline {
               1,
               settings.postPixelSize,
               getPostEffectAmount(settings, "pixelation"),
-            );
-          }
-          break;
-        case "fisheye":
-          if (controller.effect instanceof FisheyeEffect) {
-            controller.effect.updateSettings(
-              settings,
-              getPostEffectAmount(settings, "fisheye"),
             );
           }
           break;
