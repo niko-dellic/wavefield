@@ -30,6 +30,7 @@ import type {
   FieldModel,
   PostEffectId,
 } from "../types";
+import type { ScreenViewPosition } from "./screenViewController";
 import type { WanderConfig } from "../wander";
 
 /** Live, read-only state surfaced by the Status monitor folder. */
@@ -124,6 +125,18 @@ const LABEL_DESCRIPTIONS = new Map<string, string>([
   ["rotate speed", "Speed multiplier for autonomous screen rotation."],
   ["min depth", "Smallest zoom scale the depth wander can reach."],
   ["max depth", "Largest zoom scale the depth wander can reach."],
+  [
+    "pan damping",
+    "Input pan easing. Lower values glide longer; higher values stop sooner.",
+  ],
+  [
+    "zoom damping",
+    "Input zoom easing. Lower values glide longer; higher values stop sooner.",
+  ],
+  ["x", "Horizontal screen canvas offset."],
+  ["y", "Vertical screen canvas offset."],
+  ["z", "Screen canvas scale/depth."],
+  ["rotation", "Drag a unit point around the fixed origin to set rotation."],
 ]);
 
 const TOOLTIP_ATTR = "data-wf-tooltip";
@@ -258,6 +271,8 @@ export type TransitionControlsOptions = {
 export type WanderControlsOptions = {
   config: WanderConfig;
   onChange: (config: WanderConfig) => void;
+  getPosition: () => ScreenViewPosition;
+  onPositionChange: (position: ScreenViewPosition) => void;
 };
 
 export function createControls(
@@ -276,6 +291,8 @@ export function createControls(
   let postPanes: Pane[] = [];
   let layoutKey = "";
   let ignoredPaneChangeTargets = new Set<unknown>();
+  let syncLiveControlState: (() => void) | null = null;
+  let isRefreshingLiveControlState = false;
   const folderExpansionState = loadFolderExpansionState();
   const persistFolderExpansion = (id: string, expanded: boolean) => {
     folderExpansionState[id] = expanded;
@@ -302,6 +319,8 @@ export function createControls(
 
   const build = () => {
     ignoredPaneChangeTargets = new Set<unknown>();
+    syncLiveControlState = null;
+    isRefreshingLiveControlState = false;
     postPanes = removePostPanel(container, postPanes);
     monitorPane?.dispose();
     monitorPane = null;
@@ -455,6 +474,7 @@ export function createControls(
     }
 
     if (wanderControls && settings.projectionMode === "screen") {
+      const positionState = wanderControls.getPosition();
       const wanderState = {
         enabled: wanderControls.config.enabled,
         panWander: wanderControls.config.panEnabled,
@@ -466,8 +486,27 @@ export function createControls(
         rotateWander: wanderControls.config.rotateEnabled,
         rotateSpeed: wanderControls.config.rotateSpeed,
         resumeDelay: wanderControls.config.resumeDelaySeconds,
+        panDamping: wanderControls.config.panDamping,
+        zoomDamping: wanderControls.config.zoomDamping,
+        x: positionState.x,
+        y: positionState.y,
+        z: positionState.z,
+        rotation: radiansToRotationPoint(positionState.rotation),
+      };
+      syncLiveControlState = () => {
+        const position = wanderControls.getPosition();
+        wanderState.x = position.x;
+        wanderState.y = position.y;
+        wanderState.z = position.z;
+        const rotationPoint = radiansToRotationPoint(position.rotation);
+        wanderState.rotation.x = rotationPoint.x;
+        wanderState.rotation.y = rotationPoint.y;
       };
       const syncWanderConfig = () => {
+        if (isRefreshingLiveControlState) {
+          return;
+        }
+
         wanderControls.onChange({
           enabled: wanderState.enabled,
           panEnabled: wanderState.panWander,
@@ -479,9 +518,85 @@ export function createControls(
           rotateEnabled: wanderState.rotateWander,
           rotateSpeed: wanderState.rotateSpeed,
           resumeDelaySeconds: wanderState.resumeDelay,
+          panDamping: wanderState.panDamping,
+          zoomDamping: wanderState.zoomDamping,
         });
       };
-      const wander = addPersistentFolder(pane, "folder:Wander", "Wander");
+      const syncWanderPosition = () => {
+        if (isRefreshingLiveControlState) {
+          return;
+        }
+
+        const rotation = rotationPointToRadians(
+          wanderState.rotation,
+          wanderControls.getPosition().rotation,
+        );
+        const rotationPoint = radiansToRotationPoint(rotation);
+        wanderState.rotation.x = rotationPoint.x;
+        wanderState.rotation.y = rotationPoint.y;
+        wanderControls.onPositionChange({
+          x: wanderState.x,
+          y: wanderState.y,
+          z: wanderState.z,
+          rotation,
+        });
+      };
+      const controls = addPersistentFolder(
+        pane,
+        "folder:Controls",
+        "Controls",
+      );
+      const controlBindings = [
+        controls.addBinding(wanderState, "panDamping", {
+          label: "pan damping",
+          min: 0.1,
+          max: 30,
+          step: 0.1,
+        }),
+        controls.addBinding(wanderState, "zoomDamping", {
+          label: "zoom damping",
+          min: 0.1,
+          max: 30,
+          step: 0.1,
+        }),
+      ];
+      for (const binding of controlBindings) {
+        ignoredPaneChangeTargets.add(binding);
+        binding.on("change", syncWanderConfig);
+      }
+      const positionBindings = [
+        controls.addBinding(wanderState, "x", {
+          label: "x",
+          step: 0.001,
+        }),
+        controls.addBinding(wanderState, "y", {
+          label: "y",
+          step: 0.001,
+        }),
+        controls.addBinding(wanderState, "z", {
+          label: "z",
+          min: 0.05,
+          max: 16,
+          step: 0.001,
+        }),
+        controls.addBinding(wanderState, "rotation", {
+          label: "rotation",
+          x: { min: -1, max: 1, step: 0.001 },
+          y: { min: -1, max: 1, step: 0.001, inverted: true },
+          picker: "inline",
+          expanded: false,
+        }),
+      ];
+      for (const binding of positionBindings) {
+        ignoredPaneChangeTargets.add(binding);
+        binding.on("change", syncWanderPosition);
+      }
+
+      const wander = addPersistentFolder(
+        controls,
+        "folder:Controls/Wander",
+        "Wander",
+      );
       const enabledBinding = wander.addBinding(wanderState, "enabled", {
         label: "wander",
       });
@@ -489,7 +604,7 @@ export function createControls(
       enabledBinding.on("change", syncWanderConfig);
 
       if (wanderState.enabled) {
-        const wanderBindings = [
+        const configBindings = [
           wander.addBinding(wanderState, "panWander", { label: "pan wander" }),
           wander.addBinding(wanderState, "panSpeed", {
             label: "pan speed",
@@ -534,7 +649,7 @@ export function createControls(
             step: 0.1,
           }),
         ];
-        for (const binding of wanderBindings) {
+        for (const binding of configBindings) {
           ignoredPaneChangeTargets.add(binding);
           binding.on("change", syncWanderConfig);
         }
@@ -695,7 +810,13 @@ export function createControls(
       return;
     }
 
-    pane.refresh();
+    isRefreshingLiveControlState = true;
+    try {
+      syncLiveControlState?.();
+      pane.refresh();
+    } finally {
+      isRefreshingLiveControlState = false;
+    }
   };
 
   refresh();
@@ -1111,10 +1232,19 @@ function mountPostPanel(
   let draggedId: PostEffectId | null = null;
   let dropPlacement: "before" | "after" = "before";
   for (const effectId of settings.postEffectOrder) {
+    const expansionId = `post-effect:${effectId}`;
+    const isExpanded = getStoredFolderExpansion(
+      folderExpansionState,
+      expansionId,
+      true,
+    );
     const row = document.createElement("div");
     row.className = "post-effect-card";
     if (!settings.postProcessingEnabled) {
       row.classList.add("is-disabled");
+    }
+    if (!isExpanded) {
+      row.classList.add("is-collapsed");
     }
     row.dataset.effectId = effectId;
 
@@ -1129,49 +1259,59 @@ function mountPostPanel(
     effectHeader.append(
       createCheckbox({
         checked: Boolean(settings[POST_EFFECT_ENABLED_KEYS[effectId]]),
+        ariaLabel: `${POST_EFFECT_LABELS[effectId]} enabled`,
         disabled: !settings.postProcessingEnabled,
-        label: POST_EFFECT_LABELS[effectId],
         onChange: (checked) => {
           settings[POST_EFFECT_ENABLED_KEYS[effectId]] = checked;
           onChange();
         },
       }),
     );
+    const titleButton = document.createElement("button");
+    titleButton.className = "post-effect-title";
+    titleButton.type = "button";
+    titleButton.textContent = POST_EFFECT_LABELS[effectId];
+    titleButton.setAttribute("aria-expanded", String(isExpanded));
+    titleButton.addEventListener("click", () => {
+      const isCollapsed = row.classList.toggle("is-collapsed");
+      const expanded = !isCollapsed;
+      titleButton.setAttribute("aria-expanded", String(expanded));
+      persistFolderExpansion(expansionId, expanded);
+    });
+    effectHeader.append(titleButton);
     row.append(effectHeader);
 
-    if (settings[POST_EFFECT_ENABLED_KEYS[effectId]]) {
-      const controls = document.createElement("div");
-      controls.className = "post-effect-controls";
-      const effectPane = new Pane({
-        container: controls,
-      });
-      effectPane.element.classList.add("post-effect-pane");
-      for (const control of POST_EFFECT_CONTROLS[effectId]) {
-        if (isNumericControl(control)) {
-          effectPane.addBinding(settings, control.key, {
-            disabled: !settings.postProcessingEnabled,
-            label: control.label,
-            max: control.max,
-            min: control.min,
-            step: control.step,
-          });
-        } else if (isSelectControl(control)) {
-          effectPane.addBinding(settings, control.key, {
-            disabled: !settings.postProcessingEnabled,
-            label: control.label,
-            options: control.options,
-          });
-        } else if (isBooleanControl(control)) {
-          effectPane.addBinding(settings, control.key, {
-            disabled: !settings.postProcessingEnabled,
-            label: control.label,
-          });
-        }
+    const controls = document.createElement("div");
+    controls.className = "post-effect-controls";
+    const effectPane = new Pane({
+      container: controls,
+    });
+    effectPane.element.classList.add("post-effect-pane");
+    for (const control of POST_EFFECT_CONTROLS[effectId]) {
+      if (isNumericControl(control)) {
+        effectPane.addBinding(settings, control.key, {
+          disabled: !settings.postProcessingEnabled,
+          label: control.label,
+          max: control.max,
+          min: control.min,
+          step: control.step,
+        });
+      } else if (isSelectControl(control)) {
+        effectPane.addBinding(settings, control.key, {
+          disabled: !settings.postProcessingEnabled,
+          label: control.label,
+          options: control.options,
+        });
+      } else if (isBooleanControl(control)) {
+        effectPane.addBinding(settings, control.key, {
+          disabled: !settings.postProcessingEnabled,
+          label: control.label,
+        });
       }
-      effectPane.on("change", onChange);
-      postPanes.push(effectPane);
-      row.append(controls);
     }
+    effectPane.on("change", onChange);
+    postPanes.push(effectPane);
+    row.append(controls);
 
     grip.addEventListener("dragstart", (event) => {
       event.stopPropagation();
@@ -1240,6 +1380,27 @@ function removePostPanel(container: HTMLElement, postPanes: Pane[]) {
   return [];
 }
 
+function radiansToRotationPoint(radians: number) {
+  const safeRadians = Number.isFinite(radians) ? radians : 0;
+  return {
+    x: Math.cos(safeRadians),
+    y: Math.sin(safeRadians),
+  };
+}
+
+function rotationPointToRadians(
+  point: { x: number; y: number },
+  fallbackRadians: number,
+) {
+  const x = Number.isFinite(point.x) ? point.x : 0;
+  const y = Number.isFinite(point.y) ? point.y : 0;
+  if (Math.hypot(x, y) < 0.0001) {
+    return Number.isFinite(fallbackRadians) ? fallbackRadians : 0;
+  }
+
+  return Math.atan2(y, x);
+}
+
 function stopInternalDrag(event: DragEvent) {
   event.stopPropagation();
 }
@@ -1251,16 +1412,18 @@ function clearDropMarkers(root: HTMLElement) {
 }
 
 function createCheckbox({
+  ariaLabel,
   checked,
   className,
   disabled = false,
   label,
   onChange,
 }: {
+  ariaLabel?: string;
   checked: boolean;
   className?: string;
   disabled?: boolean;
-  label: string;
+  label?: string;
   onChange: (checked: boolean) => void;
 }) {
   const wrapper = document.createElement("label");
@@ -1269,11 +1432,17 @@ function createCheckbox({
   input.type = "checkbox";
   input.checked = checked;
   input.disabled = disabled;
+  if (ariaLabel) {
+    input.setAttribute("aria-label", ariaLabel);
+  }
   input.addEventListener("change", () => {
     onChange(input.checked);
   });
-  const text = document.createElement("span");
-  text.textContent = label;
-  wrapper.append(input, text);
+  wrapper.append(input);
+  if (label) {
+    const text = document.createElement("span");
+    text.textContent = label;
+    wrapper.append(text);
+  }
   return wrapper;
 }

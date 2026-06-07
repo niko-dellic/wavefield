@@ -25,6 +25,8 @@ test("wander config accepts only boolean toggles", () => {
       minDepth: 0.75,
       maxDepth: 1.5,
       resumeDelaySeconds: 2.5,
+      panDamping: 2.5,
+      zoomDamping: 8,
     }),
     {
       enabled: true,
@@ -37,6 +39,8 @@ test("wander config accepts only boolean toggles", () => {
       minDepth: 0.75,
       maxDepth: 1.5,
       resumeDelaySeconds: 2.5,
+      panDamping: 2.5,
+      zoomDamping: 8,
     },
   );
   assert.deepEqual(
@@ -48,6 +52,8 @@ test("wander config accepts only boolean toggles", () => {
       depthSpeed: "1",
       rotateSpeed: Infinity,
       resumeDelaySeconds: "2",
+      panDamping: null,
+      zoomDamping: Number.NaN,
     }),
     DEFAULT_WANDER_CONFIG,
   );
@@ -62,6 +68,8 @@ test("wander config clamps numeric controls and keeps depth bounds ordered", () 
       minDepth: 20,
       maxDepth: 0.1,
       resumeDelaySeconds: 12,
+      panDamping: 0,
+      zoomDamping: 40,
     }),
     {
       ...DEFAULT_WANDER_CONFIG,
@@ -71,6 +79,8 @@ test("wander config clamps numeric controls and keeps depth bounds ordered", () 
       minDepth: 16,
       maxDepth: 16,
       resumeDelaySeconds: 10,
+      panDamping: 0.1,
+      zoomDamping: 30,
     },
   );
 });

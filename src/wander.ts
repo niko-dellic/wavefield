@@ -13,6 +13,8 @@ export type WanderConfig = {
   minDepth: number;
   maxDepth: number;
   resumeDelaySeconds: number;
+  panDamping: number;
+  zoomDamping: number;
 };
 
 export const WANDER_STORAGE_KEY = "wavefield:wander:v1";
@@ -28,6 +30,8 @@ export const DEFAULT_WANDER_CONFIG: WanderConfig = {
   minDepth: 0.65,
   maxDepth: 1.75,
   resumeDelaySeconds: 1.5,
+  panDamping: 4.5,
+  zoomDamping: 14,
 };
 
 const WANDER_PAN_SPEED = 0.018;
@@ -99,6 +103,18 @@ export function coerceWanderConfig(input: unknown): WanderConfig {
       DEFAULT_WANDER_CONFIG.resumeDelaySeconds,
       0,
       10,
+    ),
+    panDamping: coerceNumber(
+      source.panDamping,
+      DEFAULT_WANDER_CONFIG.panDamping,
+      0.1,
+      30,
+    ),
+    zoomDamping: coerceNumber(
+      source.zoomDamping,
+      DEFAULT_WANDER_CONFIG.zoomDamping,
+      0.1,
+      30,
     ),
   };
 }

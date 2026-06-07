@@ -11,13 +11,22 @@ const SCREEN_VIEW_MIN_SCALE = 0.05;
 const SCREEN_VIEW_MAX_SCALE = 16;
 const SCREEN_WHEEL_ZOOM_SPEED = 0.0015;
 const SCREEN_PINCH_MIN_DISTANCE = 8;
-const SCREEN_PAN_DAMPING = 4.5;
-const SCREEN_ZOOM_DAMPING = 14;
+const SCREEN_INPUT_DEFAULT_DELTA_SECONDS = 1 / 60;
+const SCREEN_INPUT_MAX_DELTA_SECONDS = 0.1;
+const SCREEN_INPUT_MIN_PAN_SPEED = 0.00001;
+const SCREEN_INPUT_MIN_ZOOM_SPEED = 0.001;
 
 export type ScreenViewSettings = Pick<
   CymaticSettings,
   "projectionMode" | "screenAspectMode"
 >;
+
+export type ScreenViewPosition = {
+  x: number;
+  y: number;
+  z: number;
+  rotation: number;
+};
 
 type WanderAxis = "pan" | "depth" | "rotate";
 type WanderIdleSeconds = Record<WanderAxis, number>;
@@ -49,6 +58,12 @@ export class ScreenViewController {
   private wanderIdleSeconds = createWanderIdleSeconds(
     DEFAULT_WANDER_CONFIG.resumeDelaySeconds,
   );
+  private panVelocityX = 0;
+  private panVelocityY = 0;
+  private lastPanInputTimeStamp: number | null = null;
+  private zoomVelocity = 0;
+  private lastZoomInputTimeStamp: number | null = null;
+  private zoomInertiaAnchor: ScreenZoomAnchor | null = null;
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -96,6 +111,47 @@ export class ScreenViewController {
     );
   }
 
+  getWanderPosition(): ScreenViewPosition {
+    return {
+      x: this.target.offsetX,
+      y: this.target.offsetY,
+      z: this.target.scale,
+      rotation: this.target.rotation,
+    };
+  }
+
+  setWanderPosition(position: ScreenViewPosition) {
+    const nextX = coerceFiniteNumber(position.x, this.target.offsetX);
+    const nextY = coerceFiniteNumber(position.y, this.target.offsetY);
+    const nextZ = clamp(
+      coerceFiniteNumber(position.z, this.target.scale),
+      SCREEN_VIEW_MIN_SCALE,
+      SCREEN_VIEW_MAX_SCALE,
+    );
+    const nextRotation = coerceFiniteNumber(
+      position.rotation,
+      this.target.rotation,
+    );
+
+    if (nextX !== this.target.offsetX || nextY !== this.target.offsetY) {
+      this.pauseWanderAxis("pan");
+    }
+    if (nextZ !== this.target.scale) {
+      this.pauseWanderAxis("depth");
+    }
+    if (nextRotation !== this.target.rotation) {
+      this.pauseWanderAxis("rotate");
+    }
+
+    this.target.offsetX = nextX;
+    this.target.offsetY = nextY;
+    this.target.scale = nextZ;
+    this.target.rotation = nextRotation;
+    this.clearPanInertia();
+    this.clearZoomInertia();
+    Object.assign(this.view, this.target);
+  }
+
   update(deltaSeconds: number) {
     if (this.getSettings().projectionMode !== "screen") {
       this.view.scale = this.target.scale;
@@ -106,9 +162,12 @@ export class ScreenViewController {
     }
 
     const safeDeltaSeconds = Math.max(0, deltaSeconds);
+    this.applyInputInertia(safeDeltaSeconds);
     this.updateWander(safeDeltaSeconds);
-    const panBlend = 1 - Math.exp(-SCREEN_PAN_DAMPING * safeDeltaSeconds);
-    const zoomBlend = 1 - Math.exp(-SCREEN_ZOOM_DAMPING * safeDeltaSeconds);
+    const panBlend =
+      1 - Math.exp(-this.wanderConfig.panDamping * safeDeltaSeconds);
+    const zoomBlend =
+      1 - Math.exp(-this.wanderConfig.zoomDamping * safeDeltaSeconds);
     this.view.scale += (this.target.scale - this.view.scale) * zoomBlend;
     this.view.offsetX += (this.target.offsetX - this.view.offsetX) * panBlend;
     this.view.offsetY += (this.target.offsetY - this.view.offsetY) * panBlend;
@@ -125,8 +184,9 @@ export class ScreenViewController {
     this.pauseWanderAxis("depth");
     const anchor = this.getTransformedPlatePoint(event.clientX, event.clientY);
     const deltaY = normalizeWheelDelta(event);
+    const previousScale = this.target.scale;
     const nextScale = clamp(
-      this.target.scale * Math.exp(-deltaY * SCREEN_WHEEL_ZOOM_SPEED),
+      previousScale * Math.exp(-deltaY * SCREEN_WHEEL_ZOOM_SPEED),
       SCREEN_VIEW_MIN_SCALE,
       SCREEN_VIEW_MAX_SCALE,
     );
@@ -135,6 +195,15 @@ export class ScreenViewController {
     }
 
     this.setTargetAtAnchor(nextScale, event.clientX, event.clientY, anchor);
+    this.recordZoomInput(
+      Math.log(nextScale / previousScale),
+      event.timeStamp,
+      {
+        anchor,
+        clientX: event.clientX,
+        clientY: event.clientY,
+      },
+    );
   };
 
   private readonly handlePointerDown = (event: PointerEvent) => {
@@ -148,6 +217,7 @@ export class ScreenViewController {
       }
 
       event.preventDefault();
+      this.clearPanInertia();
       this.touchPointers.set(event.pointerId, {
         clientX: event.clientX,
         clientY: event.clientY,
@@ -166,6 +236,7 @@ export class ScreenViewController {
       this.canvas.classList.add("is-panning-screen");
       this.canvas.setPointerCapture(event.pointerId);
       if (this.touchPointers.size >= 2) {
+        this.clearZoomInertia();
         this.resetPinchGesture();
       }
       return;
@@ -176,6 +247,7 @@ export class ScreenViewController {
     }
 
     event.preventDefault();
+    this.clearPanInertia();
     this.pauseWanderAxis("pan");
     this.panPointerId = event.pointerId;
     this.panButtonMask = event.button === 2 ? 2 : 1;
@@ -204,7 +276,7 @@ export class ScreenViewController {
 
       if (this.touchPointers.size >= 2) {
         this.pauseWanderAxis("depth");
-        this.applyPinchGesture();
+        this.applyPinchGesture(event.timeStamp);
         return;
       }
 
@@ -215,7 +287,7 @@ export class ScreenViewController {
       }
 
       const nextPoint = this.getPlatePoint(event.clientX, event.clientY);
-      this.panTarget(nextPoint, this.lastPanPoint);
+      this.panTarget(nextPoint, this.lastPanPoint, event.timeStamp);
       this.lastPanPoint = nextPoint;
       return;
     }
@@ -233,7 +305,7 @@ export class ScreenViewController {
     event.preventDefault();
     this.pauseWanderAxis("pan");
     const nextPoint = this.getPlatePoint(event.clientX, event.clientY);
-    this.panTarget(nextPoint, this.lastPanPoint);
+    this.panTarget(nextPoint, this.lastPanPoint, event.timeStamp);
     this.lastPanPoint = nextPoint;
   };
 
@@ -290,7 +362,7 @@ export class ScreenViewController {
 
     event.preventDefault();
     this.pauseWanderAxis("pan");
-    this.panTargetByPixels(event.movementX, event.movementY);
+    this.panTargetByPixels(event.movementX, event.movementY, event.timeStamp);
   };
 
   private readonly handlePointerLockedMouseUp = () => {
@@ -397,12 +469,84 @@ export class ScreenViewController {
       this.panPointerId !== null ||
       this.panButtonMask !== 0 ||
       this.isPointerLocked ||
-      this.touchPointers.size === 1
+      this.touchPointers.size === 1 ||
+      this.hasPanInertia()
     );
   }
 
   private hasActiveDepthGesture() {
+    return (
+      this.touchPointers.size >= 2 ||
+      this.pinchGesture !== null ||
+      this.hasZoomInertia()
+    );
+  }
+
+  private applyInputInertia(deltaSeconds: number) {
+    if (deltaSeconds === 0) {
+      return;
+    }
+
+    const panDecay = Math.exp(-this.wanderConfig.panDamping * deltaSeconds);
+    if (!this.hasDirectPanInput() && this.hasPanInertia()) {
+      this.target.offsetX += this.panVelocityX * deltaSeconds;
+      this.target.offsetY += this.panVelocityY * deltaSeconds;
+      this.panVelocityX *= panDecay;
+      this.panVelocityY *= panDecay;
+      if (!this.hasPanInertia()) {
+        this.clearPanInertia();
+      }
+    }
+
+    const zoomDecay = Math.exp(-this.wanderConfig.zoomDamping * deltaSeconds);
+    if (!this.hasDirectDepthInput() && this.hasZoomInertia()) {
+      const anchor = this.zoomInertiaAnchor;
+      const previousScale = this.target.scale;
+      const nextScale = clamp(
+        previousScale * Math.exp(this.zoomVelocity * deltaSeconds),
+        SCREEN_VIEW_MIN_SCALE,
+        SCREEN_VIEW_MAX_SCALE,
+      );
+      if (anchor && nextScale !== previousScale) {
+        this.setTargetAtAnchor(
+          nextScale,
+          anchor.clientX,
+          anchor.clientY,
+          anchor.anchor,
+        );
+      }
+      this.zoomVelocity *= zoomDecay;
+      if (!this.hasZoomInertia()) {
+        this.clearZoomInertia();
+      }
+    }
+  }
+
+  private hasDirectPanInput() {
+    return (
+      this.panPointerId !== null ||
+      this.panButtonMask !== 0 ||
+      this.isPointerLocked ||
+      this.touchPointers.size === 1
+    );
+  }
+
+  private hasDirectDepthInput() {
     return this.touchPointers.size >= 2 || this.pinchGesture !== null;
+  }
+
+  private hasPanInertia() {
+    return (
+      Math.hypot(this.panVelocityX, this.panVelocityY) >
+      SCREEN_INPUT_MIN_PAN_SPEED
+    );
+  }
+
+  private hasZoomInertia() {
+    return (
+      this.zoomInertiaAnchor !== null &&
+      Math.abs(this.zoomVelocity) > SCREEN_INPUT_MIN_ZOOM_SPEED
+    );
   }
 
   private getTransformedPlatePoint(
@@ -438,31 +582,85 @@ export class ScreenViewController {
     this.target.offsetY = anchor.y - (rotatedPoint.y / scale + 0.5);
   }
 
-  private panTarget(nextPoint: PlatePoint, previousPoint: PlatePoint) {
+  private panTarget(
+    nextPoint: PlatePoint,
+    previousPoint: PlatePoint,
+    timeStamp: number,
+  ) {
     this.panTargetByPlateDelta(
       nextPoint.x - previousPoint.x,
       nextPoint.y - previousPoint.y,
+      timeStamp,
     );
   }
 
-  private panTargetByPixels(deltaX: number, deltaY: number) {
+  private panTargetByPixels(deltaX: number, deltaY: number, timeStamp: number) {
     const rect = this.canvas.getBoundingClientRect();
     const width = Math.max(1, rect.width);
     const height = Math.max(1, rect.height);
     const xScale =
       this.getSettings().screenAspectMode === "circle" ? height : width;
 
-    this.panTargetByPlateDelta(deltaX / xScale, -deltaY / height);
+    this.panTargetByPlateDelta(deltaX / xScale, -deltaY / height, timeStamp);
   }
 
-  private panTargetByPlateDelta(deltaX: number, deltaY: number) {
+  private panTargetByPlateDelta(
+    deltaX: number,
+    deltaY: number,
+    timeStamp: number | null,
+  ) {
     const rotatedDelta = this.rotatePlateDelta(
       deltaX,
       deltaY,
       this.target.rotation,
     );
-    this.target.offsetX -= rotatedDelta.x / this.target.scale;
-    this.target.offsetY -= rotatedDelta.y / this.target.scale;
+    const offsetDeltaX = -rotatedDelta.x / this.target.scale;
+    const offsetDeltaY = -rotatedDelta.y / this.target.scale;
+    this.target.offsetX += offsetDeltaX;
+    this.target.offsetY += offsetDeltaY;
+    if (timeStamp !== null) {
+      this.recordPanInput(offsetDeltaX, offsetDeltaY, timeStamp);
+    }
+  }
+
+  private recordPanInput(
+    offsetDeltaX: number,
+    offsetDeltaY: number,
+    timeStamp: number,
+  ) {
+    const deltaSeconds = getInputDeltaSeconds(
+      timeStamp,
+      this.lastPanInputTimeStamp,
+    );
+    this.lastPanInputTimeStamp = timeStamp;
+    this.panVelocityX = offsetDeltaX / deltaSeconds;
+    this.panVelocityY = offsetDeltaY / deltaSeconds;
+  }
+
+  private clearPanInertia() {
+    this.panVelocityX = 0;
+    this.panVelocityY = 0;
+    this.lastPanInputTimeStamp = null;
+  }
+
+  private recordZoomInput(
+    logScaleDelta: number,
+    timeStamp: number,
+    anchor: ScreenZoomAnchor,
+  ) {
+    const deltaSeconds = getInputDeltaSeconds(
+      timeStamp,
+      this.lastZoomInputTimeStamp,
+    );
+    this.lastZoomInputTimeStamp = timeStamp;
+    this.zoomVelocity = logScaleDelta / deltaSeconds;
+    this.zoomInertiaAnchor = anchor;
+  }
+
+  private clearZoomInertia() {
+    this.zoomVelocity = 0;
+    this.lastZoomInputTimeStamp = null;
+    this.zoomInertiaAnchor = null;
   }
 
   private rotatePlateDelta(
@@ -490,7 +688,12 @@ export class ScreenViewController {
     }
 
     try {
-      this.canvas.requestPointerLock();
+      const request = this.canvas.requestPointerLock();
+      if (request && typeof request.catch === "function") {
+        request.catch(() => {
+          this.isPointerLocked = false;
+        });
+      }
     } catch {
       this.isPointerLocked = false;
     }
@@ -532,7 +735,7 @@ export class ScreenViewController {
     };
   }
 
-  private applyPinchGesture() {
+  private applyPinchGesture(timeStamp: number) {
     const pinch = this.getPinchSnapshot();
     if (!pinch) {
       return;
@@ -548,12 +751,24 @@ export class ScreenViewController {
       SCREEN_VIEW_MIN_SCALE,
       SCREEN_VIEW_MAX_SCALE,
     );
+    const previousScale = this.target.scale;
     this.setTargetAtAnchor(
       nextScale,
       pinch.midpointX,
       pinch.midpointY,
       this.pinchGesture.anchor,
     );
+    if (nextScale !== previousScale) {
+      this.recordZoomInput(
+        Math.log(nextScale / previousScale),
+        timeStamp,
+        {
+          anchor: this.pinchGesture.anchor,
+          clientX: pinch.midpointX,
+          clientY: pinch.midpointY,
+        },
+      );
+    }
   }
 
   private getPinchSnapshot(): ScreenPinchSnapshot | null {
@@ -630,6 +845,22 @@ function normalizeWheelDelta(event: WheelEvent) {
   return event.deltaY;
 }
 
+function coerceFiniteNumber(value: number, fallback: number) {
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function getInputDeltaSeconds(timeStamp: number, lastTimeStamp: number | null) {
+  if (lastTimeStamp === null || timeStamp <= lastTimeStamp) {
+    return SCREEN_INPUT_DEFAULT_DELTA_SECONDS;
+  }
+
+  return clamp(
+    (timeStamp - lastTimeStamp) / 1_000,
+    SCREEN_INPUT_DEFAULT_DELTA_SECONDS,
+    SCREEN_INPUT_MAX_DELTA_SECONDS,
+  );
+}
+
 function createWanderIdleSeconds(seconds: number): WanderIdleSeconds {
   return {
     pan: seconds,
@@ -658,4 +889,10 @@ type ScreenPinchSnapshot = {
   distance: number;
   midpointX: number;
   midpointY: number;
+};
+
+type ScreenZoomAnchor = {
+  anchor: PlatePoint;
+  clientX: number;
+  clientY: number;
 };

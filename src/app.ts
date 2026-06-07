@@ -186,6 +186,10 @@ export class WavefieldApp {
           this.screenView.setWanderConfig(this.wanderConfig);
           this.controls.refresh();
         },
+        getPosition: () => this.screenView.getWanderPosition(),
+        onPositionChange: (position) => {
+          this.screenView.setWanderPosition(position);
+        },
       },
       (boundaryMode) => this.setBoundaryMode(boundaryMode),
       (fieldModel) => this.setFieldModel(fieldModel),
@@ -386,6 +390,9 @@ export class WavefieldApp {
     this.screenView.update(deltaSeconds);
     if (this.overlayController.isSettingsOpen) {
       updateMonitorState(this.monitorState, this.settings, fieldFrame);
+      if (!isFormControlFocused()) {
+        this.controls.refresh();
+      }
     }
     this.modalRenderer.render(
       this.renderer,
@@ -616,6 +623,10 @@ function isTextEntryKeyboardTarget(target: EventTarget | null) {
   return !["button", "checkbox", "radio", "reset", "submit"].includes(
     input.type,
   );
+}
+
+function isFormControlFocused() {
+  return isTextEntryKeyboardTarget(document.activeElement);
 }
 
 function normalizeHexColor(color: string) {

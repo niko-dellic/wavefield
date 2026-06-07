@@ -927,7 +927,10 @@ select {
 }
 
 .post-effect-heading {
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
 }
 
 .post-effect-grip {
@@ -946,6 +949,45 @@ select {
 
 .post-effect-grip:active {
   cursor: grabbing;
+}
+
+.post-effect-title {
+  min-width: 0;
+  padding: 2px 0;
+  border: 0;
+  appearance: none;
+  background: transparent;
+  color: rgb(245 251 255 / 78%);
+  cursor: pointer;
+  font: inherit;
+  line-height: 1.2;
+  text-align: left;
+}
+
+.post-effect-title::after {
+  content: "";
+  display: inline-block;
+  width: 0;
+  height: 0;
+  margin-left: 6px;
+  border-right: 3px solid transparent;
+  border-left: 3px solid transparent;
+  border-top: 4px solid currentColor;
+  opacity: 0.55;
+  transform: translateY(-1px);
+}
+
+.post-effect-title[aria-expanded="false"]::after {
+  transform: rotate(-90deg) translateX(1px);
+}
+
+.post-effect-title:hover {
+  color: #eefaff;
+}
+
+.post-effect-title:focus-visible {
+  outline: 2px solid rgb(217 247 255 / 42%);
+  outline-offset: 2px;
 }
 
 .post-checkbox {
@@ -1010,6 +1052,10 @@ select {
   margin-top: 8px;
   padding-top: 8px;
   border-top: 1px solid rgb(255 255 255 / 8%);
+}
+
+.post-effect-card.is-collapsed .post-effect-controls {
+  display: none;
 }
 
 .post-effect-pane {
