@@ -6,10 +6,14 @@ import {
   stepWanderTarget,
   type WanderConfig,
 } from "../wander";
+import { getScreenWheelGesture } from "./screenWheelGesture";
 
 const SCREEN_VIEW_MIN_SCALE = 0.05;
 const SCREEN_VIEW_MAX_SCALE = 16;
 const SCREEN_WHEEL_ZOOM_SPEED = 0.0015;
+const SCREEN_WHEEL_PAN_SPEED = 1;
+const SCREEN_PINCH_WHEEL_ZOOM_MULTIPLIER = 1.8;
+const SCREEN_TOUCH_PINCH_ZOOM_EXPONENT = 1.45;
 const SCREEN_PINCH_MIN_DISTANCE = 8;
 const SCREEN_INPUT_DEFAULT_DELTA_SECONDS = 1 / 60;
 const SCREEN_INPUT_MAX_DELTA_SECONDS = 0.1;
@@ -181,12 +185,35 @@ export class ScreenViewController {
     }
 
     event.preventDefault();
+    const gesture = getScreenWheelGesture(event, {
+      height: window.innerHeight,
+      width: window.innerWidth,
+    });
+
+    if (gesture.type === "pan") {
+      if (gesture.deltaX === 0 && gesture.deltaY === 0) {
+        return;
+      }
+
+      this.pauseWanderAxis("pan");
+      this.clearZoomInertia();
+      this.panTargetByPixels(
+        gesture.deltaX * SCREEN_WHEEL_PAN_SPEED,
+        gesture.deltaY * SCREEN_WHEEL_PAN_SPEED,
+        event.timeStamp,
+      );
+      return;
+    }
+
     this.pauseWanderAxis("depth");
+    this.clearPanInertia();
     const anchor = this.getTransformedPlatePoint(event.clientX, event.clientY);
-    const deltaY = normalizeWheelDelta(event);
     const previousScale = this.target.scale;
+    const zoomDeltaY =
+      gesture.deltaY *
+      (gesture.source === "pinch" ? SCREEN_PINCH_WHEEL_ZOOM_MULTIPLIER : 1);
     const nextScale = clamp(
-      previousScale * Math.exp(-deltaY * SCREEN_WHEEL_ZOOM_SPEED),
+      previousScale * Math.exp(-zoomDeltaY * SCREEN_WHEEL_ZOOM_SPEED),
       SCREEN_VIEW_MIN_SCALE,
       SCREEN_VIEW_MAX_SCALE,
     );
@@ -746,8 +773,10 @@ export class ScreenViewController {
       return;
     }
 
+    const pinchRatio = pinch.distance / this.pinchGesture.distance;
     const nextScale = clamp(
-      this.pinchGesture.scale * (pinch.distance / this.pinchGesture.distance),
+      this.pinchGesture.scale *
+        Math.pow(pinchRatio, SCREEN_TOUCH_PINCH_ZOOM_EXPONENT),
       SCREEN_VIEW_MIN_SCALE,
       SCREEN_VIEW_MAX_SCALE,
     );
@@ -831,18 +860,6 @@ export class ScreenViewController {
       document.removeEventListener(type, listener);
     });
   }
-}
-
-function normalizeWheelDelta(event: WheelEvent) {
-  if (event.deltaMode === event.DOM_DELTA_LINE) {
-    return event.deltaY * 16;
-  }
-
-  if (event.deltaMode === event.DOM_DELTA_PAGE) {
-    return event.deltaY * window.innerHeight;
-  }
-
-  return event.deltaY;
 }
 
 function coerceFiniteNumber(value: number, fallback: number) {
