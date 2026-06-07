@@ -119,17 +119,20 @@ export const FIELD_MODEL_FRAGMENT: string = `  vec2 plateUvFromScreen(vec2 uv) {
     float rings = max(1.0, floor((m + n) * 0.62));
     float spokes = max(1.0, floor(abs(m - n) + 2.0));
     float ringFrequency = rings + detailBias * 0.42;
-    float spokeFrequency = spokes + detailBias * 0.38;
     float edge = resonanceEnvelope(centered, radius);
     float ringField = cos(ringFrequency * PI * radius - uTime * (0.03 + uDrift * 0.08));
-    float spokeField = cos(spokeFrequency * angle + n * 0.37 + detailBias * 0.65);
+    float spokeField = cos(spokes * angle + n * 0.37 + detailBias * 0.65);
     float crossMode =
       cos((rings + 1.0 + uBoundaryWeights.w) * PI * radius) *
-      cos((spokes + 1.0 + uBoundaryClampedWeight * 0.4) * angle);
+      cos((spokes + 1.0) * angle);
+    float clampedSpoke =
+      cos((spokes + 2.0) * angle + detailBias * 0.28) *
+      uBoundaryClampedWeight;
     return (
       ringField * 0.68 +
       ringField * spokeField * 0.5 +
-      crossMode * (0.12 + uBoundaryWeights.w * 0.28)
+      crossMode * (0.12 + uBoundaryWeights.w * 0.28) +
+      clampedSpoke * 0.12
     ) * edge;
   }
 
