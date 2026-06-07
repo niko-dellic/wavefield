@@ -1,15 +1,25 @@
 import { DEFAULT_SETTINGS } from "./config/settings.ts";
-import { cloneCymaticSettings } from "./templateSettings.ts";
+import {
+  POST_EFFECT_ENABLED_KEYS,
+  POST_EFFECT_IDS,
+  cloneEffectiveCymaticSettings,
+  createEffectiveCymaticSettings,
+  getPostEffectAmounts,
+  isPostEffectEnabled,
+} from "./effectiveSettings.ts";
 import type {
-  BoundaryMode,
   BoundaryWeights,
   CymaticSettings,
   EffectiveCymaticSettings,
-  FieldModel,
   FieldModelWeights,
   PostEffectAmounts,
   PostEffectId,
 } from "./types.ts";
+
+export {
+  cloneEffectiveCymaticSettings,
+  createEffectiveCymaticSettings,
+} from "./effectiveSettings.ts";
 
 export type TemplateTransitionEasing =
   | "linear"
@@ -46,29 +56,6 @@ export const DEFAULT_TEMPLATE_TRANSITION_CONFIG: TemplateTransitionConfig = {
   applyBoundaryMode: true,
 };
 
-const BOUNDARY_MODES = [
-  "freePlate",
-  "dirichlet",
-  "neumann",
-  "clamped",
-  "supported",
-] satisfies BoundaryMode[];
-
-const FIELD_MODELS = [
-  "modalPlate",
-  "radialPlate",
-  "faradayPulse",
-  "spiralPhase",
-] satisfies FieldModel[];
-
-const POST_EFFECT_IDS = [
-  "bloom",
-  "pixelation",
-  "fisheye",
-  "alphaDecay",
-  "terminal",
-] satisfies PostEffectId[];
-
 const INTEGER_SETTING_KEYS = new Set<keyof CymaticSettings>([
   "modalCount",
   "sphereRaymarchSteps",
@@ -77,14 +64,6 @@ const INTEGER_SETTING_KEYS = new Set<keyof CymaticSettings>([
   "terminalCellSize",
   "terminalContourLevels",
 ]);
-
-const POST_EFFECT_ENABLED_KEYS = {
-  bloom: "postBloomEnabled",
-  pixelation: "postPixelationEnabled",
-  fisheye: "postFisheyeEnabled",
-  alphaDecay: "postAlphaDecayEnabled",
-  terminal: "terminalContourEnabled",
-} satisfies Record<PostEffectId, keyof CymaticSettings>;
 
 type PostEffectOffValueConfig = {
   effectId: PostEffectId;
@@ -103,18 +82,6 @@ const POST_EFFECT_OFF_VALUES: Partial<
   terminalContourStrength: { effectId: "terminal", value: 0 },
   terminalContourThreshold: { effectId: "terminal", value: 0 },
 };
-
-export function createEffectiveCymaticSettings(
-  settings: CymaticSettings,
-): EffectiveCymaticSettings {
-  const cloned = cloneCymaticSettings(settings);
-  return {
-    ...cloned,
-    fieldModelWeights: getFieldModelWeights(cloned.fieldModel),
-    boundaryWeights: getBoundaryWeights(cloned.boundaryMode),
-    postEffectAmounts: getPostEffectAmounts(cloned),
-  };
-}
 
 export function createTemplateTransition(
   from: EffectiveCymaticSettings,
@@ -288,55 +255,6 @@ export function coerceTemplateTransitionConfig(
       : DEFAULT_TEMPLATE_TRANSITION_CONFIG.applyBoundaryMode;
 
   return { durationSeconds, easing, applyBoundaryMode };
-}
-
-export function cloneEffectiveCymaticSettings(
-  settings: EffectiveCymaticSettings,
-): EffectiveCymaticSettings {
-  return {
-    ...cloneCymaticSettings(settings),
-    fieldModelWeights: {
-      ...getFieldModelWeights(settings.fieldModel),
-      ...settings.fieldModelWeights,
-    },
-    boundaryWeights: { ...settings.boundaryWeights },
-    postEffectAmounts: { ...settings.postEffectAmounts },
-  };
-}
-
-function getFieldModelWeights(fieldModel: FieldModel): FieldModelWeights {
-  return {
-    modalPlate: fieldModel === "modalPlate" ? 1 : 0,
-    radialPlate: fieldModel === "radialPlate" ? 1 : 0,
-    faradayPulse: fieldModel === "faradayPulse" ? 1 : 0,
-    spiralPhase: fieldModel === "spiralPhase" ? 1 : 0,
-  };
-}
-
-function getBoundaryWeights(boundaryMode: BoundaryMode): BoundaryWeights {
-  return {
-    freePlate: boundaryMode === "freePlate" ? 1 : 0,
-    dirichlet: boundaryMode === "dirichlet" ? 1 : 0,
-    neumann: boundaryMode === "neumann" ? 1 : 0,
-    clamped: boundaryMode === "clamped" ? 1 : 0,
-    supported: boundaryMode === "supported" ? 1 : 0,
-  };
-}
-
-function getPostEffectAmounts(settings: CymaticSettings): PostEffectAmounts {
-  return {
-    bloom: isPostEffectEnabled(settings, "bloom") ? 1 : 0,
-    pixelation: isPostEffectEnabled(settings, "pixelation") ? 1 : 0,
-    fisheye: isPostEffectEnabled(settings, "fisheye") ? 1 : 0,
-    alphaDecay: isPostEffectEnabled(settings, "alphaDecay") ? 1 : 0,
-    terminal: isPostEffectEnabled(settings, "terminal") ? 1 : 0,
-  };
-}
-
-function isPostEffectEnabled(settings: CymaticSettings, effectId: PostEffectId) {
-  return Boolean(
-    settings.postProcessingEnabled && settings[POST_EFFECT_ENABLED_KEYS[effectId]],
-  );
 }
 
 function interpolateFieldModelWeights(

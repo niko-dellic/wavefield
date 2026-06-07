@@ -9,6 +9,10 @@ import { getFirstMeaningfulFrameTime } from "./audio/analysisPreview";
 import { AudioController } from "./audio/audioController";
 import { LiveAudioAnalyzer } from "./audio/liveAnalysis";
 import { DEFAULT_SETTINGS } from "./config/settings";
+import {
+  createRenderProfiler,
+  type RenderProfiler,
+} from "./performance/renderProfiler";
 import { loadWavefieldTemplates } from "./templateSettings";
 import {
   TemplateController,
@@ -72,6 +76,7 @@ const TEMPLATE_MODULES = import.meta.glob<unknown>("./templates/*.json", {
   import: "default",
 });
 const INITIAL_TEMPLATES = loadWavefieldTemplates(TEMPLATE_MODULES);
+const SETTINGS_CONTROLS_REFRESH_INTERVAL_MS = 1_000 / 12;
 
 export class WavefieldApp {
   private readonly settings: CymaticSettings = { ...DEFAULT_SETTINGS };
@@ -83,6 +88,7 @@ export class WavefieldApp {
   private readonly liveAnalyzer = new LiveAudioAnalyzer();
   private readonly renderer: THREE.WebGLRenderer;
   private readonly modalRenderer = new ModalFieldRenderer();
+  private readonly profiler: RenderProfiler | null;
   private readonly ui: ShellElements;
   private readonly controls: ControlsManager;
   private readonly audio: AudioController;
@@ -100,6 +106,7 @@ export class WavefieldApp {
   private liveSeconds = 0;
   private analysisPreviewTime = 0;
   private fieldSettingsKey = "";
+  private lastSettingsControlsRefreshMilliseconds = 0;
   private readonly monitorState: MonitorState = createInitialMonitorState();
   private lastModalFieldFrame: ModalFieldFrame = EMPTY_MODAL_FIELD_FRAME;
 
@@ -119,6 +126,7 @@ export class WavefieldApp {
     this.renderer.setClearColor(DEFAULT_SETTINGS.backgroundColor, 1);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.syncBackgroundColor();
+    this.profiler = createRenderProfiler(this.renderer);
 
     this.templates = new TemplateController({
       templates: INITIAL_TEMPLATES,
@@ -241,6 +249,7 @@ export class WavefieldApp {
     this.audio.dispose();
     this.liveAnalyzer.stop();
     this.modalRenderer.dispose();
+    this.profiler?.dispose();
     this.renderer.dispose();
   }
 
@@ -326,6 +335,8 @@ export class WavefieldApp {
   };
 
   private readonly animate = (now: number) => {
+    this.profiler?.beginFrame(now);
+    const finishUpdateProfile = this.profiler?.beginCpuMeasure("update");
     const deltaSeconds = Math.min(0.1, (now - this.lastFrameTime) / 1_000);
     this.lastFrameTime = now;
     const transitionResult = this.settingsTransitions.advance(deltaSeconds);
@@ -388,13 +399,27 @@ export class WavefieldApp {
     }
 
     this.screenView.update(deltaSeconds);
+    let settingsRefreshMilliseconds = 0;
+    let didRefreshSettings = false;
     if (this.overlayController.isSettingsOpen) {
       updateMonitorState(this.monitorState, this.settings, fieldFrame);
-      if (!isFormControlFocused()) {
+      if (
+        !isFormControlFocused() &&
+        now - this.lastSettingsControlsRefreshMilliseconds >=
+          SETTINGS_CONTROLS_REFRESH_INTERVAL_MS
+      ) {
+        const finishSettingsRefreshProfile =
+          this.profiler?.beginCpuMeasure("settingsRefresh");
         this.controls.refresh();
+        didRefreshSettings = true;
+        settingsRefreshMilliseconds = finishSettingsRefreshProfile?.() ?? 0;
+        this.lastSettingsControlsRefreshMilliseconds = now;
       }
     }
-    this.modalRenderer.render(
+    const updateMilliseconds = finishUpdateProfile?.() ?? 0;
+    const finishRenderProfile = this.profiler?.beginCpuMeasure("render");
+    const finishGpuRenderProfile = this.profiler?.beginGpuRenderMeasure();
+    const renderStats = this.modalRenderer.render(
       this.renderer,
       fieldFrame,
       renderSettings,
@@ -402,6 +427,17 @@ export class WavefieldApp {
       renderDeltaSeconds,
       isIdlePreview,
     );
+    finishGpuRenderProfile?.();
+    const renderMilliseconds = finishRenderProfile?.() ?? 0;
+    this.profiler?.endFrame(performance.now(), {
+      settings: renderSettings,
+      renderStats,
+      modeCount: fieldFrame.modes.length,
+      updateMilliseconds,
+      renderMilliseconds,
+      settingsRefreshMilliseconds,
+      didRefreshSettings,
+    });
 
     this.animationFrame = requestAnimationFrame(this.animate);
   };

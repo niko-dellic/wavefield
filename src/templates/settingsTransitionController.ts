@@ -37,6 +37,11 @@ export type ResonanceTransitionResult =
   | { changed: false; reason: "unchanged" }
   | { changed: true; morphed: boolean };
 
+export type TemplateTransitionStartResult = {
+  appliedBoundaryMode: boolean;
+};
+
+/** Coordinates template and resonance transitions while preserving runtime drive state. */
 export class SettingsTransitionController {
   effectiveSettings: EffectiveCymaticSettings;
   boundaryTransitionConfig = loadBoundaryTransitionConfig();
@@ -50,24 +55,30 @@ export class SettingsTransitionController {
     this.effectiveSettings = createEffectiveCymaticSettings(settings);
   }
 
-  get hasActiveTransition() {
+  /** True when either a template or resonance transition is currently in flight. */
+  get hasActiveTransition(): boolean {
     return this.templateTransition !== null || this.boundaryTransition !== null;
   }
 
-  get boundaryControlsConfig() {
+  /** Returns the UI-facing resonance transition config shape. */
+  get boundaryControlsConfig(): BoundaryTransitionConfig & {
+    applyBoundaryMode: boolean;
+  } {
     return {
       ...this.boundaryTransitionConfig,
       applyBoundaryMode: true,
     };
   }
 
-  resetToCurrentSettings() {
+  /** Cancels active transitions and rebuilds effective settings from live settings. */
+  resetToCurrentSettings(): void {
     this.templateTransition = null;
     this.boundaryTransition = null;
     this.effectiveSettings = createEffectiveCymaticSettings(this.settings);
   }
 
-  syncRuntimeSettings() {
+  /** Pushes runtime-only drive mode into active transitions without changing visuals. */
+  syncRuntimeSettings(): void {
     this.effectiveSettings.driveMode = this.settings.driveMode;
     this.templateTransition = syncTransitionRuntimeSettings(
       this.templateTransition,
@@ -82,7 +93,7 @@ export class SettingsTransitionController {
   startTemplateTransition(
     template: WavefieldTemplate,
     config: TemplateTransitionConfig,
-  ) {
+  ): TemplateTransitionStartResult {
     const nextSettings = createSettingsFromTemplate(
       template.settings,
       this.settings,
@@ -102,6 +113,7 @@ export class SettingsTransitionController {
     return { appliedBoundaryMode: false };
   }
 
+  /** Advances the active transition and returns the settings to render this frame. */
   advance(deltaSeconds: number): SettingsTransitionAdvanceResult {
     if (!this.templateTransition && !this.boundaryTransition) {
       return {
@@ -152,6 +164,7 @@ export class SettingsTransitionController {
     };
   }
 
+  /** Changes resonance style, optionally morphing from the current effective state. */
   setBoundaryMode(boundaryMode: BoundaryMode): ResonanceTransitionResult {
     if (
       this.settings.boundaryMode === boundaryMode &&
@@ -179,6 +192,7 @@ export class SettingsTransitionController {
     return { changed: true, morphed: false };
   }
 
+  /** Changes field model immediately and refreshes derived field model weights. */
   setFieldModel(fieldModel: FieldModel): ResonanceTransitionResult {
     if (
       this.settings.fieldModel === fieldModel &&
@@ -193,7 +207,8 @@ export class SettingsTransitionController {
     return { changed: true, morphed: false };
   }
 
-  setBoundaryTransitionConfig(config: BoundaryTransitionConfig) {
+  /** Persists resonance transition controls after validating user-provided values. */
+  setBoundaryTransitionConfig(config: BoundaryTransitionConfig): void {
     Object.assign(
       this.boundaryTransitionConfig,
       coerceBoundaryTransitionConfig(config),
@@ -204,7 +219,7 @@ export class SettingsTransitionController {
     );
   }
 
-  private commitEffectiveSettings(settings: EffectiveCymaticSettings) {
+  private commitEffectiveSettings(settings: EffectiveCymaticSettings): void {
     const currentDriveMode = this.settings.driveMode;
     Object.assign(this.settings, cloneCymaticSettings(settings));
     this.settings.driveMode = currentDriveMode;
@@ -212,7 +227,7 @@ export class SettingsTransitionController {
   }
 }
 
-export function loadTemplateTransitionConfig() {
+export function loadTemplateTransitionConfig(): TemplateTransitionConfig {
   try {
     const rawValue = window.localStorage.getItem(
       TEMPLATE_TRANSITION_STORAGE_KEY,
@@ -228,7 +243,7 @@ export function loadTemplateTransitionConfig() {
   }
 }
 
-function loadBoundaryTransitionConfig() {
+function loadBoundaryTransitionConfig(): BoundaryTransitionConfig {
   try {
     const rawValue = window.localStorage.getItem(
       BOUNDARY_TRANSITION_STORAGE_KEY,
@@ -244,7 +259,7 @@ function loadBoundaryTransitionConfig() {
 function syncTransitionRuntimeSettings(
   transition: TemplateTransitionState | null,
   settings: CymaticSettings,
-) {
+): TemplateTransitionState | null {
   if (!transition) {
     return null;
   }

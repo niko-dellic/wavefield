@@ -8,6 +8,7 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host 127.0.0.1",
+    "profile:scenarios": "node scripts/profile-scenarios.mjs",
     "test:analysis": "node --test test/*.test.ts"
   },
   "dependencies": {

@@ -7,7 +7,7 @@ export function createInitialMonitorState(): MonitorState {
   return {
     graph: 0,
     reading: "0 Hz",
-    drive: "Manual",
+    drive: "Audio",
     peak: "none",
     base: "none",
     modes: "0/0",

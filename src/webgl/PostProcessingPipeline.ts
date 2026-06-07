@@ -8,22 +8,24 @@ import {
   type Pass,
 } from "postprocessing";
 
+import {
+  getPostEffectAmount,
+  getPostEffectAmounts,
+  hasActivePostEffectAmount,
+  isPostEffectEnabled,
+} from "../effectiveSettings";
 import type {
   EffectiveCymaticSettings,
-  PostEffectAmounts,
   PostEffectId,
 } from "../types";
 import { AlphaDecayPass } from "./AlphaDecayPass";
 import { FisheyeEffect } from "./FisheyeEffect";
 import { TerminalContourEffect } from "./TerminalContourEffect";
 
-const POST_EFFECT_ENABLED_KEYS = {
-  bloom: "postBloomEnabled",
-  pixelation: "postPixelationEnabled",
-  fisheye: "postFisheyeEnabled",
-  alphaDecay: "postAlphaDecayEnabled",
-  terminal: "terminalContourEnabled",
-} satisfies Record<PostEffectId, keyof EffectiveCymaticSettings>;
+export type PostProcessingRenderStats = {
+  activeEffects: PostEffectId[];
+  rendered: boolean;
+};
 
 /** Owns postprocessing composer state, pass ordering, and transition fade amounts. */
 export class PostProcessingPipeline {
@@ -48,6 +50,10 @@ export class PostProcessingPipeline {
   });
   private readonly fisheyeEffect = new FisheyeEffect();
   private readonly terminalContourEffect = new TerminalContourEffect();
+  private lastRenderStats: PostProcessingRenderStats = {
+    activeEffects: [],
+    rendered: false,
+  };
 
   /** Resizes composer targets and effect-specific buffers to match the canvas. */
   public setSize(width: number, height: number): void {
@@ -65,22 +71,32 @@ export class PostProcessingPipeline {
     this.alphaDecayResetKey = "";
   }
 
-  /** Renders through the active post pipeline and returns true when it handled the frame. */
+  /** Renders through the active post pipeline and returns frame stats for profiling. */
   public render(
     renderer: THREE.WebGLRenderer,
     scene: THREE.Scene,
     camera: THREE.Camera,
     settings: EffectiveCymaticSettings,
     deltaSeconds: number,
-  ): boolean {
+  ): PostProcessingRenderStats {
     const enabledPostEffects = this.getEnabledPostEffects(settings);
     if (enabledPostEffects.length === 0) {
-      return false;
+      this.lastRenderStats = { activeEffects: [], rendered: false };
+      return this.lastRenderStats;
     }
 
     this.updatePostProcessing(renderer, scene, camera, settings, enabledPostEffects);
     this.composer?.render(deltaSeconds);
-    return true;
+    this.lastRenderStats = {
+      activeEffects: enabledPostEffects,
+      rendered: true,
+    };
+    return this.lastRenderStats;
+  }
+
+  /** Returns the most recent postprocessing activity without doing extra work. */
+  public getLastRenderStats(): PostProcessingRenderStats {
+    return this.lastRenderStats;
   }
 
   /** Releases composer resources owned by the postprocessing package. */
@@ -243,37 +259,4 @@ export class PostProcessingPipeline {
       return isPostEffectEnabled(settings, effectId) || amounts[effectId] > 0.001;
     });
   }
-}
-
-function getPostEffectAmounts(settings: EffectiveCymaticSettings): PostEffectAmounts {
-  return settings.postEffectAmounts ?? {
-    bloom: settings.postProcessingEnabled && settings.postBloomEnabled ? 1 : 0,
-    pixelation:
-      settings.postProcessingEnabled && settings.postPixelationEnabled ? 1 : 0,
-    fisheye: settings.postProcessingEnabled && settings.postFisheyeEnabled ? 1 : 0,
-    alphaDecay:
-      settings.postProcessingEnabled && settings.postAlphaDecayEnabled ? 1 : 0,
-    terminal:
-      settings.postProcessingEnabled && settings.terminalContourEnabled ? 1 : 0,
-  };
-}
-
-function getPostEffectAmount(
-  settings: EffectiveCymaticSettings,
-  effectId: PostEffectId,
-): number {
-  return getPostEffectAmounts(settings)[effectId];
-}
-
-function isPostEffectEnabled(
-  settings: EffectiveCymaticSettings,
-  effectId: PostEffectId,
-): boolean {
-  return Boolean(
-    settings.postProcessingEnabled && settings[POST_EFFECT_ENABLED_KEYS[effectId]],
-  );
-}
-
-function hasActivePostEffectAmount(amounts: PostEffectAmounts): boolean {
-  return Object.values(amounts).some((amount: number): boolean => amount > 0.001);
 }

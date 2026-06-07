@@ -529,8 +529,8 @@ export const FIELD_MODEL_FRAGMENT: string = `  vec2 plateUvFromScreen(vec2 uv) {
       float harmonicField =
         uHarmonicMix > 0.0
           ? chladniValue(
-              max(1.0, floor(m * (1.0 + uHarmonicMix * 0.42))),
-              max(1.0, floor(n * (1.0 + uHarmonicMix * 0.34))),
+              max(1.0, floor(m * 1.42)),
+              max(1.0, floor(n * 1.34)),
               p
             )
           : 0.0;

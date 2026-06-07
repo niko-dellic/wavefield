@@ -6,12 +6,20 @@ import {
   ModalFieldUniformController,
   setColorUniform,
 } from "./ModalFieldUniformController";
-import { PostProcessingPipeline } from "./PostProcessingPipeline";
+import {
+  PostProcessingPipeline,
+  type PostProcessingRenderStats,
+} from "./PostProcessingPipeline";
 import type { ScreenViewTransform } from "./renderTypes";
 import { SphereControlsController } from "./SphereControlsController";
 import { FRAGMENT_SHADER, VERTEX_SHADER } from "./shaders/modalFieldShader";
 
 export type { ScreenViewTransform } from "./renderTypes";
+
+export type ModalFieldRenderStats = {
+  postProcessing: PostProcessingRenderStats;
+  projectionMode: EffectiveCymaticSettings["projectionMode"];
+};
 
 /** Public facade for rendering Wavefield's modal field in screen or sphere projection. */
 export class ModalFieldRenderer {
@@ -75,7 +83,7 @@ export class ModalFieldRenderer {
     screenView: ScreenViewTransform,
     deltaSeconds: number,
     isIdlePreview = false,
-  ): void {
+  ): ModalFieldRenderStats {
     this.elapsedSeconds += Math.max(0, deltaSeconds);
 
     const isSphere = settings.projectionMode === "sphere";
@@ -94,18 +102,27 @@ export class ModalFieldRenderer {
     });
 
     const camera = isSphere ? this.sphereCamera : this.screenCamera;
+    let postProcessingStats: PostProcessingRenderStats = {
+      activeEffects: [],
+      rendered: false,
+    };
     this.withPreservedRendererState(renderer, useTransparentBackground, (): void => {
-      const didRenderPost = this.postProcessing.render(
+      postProcessingStats = this.postProcessing.render(
         renderer,
         this.scene,
         camera,
         settings,
         deltaSeconds,
       );
-      if (!didRenderPost) {
+      if (!postProcessingStats.rendered) {
         renderer.render(this.scene, camera);
       }
     });
+
+    return {
+      postProcessing: postProcessingStats,
+      projectionMode: settings.projectionMode,
+    };
   }
 
   /** Releases Three.js resources and delegated controller state. */

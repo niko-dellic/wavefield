@@ -1,12 +1,14 @@
 import * as THREE from "three";
 
 import { MAX_MODAL_MODES, type ModalFieldFrame } from "../audio/ModalField";
+import {
+  getBoundaryWeights,
+  getFieldModelWeights,
+} from "../effectiveSettings";
 import type {
-  BoundaryMode,
   BoundaryWeights,
   ColorMode,
   EffectiveCymaticSettings,
-  FieldModel,
   FieldModelWeights,
   FrequencyBand,
   HeatmapPalette,
@@ -396,23 +398,4 @@ function setFieldModelWeightsUniform(
     safeWeights.faradayPulse,
     safeWeights.spiralPhase,
   );
-}
-
-function getFieldModelWeights(fieldModel: FieldModel): FieldModelWeights {
-  return {
-    modalPlate: fieldModel === "modalPlate" ? 1 : 0,
-    radialPlate: fieldModel === "radialPlate" ? 1 : 0,
-    faradayPulse: fieldModel === "faradayPulse" ? 1 : 0,
-    spiralPhase: fieldModel === "spiralPhase" ? 1 : 0,
-  };
-}
-
-function getBoundaryWeights(boundaryMode: BoundaryMode): BoundaryWeights {
-  return {
-    freePlate: boundaryMode === "freePlate" ? 1 : 0,
-    dirichlet: boundaryMode === "dirichlet" ? 1 : 0,
-    neumann: boundaryMode === "neumann" ? 1 : 0,
-    clamped: boundaryMode === "clamped" ? 1 : 0,
-    supported: boundaryMode === "supported" ? 1 : 0,
-  };
 }

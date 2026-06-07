@@ -35,7 +35,7 @@ export const DEFAULT_SETTINGS: CymaticSettings = {
   gain: 1.2,
   sensitivity: 1.8,
   audioResponse: 1.5,
-  driveMode: "manual",
+  driveMode: "audio",
   testFrequency: 220,
   frequencySweep: true,
   frequencySweepRate: 0.05,
