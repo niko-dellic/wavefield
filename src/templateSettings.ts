@@ -13,7 +13,6 @@ import type {
   ScreenAspectMode,
   SphereFieldMode,
   SphereProjectionType,
-  TerminalContourType,
 } from "./types.ts";
 
 const TEMPLATE_EXCLUDED_SETTING_KEYS = [
@@ -86,24 +85,6 @@ const STRING_OPTIONS: Partial<Record<keyof CymaticSettings, readonly string[]>> 
   ] satisfies HeatmapPalette[],
   driveMode: ["audio", "manual", "live"] satisfies DriveMode[],
   postAlphaDecayBlendMode: [
-    "normal",
-    "screen",
-    "multiply",
-    "overlay",
-    "add",
-    "subtract",
-    "darken",
-    "lighten",
-    "difference",
-    "exclusion",
-    "softLight",
-    "hardLight",
-  ] satisfies AlphaDecayBlendMode[],
-  terminalContourType: [
-    "legacyBleed",
-    "fieldGrid",
-  ] satisfies TerminalContourType[],
-  terminalContourBlendMode: [
     "normal",
     "screen",
     "multiply",

@@ -4,7 +4,6 @@ import type {
   FieldModel,
   MonitorSignal,
   PostEffectId,
-  TerminalContourType,
 } from "../types";
 
 export const DEFAULT_SETTINGS: CymaticSettings = {
@@ -73,8 +72,6 @@ export const DEFAULT_SETTINGS: CymaticSettings = {
   postAlphaDecayFrames: 75,
   postAlphaDecayBlendMode: "screen",
   terminalContourEnabled: true,
-  terminalContourType: "legacyBleed",
-  terminalContourBlendMode: "overlay",
   terminalCellSize: 9,
   terminalContourLevels: 8,
   terminalContourStrength: 1,
@@ -118,11 +115,6 @@ export const ALPHA_DECAY_BLEND_OPTIONS: Record<string, AlphaDecayBlendMode> = {
   Exclusion: "exclusion",
   "Soft light": "softLight",
   "Hard light": "hardLight",
-};
-
-export const TERMINAL_CONTOUR_TYPE_OPTIONS: Record<string, TerminalContourType> = {
-  "Legacy bleed": "legacyBleed",
-  "Field grid": "fieldGrid",
 };
 
 // Live signal sources selectable in the Signals monitor folder.
@@ -450,16 +442,6 @@ export const POST_EFFECT_CONTROLS: Record<
   ],
   terminal: [
     {
-      key: "terminalContourType",
-      label: "Type",
-      options: TERMINAL_CONTOUR_TYPE_OPTIONS,
-    },
-    {
-      key: "terminalContourBlendMode",
-      label: "Blend",
-      options: ALPHA_DECAY_BLEND_OPTIONS,
-    },
-    {
       key: "terminalCellSize",
       label: "Cell size",
       min: 4,
@@ -591,10 +573,6 @@ export const SETTING_DESCRIPTIONS: Partial<
     "Approximate frame count for the alpha-decay trail. Higher values linger longer.",
   postAlphaDecayBlendMode:
     "How the decayed history blends with the current frame.",
-  terminalContourType:
-    "Legacy bleed spreads terminal marks through the field halo; Field grid keeps them tighter to the field structure.",
-  terminalContourBlendMode:
-    "How terminal marks blend with the underlying field colors.",
   terminalCellSize: "Size of the terminal/ASCII contour cells.",
   terminalContourLevels: "Number of contour bands drawn.",
   terminalContourStrength: "Contrast/strength of the contour lines.",
