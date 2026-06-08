@@ -37,6 +37,7 @@ export type PostEffectId =
   | "fisheye"
   | "alphaDecay"
   | "terminal";
+export type TerminalContourType = "legacyBleed" | "fieldGrid";
 export type FieldModelWeights = Record<FieldModel, number>;
 export type BoundaryWeights = Record<BoundaryMode, number>;
 export type PostEffectAmounts = Record<PostEffectId, number>;
@@ -170,6 +171,8 @@ export type CymaticSettings = {
   postAlphaDecayFrames: number;
   postAlphaDecayBlendMode: AlphaDecayBlendMode;
   terminalContourEnabled: boolean;
+  terminalContourType: TerminalContourType;
+  terminalContourBlendMode: AlphaDecayBlendMode;
   terminalCellSize: number;
   terminalContourLevels: number;
   terminalContourStrength: number;

@@ -11,6 +11,57 @@ export const TERMINAL_FRAGMENT: string = `
     return max(sparse, angled * 0.78);
   }
 
+  vec3 terminalBlendOverlay(vec3 base, vec3 layer) {
+    return mix(
+      2.0 * base * layer,
+      1.0 - 2.0 * (1.0 - base) * (1.0 - layer),
+      step(vec3(0.5), base)
+    );
+  }
+
+  vec3 terminalBlendSoftLight(vec3 base, vec3 layer) {
+    vec3 d = mix(
+      ((16.0 * base - 12.0) * base + 4.0) * base,
+      sqrt(max(base, vec3(0.0))),
+      step(vec3(0.25), base)
+    );
+    return mix(
+      base - (1.0 - 2.0 * layer) * base * (1.0 - base),
+      base + (2.0 * layer - 1.0) * (d - base),
+      step(vec3(0.5), layer)
+    );
+  }
+
+  vec3 terminalBlendColors(vec3 base, vec3 layer, float opacity, float blendMode) {
+    vec3 blended = layer;
+    if (blendMode < 0.5) {
+      blended = layer;
+    } else if (blendMode < 1.5) {
+      blended = 1.0 - (1.0 - base) * (1.0 - layer);
+    } else if (blendMode < 2.5) {
+      blended = base * layer;
+    } else if (blendMode < 3.5) {
+      blended = terminalBlendOverlay(base, layer);
+    } else if (blendMode < 4.5) {
+      blended = base + layer;
+    } else if (blendMode < 5.5) {
+      blended = base - layer;
+    } else if (blendMode < 6.5) {
+      blended = min(base, layer);
+    } else if (blendMode < 7.5) {
+      blended = max(base, layer);
+    } else if (blendMode < 8.5) {
+      blended = abs(base - layer);
+    } else if (blendMode < 9.5) {
+      blended = base + layer - 2.0 * base * layer;
+    } else if (blendMode < 10.5) {
+      blended = terminalBlendSoftLight(base, layer);
+    } else {
+      blended = terminalBlendOverlay(layer, base);
+    }
+    return mix(base, clamp(blended, 0.0, 1.0), clamp(opacity, 0.0, 1.0));
+  }
+
   vec3 applyTerminalOverlay(
     vec3 baseColor,
     vec2 uv,
@@ -24,6 +75,8 @@ export const TERMINAL_FRAGMENT: string = `
   ) {
     float amount = uTerminalParams.x;
     float strength = uTerminalStrength;
+    float contourType = uTerminalControls.x;
+    float blendMode = uTerminalControls.y;
     if (amount <= 0.0001 || strength <= 0.0001) {
       return baseColor;
     }
@@ -71,10 +124,10 @@ export const TERMINAL_FRAGMENT: string = `
     float horizontalStroke = 1.0 - smoothstep(0.035, 0.16, abs(local.y));
     float terminalGrid = max(cellEdge * 0.72, max(verticalStroke, horizontalStroke) * 0.34);
     float gridMask = terminalGrid * haloSurface * fieldSurface;
-    float glyphMask = clamp(max(glyph * contourMask, gridMask * 0.82 * strength), 0.0, 1.0);
+    float fieldGlyphMask = clamp(max(glyph * contourMask, gridMask * 0.82 * strength), 0.0, 1.0);
     float cellRim = smoothstep(0.32, 0.5, max(abs(local.x), abs(local.y)));
     float scanline = 1.0 - smoothstep(0.035, 0.16, abs(local.y));
-    float contourLine = clamp(
+    float fieldContourLine = clamp(
       max(fieldContour * structuralMask, edgeContour * 0.58) *
         fieldSurface *
         strength *
@@ -82,13 +135,37 @@ export const TERMINAL_FRAGMENT: string = `
       0.0,
       0.78
     );
-    float terminalMark = clamp(
-      contourLine * (0.42 + cellRim * 0.24) +
-        glyphMask * (0.82 + scanline * 0.24),
+    float fieldMark = clamp(
+      fieldContourLine * (0.42 + cellRim * 0.24) +
+        fieldGlyphMask * (0.82 + scanline * 0.24),
       0.0,
       1.0
     );
-    vec3 localShadow = baseColor * (1.0 - terminalMark * 0.82);
+    float legacySurface = clamp(
+      visibleInk + broadBand * 1.15 + nodeBand * 0.22 + fieldContour * 0.2,
+      0.0,
+      1.0
+    );
+    float legacyBleed = smoothstep(
+      0.015,
+      0.34,
+      broadBand * 1.2 + density * 0.24 + fieldContour * 0.18
+    );
+    float legacyScan = 1.0 - smoothstep(0.02, 0.13, abs(local.y));
+    float legacyColumn = 1.0 - smoothstep(0.018, 0.1, abs(local.x));
+    float legacyGlyph = max(glyph, max(legacyScan, legacyColumn) * 0.44);
+    float legacyMark = clamp(
+      legacyGlyph *
+        legacyBleed *
+        legacySurface *
+        strength *
+        (0.42 + fieldContour * 0.55 + edgeContour * 0.24),
+      0.0,
+      1.0
+    );
+    float terminalMark = contourType < 0.5 ? legacyMark : fieldMark;
+    float terminalLine = contourType < 0.5 ? fieldContour * legacyBleed : fieldContourLine;
+    float terminalGlyph = contourType < 0.5 ? legacyGlyph : glyph;
     vec3 cyanAccent = vec3(0.12, 0.86, 0.92);
     vec3 orangeAccent = vec3(1.0, 0.42, 0.16);
     vec3 terminalAccent = mix(
@@ -96,17 +173,19 @@ export const TERMINAL_FRAGMENT: string = `
       orangeAccent,
       smoothstep(-0.18, 0.18, normalizedField)
     );
-    vec3 colorTrace = mix(
-      localShadow,
+    vec3 inkLayer = mix(
+      vec3(0.02, 0.025, 0.028),
       terminalAccent,
-      clamp(glyphMask * 0.58 + contourLine * 0.26, 0.0, 0.74)
+      clamp(terminalGlyph * 0.62 + terminalLine * 0.32, 0.0, 0.86)
     );
-    vec3 traced = mix(
-      colorTrace,
-      vec3(0.0),
-      clamp((1.0 - glyph) * contourLine * 0.28, 0.0, 0.32)
+    float opacity = clamp(terminalMark * amount, 0.0, 1.0);
+    vec3 blended = terminalBlendColors(
+      baseColor,
+      inkLayer,
+      opacity,
+      blendMode
     );
 
-    return clamp(traced, 0.0, 1.0);
+    return clamp(blended, 0.0, 1.0);
   }
 `;

@@ -105,6 +105,7 @@ export type ModalFieldShaderUniforms = Record<string, THREE.IUniform> & {
   uFisheyeParams: THREE.IUniform<THREE.Vector4>;
   uFisheyeStrength: THREE.IUniform<number>;
   uTerminalParams: THREE.IUniform<THREE.Vector4>;
+  uTerminalControls: THREE.IUniform<THREE.Vector2>;
   uTerminalStrength: THREE.IUniform<number>;
 };
 
@@ -255,6 +256,7 @@ export class ModalFieldUniformController {
     this.uniforms.uFisheyeStrength.value = fisheye.strength;
     const terminal = getTerminalUniformState(settings, this.displayPixelRatio);
     this.uniforms.uTerminalParams.value.set(...terminal.params);
+    this.uniforms.uTerminalControls.value.set(...terminal.controls);
     this.uniforms.uTerminalStrength.value = terminal.strength;
 
     if (settings.projectionMode === "sphere") {
@@ -361,6 +363,7 @@ export class ModalFieldUniformController {
       uFisheyeParams: { value: new THREE.Vector4() },
       uFisheyeStrength: { value: 0 },
       uTerminalParams: { value: new THREE.Vector4() },
+      uTerminalControls: { value: new THREE.Vector2() },
       uTerminalStrength: { value: 0 },
     };
   }
