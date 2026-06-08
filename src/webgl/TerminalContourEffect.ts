@@ -9,7 +9,6 @@ const FRAGMENT_SHADER = `
   uniform float contourLevels;
   uniform float contourStrength;
   uniform float contourThreshold;
-  uniform float colorPreserve;
   uniform float amount;
 
   float luminance(vec3 color) {
@@ -48,13 +47,23 @@ const FRAGMENT_SHADER = `
 
     vec2 local = fract(uv * cellCount) - 0.5;
     float glyph = lineShape(local, centerLum) * mark;
-    vec3 terminalColor = vec3(0.72, 0.94, 1.0) * glyph * (0.38 + centerLum * 1.55);
-    vec3 base = inputColor.rgb * 0.2;
-    vec3 terminalComposite = max(base, terminalColor);
-    vec3 preservedColor = max(inputColor.rgb, terminalColor * 0.22);
-    vec3 color = mix(terminalComposite, preservedColor, colorPreserve);
+    float effectMask = clamp(glyph * amount, 0.0, 1.0);
+    vec3 terminalTint = vec3(0.72, 0.94, 1.0);
+    vec3 neutralAccent = terminalTint - vec3(luminance(terminalTint));
+    float contourInk = clamp(mark * amount, 0.0, 1.0);
+    vec3 localShadow = inputColor.rgb * (1.0 - 0.28 * contourInk);
+    vec3 localHighlight = mix(
+      localShadow,
+      vec3(0.78, 0.96, 1.0),
+      clamp(effectMask * (0.45 + centerLum * 0.65), 0.0, 0.92)
+    );
+    vec3 color = clamp(
+      localHighlight + neutralAccent * effectMask * 0.34,
+      0.0,
+      1.0
+    );
 
-    outputColor = mix(inputColor, vec4(color, inputColor.a), amount);
+    outputColor = vec4(color, inputColor.a);
   }
 `;
 
@@ -64,7 +73,6 @@ export class TerminalContourEffect extends Effect {
   private readonly contourLevelsUniform: Uniform<number>;
   private readonly contourStrengthUniform: Uniform<number>;
   private readonly contourThresholdUniform: Uniform<number>;
-  private readonly colorPreserveUniform: Uniform<number>;
   private readonly amountUniform: Uniform<number>;
 
   constructor() {
@@ -73,7 +81,6 @@ export class TerminalContourEffect extends Effect {
     const contourLevelsUniform = new Uniform(8);
     const contourStrengthUniform = new Uniform(1);
     const contourThresholdUniform = new Uniform(0.09);
-    const colorPreserveUniform = new Uniform(0);
     const amountUniform = new Uniform(1);
 
     super("TerminalContourEffect", FRAGMENT_SHADER, {
@@ -85,7 +92,6 @@ export class TerminalContourEffect extends Effect {
         ["contourLevels", contourLevelsUniform],
         ["contourStrength", contourStrengthUniform],
         ["contourThreshold", contourThresholdUniform],
-        ["colorPreserve", colorPreserveUniform],
         ["amount", amountUniform],
       ]),
     });
@@ -95,20 +101,18 @@ export class TerminalContourEffect extends Effect {
     this.contourLevelsUniform = contourLevelsUniform;
     this.contourStrengthUniform = contourStrengthUniform;
     this.contourThresholdUniform = contourThresholdUniform;
-    this.colorPreserveUniform = colorPreserveUniform;
     this.amountUniform = amountUniform;
   }
 
-  setSize(width: number, height: number) {
+  setSize(width: number, height: number): void {
     this.resolutionUniform.value.set(width, height);
   }
 
-  updateSettings(settings: CymaticSettings, amount = 1) {
+  updateSettings(settings: CymaticSettings, amount = 1): void {
     this.cellSizeUniform.value = settings.terminalCellSize;
     this.contourLevelsUniform.value = settings.terminalContourLevels;
     this.contourStrengthUniform.value = settings.terminalContourStrength;
     this.contourThresholdUniform.value = settings.terminalContourThreshold;
-    this.colorPreserveUniform.value = settings.colorMode === "heatmap" ? 0.15 : 0;
     this.amountUniform.value = amount;
   }
 }

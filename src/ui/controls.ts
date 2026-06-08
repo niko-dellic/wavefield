@@ -47,6 +47,17 @@ export type MonitorState = {
   pulse: number;
 };
 
+export type SettingsChangeOptions = {
+  refreshControls?: boolean;
+  source?: "color";
+};
+
+type ColorSettingKey =
+  | "backgroundColor"
+  | "monoColor"
+  | "thermalColdColor"
+  | "thermalHotColor";
+
 // Maps each visible control label back to its settings key so we can attach
 // hover tooltips after Tweakpane has rendered its rows.
 const LABEL_TO_KEY = new Map<string, keyof CymaticSettings>();
@@ -278,7 +289,7 @@ export type WanderControlsOptions = {
 export function createControls(
   container: HTMLElement,
   settings: CymaticSettings,
-  onChange: () => void,
+  onChange: (options?: SettingsChangeOptions) => void,
   monitorState: MonitorState,
   templateControls?: TemplateControlsSource,
   transitionControls?: TransitionControlsOptions,
@@ -291,6 +302,7 @@ export function createControls(
   let postPanes: Pane[] = [];
   let layoutKey = "";
   let ignoredPaneChangeTargets = new Set<unknown>();
+  let syncColorControlState: (() => void) | null = null;
   let syncLiveControlState: (() => void) | null = null;
   let isRefreshingLiveControlState = false;
   const folderExpansionState = loadFolderExpansionState();
@@ -319,6 +331,8 @@ export function createControls(
 
   const build = () => {
     ignoredPaneChangeTargets = new Set<unknown>();
+    const colorControlSyncs: Array<() => void> = [];
+    syncColorControlState = null;
     syncLiveControlState = null;
     isRefreshingLiveControlState = false;
     postPanes = removePostPanel(container, postPanes);
@@ -379,16 +393,34 @@ export function createControls(
         },
       });
     } else if (settings.colorMode === "mono") {
-      engine.addBinding(settings, "monoColor", {
-        label: "mono",
-      });
+      addColorBinding(
+        engine,
+        settings,
+        "monoColor",
+        "mono",
+        onChange,
+        ignoredPaneChangeTargets,
+        colorControlSyncs,
+      );
     } else if (settings.colorMode === "thermalPhase") {
-      engine.addBinding(settings, "thermalColdColor", {
-        label: "cold",
-      });
-      engine.addBinding(settings, "thermalHotColor", {
-        label: "hot",
-      });
+      addColorBinding(
+        engine,
+        settings,
+        "thermalColdColor",
+        "cold",
+        onChange,
+        ignoredPaneChangeTargets,
+        colorControlSyncs,
+      );
+      addColorBinding(
+        engine,
+        settings,
+        "thermalHotColor",
+        "hot",
+        onChange,
+        ignoredPaneChangeTargets,
+        colorControlSyncs,
+      );
     }
 
     const boundaryModeBinding = engine.addBinding(settings, "boundaryMode", {
@@ -707,9 +739,15 @@ export function createControls(
     }
 
     const shader = addPersistentFolder(pane, "folder:Rendering", "Rendering");
-    shader.addBinding(settings, "backgroundColor", {
-      label: "background",
-    });
+    addColorBinding(
+      shader,
+      settings,
+      "backgroundColor",
+      "background",
+      onChange,
+      ignoredPaneChangeTargets,
+      colorControlSyncs,
+    );
     Object.values(SHADER_CONTROLS).forEach((control) => {
       if (control.key === "cymaticHarmonicMix") {
         return;
@@ -750,7 +788,7 @@ export function createControls(
       options: MONITOR_SIGNAL_OPTIONS,
     });
     // Only the selector (an input) propagates; the readonly monitors below do not.
-    monitorBinding.on("change", onChange);
+    monitorBinding.on("change", () => onChange());
     // Normalised 0..1 rolling graph of the selected live signal.
     status.addBinding(monitorState, "graph", {
       readonly: true,
@@ -795,6 +833,9 @@ export function createControls(
       folderExpansionState,
       persistFolderExpansion,
     );
+    syncColorControlState = () => {
+      colorControlSyncs.forEach((sync) => sync());
+    };
     applyTooltipsByLabel(container);
   };
 
@@ -813,6 +854,7 @@ export function createControls(
     isRefreshingLiveControlState = true;
     try {
       syncLiveControlState?.();
+      syncColorControlState?.();
       pane.refresh();
     } finally {
       isRefreshingLiveControlState = false;
@@ -888,6 +930,46 @@ function addNumericBinding(
     max: control.max,
     step: control.step,
   });
+}
+
+function addColorBinding(
+  pane: Pane | FolderApi,
+  settings: CymaticSettings,
+  key: ColorSettingKey,
+  label: string,
+  onChange: (options?: SettingsChangeOptions) => void,
+  ignoredPaneChangeTargets: Set<unknown>,
+  colorControlSyncs: Array<() => void>,
+) {
+  const colorState = { color: hexToColorNumber(settings[key]) };
+  const binding = pane.addBinding(colorState, "color", {
+    label,
+    view: "color",
+  });
+  const syncFromSettings = () => {
+    colorState.color = hexToColorNumber(settings[key]);
+  };
+  colorControlSyncs.push(syncFromSettings);
+  ignoredPaneChangeTargets.add(binding);
+  binding.on("change", () => {
+    settings[key] = colorNumberToHex(colorState.color);
+    onChange({ refreshControls: false, source: "color" });
+  });
+}
+
+function hexToColorNumber(color: string) {
+  if (!/^#[\da-f]{6}$/i.test(color)) {
+    return 0;
+  }
+
+  return Number.parseInt(color.slice(1), 16);
+}
+
+function colorNumberToHex(color: number) {
+  const safeColor = Number.isFinite(color)
+    ? Math.max(0, Math.min(0xffffff, Math.round(color)))
+    : 0;
+  return `#${safeColor.toString(16).padStart(6, "0")}`;
 }
 
 function mountTemplatePanel(

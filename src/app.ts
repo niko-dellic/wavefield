@@ -26,6 +26,7 @@ import {
   createControls,
   type ControlsManager,
   type MonitorState,
+  type SettingsChangeOptions,
 } from "./ui/controls";
 import {
   formatBoundaryMode,
@@ -174,7 +175,7 @@ export class WavefieldApp {
     this.controls = createControls(
       this.ui.guiHost,
       this.settings,
-      () => this.handleSettingsChange(),
+      (options) => this.handleSettingsChange(options),
       this.monitorState,
       () => this.templates.getControlsOptions(),
       {
@@ -446,7 +447,7 @@ export class WavefieldApp {
     // Status messages are intentionally non-visual; the diagnostics strip is reserved for controls.
   }
 
-  private handleSettingsChange() {
+  private handleSettingsChange(options: SettingsChangeOptions = {}) {
     this.settingsTransitions.resetToCurrentSettings();
     if (this.settings.projectionMode !== "screen") {
       this.screenView.endPan();
@@ -468,7 +469,7 @@ export class WavefieldApp {
     }
     this.syncBackgroundColor();
     this.setStatus("Settings updated");
-    this.syncHeaderControls();
+    this.syncHeaderControls(options);
   }
 
   private syncBackgroundColor(settings: CymaticSettings = this.settings) {
@@ -480,7 +481,7 @@ export class WavefieldApp {
     );
   }
 
-  private syncHeaderControls() {
+  private syncHeaderControls(options: SettingsChangeOptions = {}) {
     this.ui.driveModeSelect.value = this.settings.driveMode;
     this.ui.boundaryInputs.forEach((input) => {
       input.checked = input.value === this.settings.boundaryMode;
@@ -499,7 +500,9 @@ export class WavefieldApp {
       this.settings.driveMode === "live" && this.liveAnalyzer.isActive,
     );
     this.manualDriveSettingsPane.sync(this.settings);
-    this.controls.refresh();
+    if (options.refreshControls !== false) {
+      this.controls.refresh();
+    }
   }
 
   private resetVisualState() {
