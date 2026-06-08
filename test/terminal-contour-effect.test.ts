@@ -65,3 +65,29 @@ test("terminal screen overlay is applied after background alpha blending", () =>
   assert.notEqual(terminalOverlayIndex, -1);
   assert.ok(terminalOverlayIndex > finalMixIndex);
 });
+
+test("terminal can draw outside ordinary visible stroke ink", () => {
+  const terminalSource = readFileSync(TERMINAL_SHADER_PATH, "utf8");
+  const mainSource = readFileSync(MAIN_SHADER_PATH, "utf8");
+
+  assert.match(
+    mainSource,
+    /visibleInk\s*<=\s*0\.001\s*&&\s*uTerminalParams\.x\s*<=\s*0\.0001/,
+  );
+  assert.match(terminalSource, /float\s+fieldSurface\s*=\s*clamp/);
+  assert.match(terminalSource, /broadBand\s*\*\s*0\.46/);
+  assert.match(terminalSource, /float\s+gridMask\s*=/);
+  assert.doesNotMatch(
+    terminalSource,
+    /if\s*\([^)]*visibleInk\s*<=\s*0\.0001[^)]*\)\s*\{\s*return baseColor;/,
+  );
+});
+
+test("terminal surface overlay uses ink accents instead of white fill", () => {
+  const terminalSource = readFileSync(TERMINAL_SHADER_PATH, "utf8");
+
+  assert.match(terminalSource, /float\s+terminalInk\s*=/);
+  assert.match(terminalSource, /vec3\s+terminalAccent\s*=/);
+  assert.doesNotMatch(terminalSource, /terminalHighlight/);
+  assert.doesNotMatch(terminalSource, /vec3\(\s*0\.78,\s*0\.96,\s*1\.0\s*\)/);
+});

@@ -461,7 +461,7 @@ export class WavefieldApp {
 
   private handleSettingsChange(options: SettingsChangeOptions = {}) {
     if (options.source === "color") {
-      this.isEditingColorControl = options.editing === true;
+      this.isEditingColorControl = options.isEditing === true;
       this.settingsTransitions.resetToCurrentSettings();
       this.syncBackgroundColor(this.settingsTransitions.effectiveSettings);
       this.setStatus("Settings updated");

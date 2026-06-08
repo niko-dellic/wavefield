@@ -50,7 +50,7 @@ export type MonitorState = {
 export type SettingsChangeOptions = {
   refreshControls?: boolean;
   source?: "color";
-  editing?: boolean;
+  isEditing?: boolean;
 };
 
 type ColorSettingKey =
@@ -303,8 +303,6 @@ export function createControls(
   let postPanes: Pane[] = [];
   let layoutKey = "";
   let ignoredPaneChangeTargets = new Set<unknown>();
-  let colorPaneChangeTargets = new Set<unknown>();
-  let syncColorControlState: (() => void) | null = null;
   let syncLiveControlState: (() => void) | null = null;
   let isRefreshingLiveControlState = false;
   const folderExpansionState = loadFolderExpansionState();
@@ -333,8 +331,6 @@ export function createControls(
 
   const build = () => {
     ignoredPaneChangeTargets = new Set<unknown>();
-    colorPaneChangeTargets = new Set<unknown>();
-    syncColorControlState = null;
     syncLiveControlState = null;
     isRefreshingLiveControlState = false;
     postPanes = removePostPanel(container, postPanes);
@@ -400,7 +396,8 @@ export function createControls(
         settings,
         "monoColor",
         "mono",
-        colorPaneChangeTargets,
+        onChange,
+        ignoredPaneChangeTargets,
       );
     } else if (settings.colorMode === "thermalPhase") {
       addColorBinding(
@@ -408,14 +405,16 @@ export function createControls(
         settings,
         "thermalColdColor",
         "cold",
-        colorPaneChangeTargets,
+        onChange,
+        ignoredPaneChangeTargets,
       );
       addColorBinding(
         engine,
         settings,
         "thermalHotColor",
         "hot",
-        colorPaneChangeTargets,
+        onChange,
+        ignoredPaneChangeTargets,
       );
     }
 
@@ -740,7 +739,8 @@ export function createControls(
       settings,
       "backgroundColor",
       "background",
-      colorPaneChangeTargets,
+      onChange,
+      ignoredPaneChangeTargets,
     );
     Object.values(SHADER_CONTROLS).forEach((control) => {
       if (control.key === "cymaticHarmonicMix") {
@@ -763,15 +763,6 @@ export function createControls(
     }
 
     pane.on("change", (event) => {
-      if (colorPaneChangeTargets.has(event.target)) {
-        onChange({
-          editing: !event.last,
-          refreshControls: false,
-          source: "color",
-        });
-        return;
-      }
-
       if (ignoredPaneChangeTargets.has(event.target)) {
         return;
       }
@@ -854,7 +845,6 @@ export function createControls(
     isRefreshingLiveControlState = true;
     try {
       syncLiveControlState?.();
-      syncColorControlState?.();
       pane.refresh();
     } finally {
       isRefreshingLiveControlState = false;
@@ -937,11 +927,19 @@ function addColorBinding(
   settings: CymaticSettings,
   key: ColorSettingKey,
   label: string,
-  colorPaneChangeTargets: Set<unknown>,
+  onChange: (options?: SettingsChangeOptions) => void,
+  ignoredPaneChangeTargets: Set<unknown>,
 ) {
   settings[key] = normalizeColorHex(settings[key]);
   const binding = pane.addBinding(settings, key, { label });
-  colorPaneChangeTargets.add(binding);
+  ignoredPaneChangeTargets.add(binding);
+  binding.on("change", (event) => {
+    onChange({
+      isEditing: !event.last,
+      refreshControls: false,
+      source: "color",
+    });
+  });
 }
 
 function normalizeColorHex(color: string) {

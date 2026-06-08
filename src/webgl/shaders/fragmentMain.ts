@@ -68,7 +68,7 @@ export const MAIN_FRAGMENT: string = `  void main() {
     float visibleInk = uProjectionMode == 0
       ? smoothstep(0.005, 0.04, density + halo)
       : 1.0;
-    if (uProjectionMode == 0 && visibleInk <= 0.001) {
+    if (uProjectionMode == 0 && visibleInk <= 0.001 && uTerminalParams.x <= 0.0001) {
       gl_FragColor = vec4(uBackgroundColor, 1.0);
       return;
     }
