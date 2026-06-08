@@ -23,7 +23,9 @@ import {
   cloneCymaticSettings,
   cloneTemplateSettings,
   coerceCymaticSettings,
+  createInitialSettingsFromTemplates,
   createSettingsFromTemplate,
+  findDefaultWavefieldTemplate,
   getCycledTemplateIndex,
   type WavefieldTemplate,
 } from "../src/templateSettings.ts";
@@ -99,6 +101,30 @@ test("template cycling wraps through sorted template order", () => {
   assert.equal(getCycledTemplateIndex(TEMPLATES, null, -1), 2);
   assert.equal(getCycledTemplateIndex(TEMPLATES, "gamma", 1), 0);
   assert.equal(getCycledTemplateIndex(TEMPLATES, "alpha", -1), 2);
+});
+
+test("initial settings apply the default template", () => {
+  const defaultTemplate = createTemplate("default", "Default", {
+    ...DEFAULT_SETTINGS,
+    driveMode: "manual",
+    colorMode: "heatmap",
+    cymaticBrightness: 2,
+    postFisheyeEnabled: true,
+  });
+  const settings = createInitialSettingsFromTemplates([
+    createTemplate("alpha", "Alpha", {
+      ...DEFAULT_SETTINGS,
+      colorMode: "mono",
+      cymaticBrightness: 3,
+    }),
+    defaultTemplate,
+  ]);
+
+  assert.equal(findDefaultWavefieldTemplate([defaultTemplate])?.slug, "default");
+  assert.equal(settings.driveMode, DEFAULT_SETTINGS.driveMode);
+  assert.equal(settings.colorMode, "heatmap");
+  assert.equal(settings.cymaticBrightness, 2);
+  assert.equal(settings.postFisheyeEnabled, true);
 });
 
 test("template transition preserves drive mode", () => {
@@ -675,11 +701,15 @@ test("a new transition can start from current effective settings", () => {
   assert.equal(result.settings.cymaticOpacity, 3);
 });
 
-function createTemplate(slug: string, name: string): WavefieldTemplate {
+function createTemplate(
+  slug: string,
+  name: string,
+  settings: CymaticSettings = DEFAULT_SETTINGS,
+): WavefieldTemplate {
   return {
     slug,
     name,
     createdAt: "2026-06-04T00:00:00.000Z",
-    settings: { ...DEFAULT_SETTINGS },
+    settings: cloneTemplateSettings(settings),
   };
 }

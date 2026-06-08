@@ -48,7 +48,7 @@ export class AudioController {
   constructor(private readonly options: AudioControllerOptions) {
     this.wavesurfer = WaveSurfer.create({
       container: options.ui.waveform,
-      height: 62,
+      height: 31,
       normalize: true,
       waveColor: "#29313a",
       progressColor: "#d9f7ff",

@@ -8,7 +8,7 @@ import {
 } from "../src/wander.ts";
 import type { ScreenViewTransform } from "../src/webgl/renderTypes.ts";
 
-test("wander config defaults both controls off", () => {
+test("wander config defaults to pan and depth wander enabled", () => {
   assert.deepEqual(coerceWanderConfig({}), DEFAULT_WANDER_CONFIG);
   assert.deepEqual(coerceWanderConfig(null), DEFAULT_WANDER_CONFIG);
 });
@@ -95,7 +95,13 @@ test("pan wander moves the target offset without changing scale", () => {
 
   stepWanderTarget(
     target,
-    { ...DEFAULT_WANDER_CONFIG, enabled: true, panEnabled: true },
+    {
+      ...DEFAULT_WANDER_CONFIG,
+      enabled: true,
+      panEnabled: true,
+      depthEnabled: false,
+      rotateEnabled: false,
+    },
     3,
     1,
     { minScale: 0.05, maxScale: 16 },
@@ -120,7 +126,9 @@ test("depth wander changes scale within supplied clamps", () => {
     {
       ...DEFAULT_WANDER_CONFIG,
       enabled: true,
+      panEnabled: false,
       depthEnabled: true,
+      rotateEnabled: false,
       minDepth: 0.99,
       maxDepth: 1.01,
     },
@@ -147,7 +155,13 @@ test("rotate wander changes rotation without panning or changing scale", () => {
 
   stepWanderTarget(
     target,
-    { ...DEFAULT_WANDER_CONFIG, enabled: true, rotateEnabled: true },
+    {
+      ...DEFAULT_WANDER_CONFIG,
+      enabled: true,
+      panEnabled: false,
+      depthEnabled: false,
+      rotateEnabled: true,
+    },
     3,
     1,
     { minScale: 0.05, maxScale: 16 },

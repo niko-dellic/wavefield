@@ -1,6 +1,6 @@
 {
   "name": "Default",
-  "createdAt": "2026-06-08T04:19:19.677Z",
+  "createdAt": "2026-06-08T05:00:31.964Z",
   "settings": {
     "projectionMode": "screen",
     "fieldModel": "modalPlate",
@@ -64,10 +64,10 @@
     "postFisheyeK2": 0,
     "postFisheyeK2Aspect": false,
     "postFisheyeStrength": 1,
-    "postAlphaDecayEnabled": true,
-    "postAlphaDecayFrames": 75,
+    "postAlphaDecayEnabled": false,
+    "postAlphaDecayFrames": 40,
     "postAlphaDecayBlendMode": "screen",
-    "terminalContourEnabled": true,
+    "terminalContourEnabled": false,
     "terminalCellSize": 9,
     "terminalContourLevels": 8,
     "terminalContourStrength": 1,

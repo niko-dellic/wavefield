@@ -303,7 +303,7 @@ export const AUDIO_CONTROLS = {
   testFrequency: {
     key: "testFrequency",
     label: "test Hz",
-    min: 70,
+    min: 0,
     max: 7_200,
     step: 1,
   },

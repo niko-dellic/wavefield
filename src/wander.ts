@@ -20,15 +20,15 @@ export type WanderConfig = {
 export const WANDER_STORAGE_KEY = "wavefield:wander:v1";
 
 export const DEFAULT_WANDER_CONFIG: WanderConfig = {
-  enabled: false,
-  panEnabled: false,
-  depthEnabled: false,
+  enabled: true,
+  panEnabled: true,
+  depthEnabled: true,
   rotateEnabled: false,
-  panSpeed: 1,
-  depthSpeed: 1,
-  rotateSpeed: 1,
-  minDepth: 0.65,
-  maxDepth: 1.75,
+  panSpeed: 1.52,
+  depthSpeed: 2.28,
+  rotateSpeed: 1.85,
+  minDepth: 0.05,
+  maxDepth: 9.93,
   resumeDelaySeconds: 1.5,
   panDamping: 4.5,
   zoomDamping: 14,
@@ -59,25 +59,27 @@ export function coerceWanderConfig(input: unknown): WanderConfig {
     minDepth,
     coerceNumber(source.maxDepth, DEFAULT_WANDER_CONFIG.maxDepth, 0.05, 16),
   );
+  const panEnabled =
+    typeof source.panEnabled === "boolean"
+      ? source.panEnabled
+      : DEFAULT_WANDER_CONFIG.panEnabled;
+  const depthEnabled =
+    typeof source.depthEnabled === "boolean"
+      ? source.depthEnabled
+      : DEFAULT_WANDER_CONFIG.depthEnabled;
+  const rotateEnabled =
+    typeof source.rotateEnabled === "boolean"
+      ? source.rotateEnabled
+      : DEFAULT_WANDER_CONFIG.rotateEnabled;
+
   return {
     enabled:
       typeof source.enabled === "boolean"
         ? source.enabled
-        : source.panEnabled === true ||
-          source.depthEnabled === true ||
-          source.rotateEnabled === true,
-    panEnabled:
-      typeof source.panEnabled === "boolean"
-        ? source.panEnabled
-        : DEFAULT_WANDER_CONFIG.panEnabled,
-    depthEnabled:
-      typeof source.depthEnabled === "boolean"
-        ? source.depthEnabled
-        : DEFAULT_WANDER_CONFIG.depthEnabled,
-    rotateEnabled:
-      typeof source.rotateEnabled === "boolean"
-        ? source.rotateEnabled
-        : DEFAULT_WANDER_CONFIG.rotateEnabled,
+        : panEnabled || depthEnabled || rotateEnabled,
+    panEnabled,
+    depthEnabled,
+    rotateEnabled,
     panSpeed: coerceNumber(
       source.panSpeed,
       DEFAULT_WANDER_CONFIG.panSpeed,

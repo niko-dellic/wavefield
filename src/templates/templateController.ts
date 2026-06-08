@@ -30,6 +30,7 @@ export type TemplateControllerOptions = {
   templates: WavefieldTemplate[];
   transitionConfig: TemplateTransitionConfig;
   keyBindings: KeyBindingMap;
+  initialActiveTemplateSlug?: string | null;
   onApplyTemplate: (template: WavefieldTemplate) => void;
   onTransitionConfigChange: (config: TemplateTransitionConfig) => void;
   onStatus: (message: string) => void;
@@ -52,6 +53,7 @@ export class TemplateController {
     this.transitionConfig = options.transitionConfig;
     this.keyCommands = buildKeyCommands(this.templates);
     this.keyBindings = options.keyBindings;
+    this.activeTemplateSlug = options.initialActiveTemplateSlug ?? null;
   }
 
   getControlsOptions() {

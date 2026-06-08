@@ -41,6 +41,7 @@ type RawWavefieldTemplate = {
 };
 
 const FALLBACK_CREATED_AT = "1970-01-01T00:00:00.000Z";
+export const DEFAULT_TEMPLATE_SLUG = "default";
 
 const STRING_OPTIONS: Partial<Record<keyof CymaticSettings, readonly string[]>> = {
   projectionMode: ["screen", "sphere"] satisfies ProjectionMode[],
@@ -138,6 +139,23 @@ export function createSettingsFromTemplate(
     (settings[key] as CymaticSettings[typeof key]) = currentSettings[key];
   }
   return settings;
+}
+
+export function createInitialSettingsFromTemplates(
+  templates: WavefieldTemplate[],
+): CymaticSettings {
+  const template = findDefaultWavefieldTemplate(templates);
+  if (!template) {
+    return cloneCymaticSettings(DEFAULT_SETTINGS);
+  }
+
+  return createSettingsFromTemplate(template.settings, DEFAULT_SETTINGS);
+}
+
+export function findDefaultWavefieldTemplate(
+  templates: WavefieldTemplate[],
+): WavefieldTemplate | undefined {
+  return templates.find((template) => template.slug === DEFAULT_TEMPLATE_SLUG);
 }
 
 export function coerceCymaticSettings(input: unknown): CymaticSettings {

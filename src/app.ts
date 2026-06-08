@@ -14,7 +14,11 @@ import {
   createRenderProfiler,
   type RenderProfiler,
 } from "./performance/renderProfiler";
-import { loadWavefieldTemplates } from "./templateSettings";
+import {
+  createInitialSettingsFromTemplates,
+  findDefaultWavefieldTemplate,
+  loadWavefieldTemplates,
+} from "./templateSettings";
 import {
   TemplateController,
   loadTemplateKeyBindings,
@@ -78,10 +82,12 @@ const TEMPLATE_MODULES = import.meta.glob<unknown>("./templates/*.json", {
   import: "default",
 });
 const INITIAL_TEMPLATES = loadWavefieldTemplates(TEMPLATE_MODULES);
+const INITIAL_TEMPLATE = findDefaultWavefieldTemplate(INITIAL_TEMPLATES);
 const SETTINGS_CONTROLS_REFRESH_INTERVAL_MS = 1_000 / 12;
 
 export class WavefieldApp {
-  private readonly settings: CymaticSettings = { ...DEFAULT_SETTINGS };
+  private readonly settings: CymaticSettings =
+    createInitialSettingsFromTemplates(INITIAL_TEMPLATES);
   private readonly settingsTransitions = new SettingsTransitionController(
     this.settings,
   );
@@ -135,6 +141,7 @@ export class WavefieldApp {
       templates: INITIAL_TEMPLATES,
       transitionConfig: loadTemplateTransitionConfig(),
       keyBindings: loadTemplateKeyBindings(INITIAL_TEMPLATES),
+      initialActiveTemplateSlug: INITIAL_TEMPLATE?.slug,
       onApplyTemplate: (template) => {
         const result = this.settingsTransitions.startTemplateTransition(
           template,

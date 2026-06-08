@@ -555,29 +555,32 @@ select {
 #app.is-fullscreen:not(.is-fullscreen-ui-visible) .topbar,
 #app.is-fullscreen:not(.is-fullscreen-ui-visible) .settings-modal,
 #app.is-fullscreen:not(.is-fullscreen-ui-visible) .about-modal,
-#app.is-fullscreen:not(.is-fullscreen-ui-visible) .diagnostics-strip,
-#app.is-fullscreen:not(.is-fullscreen-ui-visible) .transport {
+#app.is-fullscreen:not(.is-fullscreen-ui-visible) .transport-dock {
   display: none;
 }
 
-.diagnostics-strip {
+.transport-dock {
   position: absolute;
   left: 16px;
-  bottom: 103px;
+  right: 16px;
+  bottom: 16px;
   z-index: 2;
   display: flex;
-  align-items: flex-end;
-  gap: 8px;
-  max-width: calc(100vw - 32px);
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
   pointer-events: none;
 }
 
-#app:not(.is-audio-drive):not(.is-manual-drive) .diagnostics-strip {
-  bottom: 16px;
+.desktop-drive-host {
+  position: relative;
+  z-index: 1;
+  display: flex;
 }
 
-#app.is-manual-drive .diagnostics-strip {
-  bottom: 75px;
+#app.is-audio-drive .desktop-drive-host,
+#app.is-manual-drive .desktop-drive-host {
+  margin-bottom: -1px;
 }
 
 .drive-pane {
@@ -635,6 +638,7 @@ select {
   transform: rotate(180deg);
 }
 
+#app.is-audio-drive .drive-pane,
 #app.is-manual-drive .drive-pane {
   border-bottom-right-radius: 0;
   border-bottom-left-radius: 0;
@@ -1097,19 +1101,18 @@ select {
 }
 
 .transport {
-  position: absolute;
-  left: 16px;
-  right: 16px;
-  bottom: 16px;
+  position: relative;
   z-index: 2;
   display: grid;
   grid-template-columns: auto auto minmax(0, 1fr);
   align-items: center;
   gap: 12px;
+  width: 100%;
   padding: 12px;
   border: 1px solid rgb(255 255 255 / 12%);
-  border-radius: 8px;
+  border-radius: 0 8px 8px;
   background: rgb(0 0 0 / 66%);
+  pointer-events: auto;
   backdrop-filter: blur(18px);
 }
 
@@ -1118,12 +1121,10 @@ select {
 }
 
 #app.is-manual-drive .transport {
-  right: auto;
   width: min(340px, calc(100vw - 32px));
   grid-template-columns: auto auto;
   justify-content: start;
-  border-top-left-radius: 0;
-  border-top-right-radius: 0;
+  border-radius: 0 0 8px 8px;
 }
 
 .waveform {
@@ -1195,18 +1196,9 @@ select {
     right: 16px;
   }
 
-  .diagnostics-strip {
-    bottom: 103px;
+  .transport-dock {
     align-items: flex-start;
     flex-direction: column;
-  }
-
-  #app:not(.is-audio-drive):not(.is-manual-drive) .diagnostics-strip {
-    bottom: 16px;
-  }
-
-  #app.is-manual-drive .diagnostics-strip {
-    bottom: 75px;
   }
 
   .transport {
@@ -1236,6 +1228,11 @@ select {
     max-height: none;
     padding: calc(56px + env(safe-area-inset-top)) 0 0;
     pointer-events: none;
+  }
+
+  .transport,
+  #app.is-manual-drive .transport {
+    border-radius: 8px;
   }
 
   .settings-panel {
@@ -1366,10 +1363,6 @@ select {
   .drive-pane-summary {
     min-height: 32px;
     font-size: 13px;
-  }
-
-  #app.is-manual-drive .diagnostics-strip {
-    bottom: 73px;
   }
 
   .play-toggle,
