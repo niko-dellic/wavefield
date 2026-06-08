@@ -15,6 +15,7 @@ import {
   type RenderProfiler,
 } from "./performance/renderProfiler";
 import {
+  cloneCymaticSettings,
   createInitialSettingsFromTemplates,
   findDefaultWavefieldTemplate,
   loadWavefieldTemplates,
@@ -84,6 +85,17 @@ const TEMPLATE_MODULES = import.meta.glob<unknown>("./templates/*.json", {
 const INITIAL_TEMPLATES = loadWavefieldTemplates(TEMPLATE_MODULES);
 const INITIAL_TEMPLATE = findDefaultWavefieldTemplate(INITIAL_TEMPLATES);
 const SETTINGS_CONTROLS_REFRESH_INTERVAL_MS = 1_000 / 12;
+
+type WavefieldProfileControls = {
+  applySettings: (patch: Partial<CymaticSettings>) => Promise<CymaticSettings>;
+  getSettings: () => CymaticSettings;
+};
+
+declare global {
+  interface Window {
+    __wavefieldProfileControls?: WavefieldProfileControls;
+  }
+}
 
 export class WavefieldApp {
   private readonly settings: CymaticSettings =
@@ -242,6 +254,7 @@ export class WavefieldApp {
     this.screenView.bind();
     this.syncHeaderControls();
     this.fieldSettingsKey = getFieldSettingsKey(this.settings);
+    this.installProfileControls();
     this.resize();
   }
 
@@ -265,6 +278,9 @@ export class WavefieldApp {
     this.modalRenderer.dispose();
     this.profiler?.dispose();
     this.renderer.dispose();
+    if (window.__wavefieldProfileControls?.getSettings === this.getProfileSettings) {
+      delete window.__wavefieldProfileControls;
+    }
   }
 
   private bindUi() {
@@ -458,13 +474,49 @@ export class WavefieldApp {
     const width = window.innerWidth;
     const height = window.innerHeight;
     this.renderer.setSize(width, height, false);
-    this.modalRenderer.setSize(this.ui.canvas.width, this.ui.canvas.height);
+    this.modalRenderer.setSize(width, height, this.renderer.getPixelRatio());
     this.overlayController.syncSettingsMode();
   };
 
   private setStatus(_message: string) {
     // Status messages are intentionally non-visual; the diagnostics strip is reserved for controls.
   }
+
+  private installProfileControls() {
+    const params = new URLSearchParams(window.location.search);
+    const requestedProfile =
+      params.get("profile") === "1" || params.has("profile");
+    if (!import.meta.env.DEV && !requestedProfile) {
+      return;
+    }
+
+    window.__wavefieldProfileControls = {
+      applySettings: this.applyProfileSettings,
+      getSettings: this.getProfileSettings,
+    };
+  }
+
+  private readonly getProfileSettings = (): CymaticSettings =>
+    cloneCymaticSettings(this.settings);
+
+  private readonly applyProfileSettings = async (
+    patch: Partial<CymaticSettings>,
+  ): Promise<CymaticSettings> => {
+    const previousDriveMode = this.settings.driveMode;
+    Object.assign(this.settings, patch);
+
+    if (
+      patch.driveMode !== undefined &&
+      patch.driveMode !== previousDriveMode
+    ) {
+      await this.setDriveMode(patch.driveMode, false);
+    } else {
+      this.handleSettingsChange({ refreshControls: false });
+    }
+
+    this.controls.refresh();
+    return this.getProfileSettings();
+  };
 
   private handleSettingsChange(options: SettingsChangeOptions = {}) {
     if (options.source === "color") {

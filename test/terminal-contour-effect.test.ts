@@ -5,9 +5,9 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 const TEST_DIR = dirname(fileURLToPath(import.meta.url));
-const TERMINAL_SHADER_PATH = resolve(
+const TERMINAL_EFFECT_PATH = resolve(
   TEST_DIR,
-  "../src/webgl/shaders/fragmentTerminal.ts",
+  "../src/webgl/TerminalContourEffect.ts",
 );
 const MODAL_FIELD_SHADER_PATH = resolve(
   TEST_DIR,
@@ -22,72 +22,47 @@ const MAIN_SHADER_PATH = resolve(
   "../src/webgl/shaders/fragmentMain.ts",
 );
 
-test("terminal contours are shader-native field markup, not a composer pass", () => {
-  const terminalSource = readFileSync(TERMINAL_SHADER_PATH, "utf8");
+test("terminal contours are restored as a composer postprocessing pass", () => {
+  const terminalSource = readFileSync(TERMINAL_EFFECT_PATH, "utf8");
   const modalShaderSource = readFileSync(MODAL_FIELD_SHADER_PATH, "utf8");
   const postPipelineSource = readFileSync(POST_PIPELINE_PATH, "utf8");
-
-  assert.match(terminalSource, /vec3\s+applyTerminalOverlay\(/);
-  assert.match(terminalSource, /uTerminalParams/);
-  assert.match(terminalSource, /uTerminalStrength/);
-  assert.match(terminalSource, /normalizedField/);
-  assert.match(terminalSource, /fieldGradient/);
-  assert.match(terminalSource, /nodeBand/);
-  assert.match(terminalSource, /broadBand/);
-  assert.match(terminalSource, /density/);
-  assert.match(terminalSource, /visibleInk/);
-
-  assert.match(modalShaderSource, /TERMINAL_FRAGMENT/);
-  assert.doesNotMatch(postPipelineSource, /TerminalContourEffect/);
-  assert.doesNotMatch(postPipelineSource, /case\s+"terminal"/);
-});
-
-test("terminal shader avoids whole-frame luminance compositing", () => {
-  const terminalSource = readFileSync(TERMINAL_SHADER_PATH, "utf8");
-
-  assert.doesNotMatch(terminalSource, /inputBuffer/);
-  assert.doesNotMatch(terminalSource, /mainImage/);
-  assert.doesNotMatch(terminalSource, /inputColor\.rgb\s*\*\s*0\.2/);
-  assert.doesNotMatch(terminalSource, /mix\(\s*inputColor\.rgb/);
-  assert.doesNotMatch(terminalSource, /max\(\s*inputColor\.rgb/);
-});
-
-test("terminal screen overlay is applied after background alpha blending", () => {
-  const mainSource = readFileSync(MAIN_SHADER_PATH, "utf8");
-  const finalMixIndex = mainSource.indexOf(
-    "vec3 finalColor = mix(uBackgroundColor, litColor, alpha);",
-  );
-  const terminalOverlayIndex = mainSource.indexOf(
-    "finalColor = applyTerminalOverlay(",
-  );
-
-  assert.notEqual(finalMixIndex, -1);
-  assert.notEqual(terminalOverlayIndex, -1);
-  assert.ok(terminalOverlayIndex > finalMixIndex);
-});
-
-test("terminal can draw outside ordinary visible stroke ink", () => {
-  const terminalSource = readFileSync(TERMINAL_SHADER_PATH, "utf8");
   const mainSource = readFileSync(MAIN_SHADER_PATH, "utf8");
 
+  assert.match(terminalSource, /class\s+TerminalContourEffect\s+extends\s+Effect/);
+  assert.match(terminalSource, /inputBuffer/);
+  assert.match(terminalSource, /mainImage/);
+  assert.match(postPipelineSource, /import\s+\{\s*TerminalContourEffect\s*\}/);
+  assert.match(postPipelineSource, /case\s+"terminal"/);
+  assert.match(postPipelineSource, /new\s+TerminalContourEffect\(\)/);
+
+  assert.doesNotMatch(modalShaderSource, /TERMINAL_FRAGMENT/);
+  assert.doesNotMatch(mainSource, /applyTerminalOverlay/);
+});
+
+test("terminal effect keeps amount and visual controls as uniforms", () => {
+  const terminalSource = readFileSync(TERMINAL_EFFECT_PATH, "utf8");
+
+  assert.match(terminalSource, /uniform\s+float\s+cellSize/);
+  assert.match(terminalSource, /uniform\s+float\s+contourLevels/);
+  assert.match(terminalSource, /uniform\s+float\s+contourStrength/);
+  assert.match(terminalSource, /uniform\s+float\s+contourThreshold/);
+  assert.match(terminalSource, /uniform\s+float\s+colorPreserve/);
+  assert.match(terminalSource, /uniform\s+float\s+amount/);
+  assert.match(terminalSource, /outputColor\s*=\s*mix\(inputColor/);
+});
+
+test("terminal effect maps current settings into the composer pass", () => {
+  const terminalSource = readFileSync(TERMINAL_EFFECT_PATH, "utf8");
+  const postPipelineSource = readFileSync(POST_PIPELINE_PATH, "utf8");
+
+  assert.match(terminalSource, /settings\.terminalCellSize/);
+  assert.match(terminalSource, /settings\.terminalContourLevels/);
+  assert.match(terminalSource, /settings\.terminalContourStrength/);
+  assert.match(terminalSource, /settings\.terminalContourThreshold/);
+  assert.match(terminalSource, /settings\.colorMode\s*===\s*"heatmap"\s*\?\s*0\.15\s*:\s*0/);
+  assert.match(terminalSource, /this\.amountUniform\.value\s*=\s*amount/);
   assert.match(
-    mainSource,
-    /visibleInk\s*<=\s*0\.001\s*&&\s*uTerminalParams\.x\s*<=\s*0\.0001/,
+    postPipelineSource,
+    /controller\.effect\.updateSettings\(\s*settings,\s*getPostEffectAmount\(settings,\s*"terminal"\)/,
   );
-  assert.match(terminalSource, /float\s+fieldSurface\s*=\s*clamp/);
-  assert.match(terminalSource, /broadBand\s*\*\s*0\.46/);
-  assert.match(terminalSource, /float\s+gridMask\s*=/);
-  assert.doesNotMatch(
-    terminalSource,
-    /if\s*\([^)]*visibleInk\s*<=\s*0\.0001[^)]*\)\s*\{\s*return baseColor;/,
-  );
-});
-
-test("terminal surface overlay uses ink accents instead of white fill", () => {
-  const terminalSource = readFileSync(TERMINAL_SHADER_PATH, "utf8");
-
-  assert.match(terminalSource, /float\s+terminalInk\s*=/);
-  assert.match(terminalSource, /vec3\s+terminalAccent\s*=/);
-  assert.doesNotMatch(terminalSource, /terminalHighlight/);
-  assert.doesNotMatch(terminalSource, /vec3\(\s*0\.78,\s*0\.96,\s*1\.0\s*\)/);
 });

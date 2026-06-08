@@ -27,13 +27,15 @@ type RenderProfilerOptions = {
   summaryIntervalMilliseconds: number;
 };
 
-type MetricSnapshot = {
+export type ProfileScenarioName = string;
+
+export type MetricSnapshot = {
   average: number;
   worst: number;
   count: number;
 };
 
-type ProfileSummary = {
+export type ProfileSummary = {
   frames: MetricSnapshot;
   update: MetricSnapshot;
   render: MetricSnapshot;
@@ -41,6 +43,22 @@ type ProfileSummary = {
   settingsRefresh: MetricSnapshot;
   context: Record<string, string | number | boolean>;
 };
+
+export type ProfileScenarioResult = {
+  name: ProfileScenarioName;
+  capturedAt: string;
+  summary: ProfileSummary;
+};
+
+export type WavefieldProfilerApi = {
+  snapshot: (name?: ProfileScenarioName) => ProfileScenarioResult | null;
+};
+
+declare global {
+  interface Window {
+    __wavefieldProfiler?: WavefieldProfilerApi;
+  }
+}
 
 /**
  * Dev-only frame profiler for separating CPU update work, WebGL render work,
@@ -71,6 +89,7 @@ export class RenderProfiler {
       this.gl?.getExtension("EXT_disjoint_timer_query_webgl2") ?? null;
     this.overlayElement = options.overlay ? createOverlayElement() : null;
     this.summaryIntervalMilliseconds = options.summaryIntervalMilliseconds;
+    this.installGlobalApi();
   }
 
   private readonly summaryIntervalMilliseconds: number;
@@ -154,6 +173,9 @@ export class RenderProfiler {
 
   /** Removes the optional profile overlay and clears outstanding GPU queries. */
   public dispose(): void {
+    if (window.__wavefieldProfiler?.snapshot === this.snapshot) {
+      delete window.__wavefieldProfiler;
+    }
     this.overlayElement?.remove();
     if (!this.gl) {
       return;
@@ -165,6 +187,33 @@ export class RenderProfiler {
       this.gl.deleteQuery(this.activeGpuQuery);
       this.activeGpuQuery = null;
     }
+  }
+
+  /**
+   * Captures the current rolling profiler state for repeatable scenario runs.
+   * Metrics continue accumulating after the snapshot so browser smoke tests can
+   * take several named samples without disturbing the overlay cadence.
+   */
+  private readonly snapshot = (
+    name: ProfileScenarioName = "manual",
+  ): ProfileScenarioResult | null => {
+    this.pollGpuQueries();
+    if (!this.latestContext) {
+      return null;
+    }
+
+    return {
+      name,
+      capturedAt: new Date().toISOString(),
+      summary: this.createSummary(this.latestContext),
+    };
+  };
+
+  /** Exposes a tiny dev/profile API for scripted browser scenario captures. */
+  private installGlobalApi(): void {
+    window.__wavefieldProfiler = {
+      snapshot: this.snapshot,
+    };
   }
 
   private getCpuMetric(

@@ -38,22 +38,37 @@ export class PostProcessingPipeline {
   private standardEffects: ActiveStandardEffect[] = [];
   private postPipelineKey = "";
   private alphaDecayResetKey = "";
-  private currentWidth = 1;
-  private currentHeight = 1;
+  private currentCssWidth = 1;
+  private currentCssHeight = 1;
+  private currentTargetWidth = 1;
+  private currentTargetHeight = 1;
   private lastRenderStats: PostProcessingRenderStats = {
     activeEffects: [],
     rendered: false,
   };
 
-  /** Resizes composer targets and effect-specific buffers to match the canvas. */
-  public setSize(width: number, height: number): void {
-    this.currentWidth = width;
-    this.currentHeight = height;
-    this.composer?.setSize(width, height, false);
+  /**
+   * Resizes composer targets and effect-specific buffers.
+   *
+   * The postprocessing composer expects CSS pixels because it multiplies by the
+   * renderer pixel ratio internally. Custom effects receive drawing-buffer
+   * pixels so their texel math remains full resolution.
+   */
+  public setSize(
+    cssWidth: number,
+    cssHeight: number,
+    targetWidth = cssWidth,
+    targetHeight = cssHeight,
+  ): void {
+    this.currentCssWidth = cssWidth;
+    this.currentCssHeight = cssHeight;
+    this.currentTargetWidth = targetWidth;
+    this.currentTargetHeight = targetHeight;
+    this.composer?.setSize(cssWidth, cssHeight, false);
     for (const controller of this.standardEffects) {
-      controller.pass.setSize(width, height);
+      controller.pass.setSize(targetWidth, targetHeight);
     }
-    this.alphaDecayPass?.setSize(width, height);
+    this.alphaDecayPass?.setSize(targetWidth, targetHeight);
   }
 
   /** Clears temporal history so reset actions do not leave stale trails. */
@@ -113,7 +128,12 @@ export class PostProcessingPipeline {
       multisampling: 0,
     });
     this.renderPass = new RenderPass(scene, camera);
-    this.setSize(this.currentWidth, this.currentHeight);
+    this.setSize(
+      this.currentCssWidth,
+      this.currentCssHeight,
+      this.currentTargetWidth,
+      this.currentTargetHeight,
+    );
   }
 
   private updatePostProcessing(
@@ -189,7 +209,10 @@ export class PostProcessingPipeline {
     for (const effectId of enabledPostEffects) {
       if (effectId === "alphaDecay") {
         this.alphaDecayPass = new AlphaDecayPass();
-        this.alphaDecayPass.setSize(this.currentWidth, this.currentHeight);
+        this.alphaDecayPass.setSize(
+          this.currentTargetWidth,
+          this.currentTargetHeight,
+        );
         if (this.alphaDecayPass) {
           this.composer.addPass(this.alphaDecayPass);
         }
@@ -211,7 +234,7 @@ export class PostProcessingPipeline {
 
     const effect = this.createStandardEffect(effectId);
     const pass = new EffectPass(this.renderPass.mainCamera, effect);
-    pass.setSize(this.currentWidth, this.currentHeight);
+    pass.setSize(this.currentTargetWidth, this.currentTargetHeight);
     return { effectId, effect, pass };
   }
 

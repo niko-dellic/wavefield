@@ -57,14 +57,16 @@ export class ModalFieldRenderer {
   }
 
   /** Resizes cameras, shader uniforms, controls, and post-processing buffers. */
-  public setSize(width: number, height: number): void {
-    const targetWidth = Math.max(1, Math.floor(width));
-    const targetHeight = Math.max(1, Math.floor(height));
+  public setSize(width: number, height: number, pixelRatio = 1): void {
+    const cssWidth = Math.max(1, Math.floor(width));
+    const cssHeight = Math.max(1, Math.floor(height));
+    const targetWidth = Math.max(1, Math.floor(cssWidth * pixelRatio));
+    const targetHeight = Math.max(1, Math.floor(cssHeight * pixelRatio));
     this.uniforms.setResolution(targetWidth, targetHeight);
-    this.sphereCamera.aspect = targetWidth / targetHeight;
+    this.sphereCamera.aspect = cssWidth / cssHeight;
     this.sphereCamera.updateProjectionMatrix();
     this.sphereControls.setSize();
-    this.postProcessing.setSize(targetWidth, targetHeight);
+    this.postProcessing.setSize(cssWidth, cssHeight, targetWidth, targetHeight);
   }
 
   /** Resets time-based shader and post-processing history state. */

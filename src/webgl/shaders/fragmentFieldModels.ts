@@ -338,21 +338,6 @@ export const FIELD_MODEL_FRAGMENT: string = `  vec2 plateUvFromScreen(vec2 uv) {
       clampedChladniGradient(m, n, p) * uBoundaryClampedWeight;
   }
 
-  vec2 chladniGradient(float m, float n, vec2 p) {
-    if (uFieldModelWeights.x > 0.999) {
-      return modalPlateGradient(m, n, p);
-    }
-
-    vec2 stepSize = vec2(0.002, 0.0);
-    float dx =
-      chladniValue(m, n, p + stepSize.xy) -
-      chladniValue(m, n, p - stepSize.xy);
-    float dy =
-      chladniValue(m, n, p + stepSize.yx) -
-      chladniValue(m, n, p - stepSize.yx);
-    return vec2(dx, dy) / (2.0 * stepSize.x);
-  }
-
   float nonModalFieldValue(float m, float n, vec2 p) {
     if (uFieldModelWeights.y > 0.999) {
       return radialPlateValue(m, n, p);
@@ -370,15 +355,40 @@ export const FIELD_MODEL_FRAGMENT: string = `  vec2 plateUvFromScreen(vec2 uv) {
       spiralPhaseValue(m, n, p) * uFieldModelWeights.w;
   }
 
-  vec2 nonModalFieldGradient(float m, float n, vec2 p) {
-    vec2 stepSize = vec2(0.002, 0.0);
-    float dx =
-      nonModalFieldValue(m, n, p + stepSize.xy) -
-      nonModalFieldValue(m, n, p - stepSize.xy);
-    float dy =
-      nonModalFieldValue(m, n, p + stepSize.yx) -
-      nonModalFieldValue(m, n, p - stepSize.yx);
-    return vec2(dx, dy) / (2.0 * stepSize.x);
+  float nonModalGradientMagnitudeProxy(float m, float n, vec2 p, float fieldValue) {
+    float modelScale =
+      uFieldModelWeights.y * 0.92 +
+      uFieldModelWeights.z * 1.14 +
+      uFieldModelWeights.w * 1.06;
+    float frequencyScale = max(1.0, m + n);
+    float centeredEdge = max(squareEdgeAmount(p - 0.5), length((p - 0.5) * 2.0));
+    float edgeBoost = 0.74 + smoothstep(0.34, 1.0, centeredEdge) * 0.48;
+    float resonanceScale = 0.88 + abs(resonanceDetailBias()) * 0.16;
+    return
+      (0.32 + abs(fieldValue) * 0.72) *
+      frequencyScale *
+      modelScale *
+      edgeBoost *
+      resonanceScale;
+  }
+
+  float chladniGradientMagnitude(float m, float n, vec2 p, float fieldValue) {
+    if (uFieldModelWeights.x > 0.999) {
+      return length(modalPlateGradient(m, n, p));
+    }
+
+    float nonModalWeight = clamp(
+      uFieldModelWeights.y + uFieldModelWeights.z + uFieldModelWeights.w,
+      0.0,
+      1.0
+    );
+    float modalMagnitude =
+      uFieldModelWeights.x > 0.0001
+        ? length(modalPlateGradient(m, n, p)) * uFieldModelWeights.x
+        : 0.0;
+    return
+      modalMagnitude +
+      nonModalGradientMagnitudeProxy(m, n, p, fieldValue) * nonModalWeight;
   }
 
   float clampedCavityEnvelope(float coordinate) {
@@ -506,17 +516,16 @@ export const FIELD_MODEL_FRAGMENT: string = `  vec2 plateUvFromScreen(vec2 uv) {
         vec2 xy = p.xy * 0.5 + 0.5;
         vec2 yz = p.yz * 0.5 + 0.5;
         vec2 zx = p.zx * 0.5 + 0.5;
+        float xyField = nonModalFieldValue(u, v, xy);
+        float yzField = nonModalFieldValue(v, w, yz);
+        float zxField = nonModalFieldValue(w, u, zx);
         float projectedField =
-          (
-            nonModalFieldValue(u, v, xy) +
-            nonModalFieldValue(v, w, yz) +
-            nonModalFieldValue(w, u, zx)
-          ) * 0.57735026919;
+          (xyField + yzField + zxField) * 0.57735026919;
         float projectedGrad =
           (
-            length(nonModalFieldGradient(u, v, xy)) +
-            length(nonModalFieldGradient(v, w, yz)) +
-            length(nonModalFieldGradient(w, u, zx))
+            nonModalGradientMagnitudeProxy(u, v, xy, xyField) +
+            nonModalGradientMagnitudeProxy(v, w, yz, yzField) +
+            nonModalGradientMagnitudeProxy(w, u, zx, zxField)
           ) * 0.33333333333;
         familyField = familyField * uFieldModelWeights.x + projectedField;
         familyGradient =
@@ -622,7 +631,7 @@ export const FIELD_MODEL_FRAGMENT: string = `  vec2 plateUvFromScreen(vec2 uv) {
               p
             )
           : 0.0;
-      vec2 gradient = chladniGradient(m, n, p);
+      float gradientMagnitude = chladniGradientMagnitude(m, n, p, baseField);
       // Audio feeds motion (phase travel + transient ring), not a flat glow.
       float phaseMotion = cos(
         meta.x +
@@ -645,7 +654,7 @@ export const FIELD_MODEL_FRAGMENT: string = `  vec2 plateUvFromScreen(vec2 uv) {
         (0.72 + meta.y * 0.34);
 
       fieldSample.field += localField * modeWeight * (0.82 + modeExcitation * 0.16);
-      fieldSample.grad += length(gradient) * modeWeight * (0.0018 + localAudio * 0.0007);
+      fieldSample.grad += gradientMagnitude * modeWeight * (0.0018 + localAudio * 0.0007);
       fieldSample.energy += localInfluence;
       fieldSample.color += uModeColors[index].rgb * localInfluence * uModeColors[index].a;
       fieldSample.colorWeight += localInfluence * uModeColors[index].a;

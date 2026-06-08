@@ -123,14 +123,14 @@ test("active composer post-effect stack derives each composer effect independent
 
   assert.deepEqual(
     getActiveComposerPostEffectIds(createPostSettings(["terminal"])),
-    [],
+    ["terminal"],
   );
 
   assert.deepEqual(
     getActiveComposerPostEffectIds(
       createPostSettings(["pixelation", "terminal"]),
     ),
-    ["pixelation"],
+    ["pixelation", "terminal"],
   );
 
   assert.deepEqual(getActiveComposerPostEffectIds(createPostSettings([])), []);
@@ -158,6 +158,11 @@ test("active composer post-effect stack skips neutral effect values", () => {
   pixelation.postPixelSize = 1;
   assert.equal(getComposerPostEffectRenderAmount(pixelation, "pixelation"), 0);
   assert.deepEqual(getActiveComposerPostEffectIds(pixelation), []);
+
+  const terminal = createPostSettings(["terminal"]);
+  terminal.terminalContourStrength = 0;
+  assert.equal(getComposerPostEffectRenderAmount(terminal, "terminal"), 0);
+  assert.deepEqual(getActiveComposerPostEffectIds(terminal), []);
 });
 
 test("effective settings accept every model and resonance combination", () => {
@@ -178,4 +183,14 @@ test("harmonic spread does not quantize through the morph amount", () => {
   const source = readFileSync(FIELD_MODEL_SHADER_PATH, "utf8");
 
   assert.doesNotMatch(source, /floor\([^)]*uHarmonicMix/);
+});
+
+test("non-modal field models avoid central-difference gradient sampling", () => {
+  const source = readFileSync(FIELD_MODEL_SHADER_PATH, "utf8");
+
+  assert.match(source, /float\s+nonModalGradientMagnitudeProxy\(/);
+  assert.match(source, /float\s+chladniGradientMagnitude\(/);
+  assert.doesNotMatch(source, /vec2\s+nonModalFieldGradient\(/);
+  assert.doesNotMatch(source, /chladniValue\(m,\s*n,\s*p\s*\+\s*stepSize\.xy\)/);
+  assert.doesNotMatch(source, /nonModalFieldValue\(m,\s*n,\s*p\s*\+\s*stepSize\.xy\)/);
 });
