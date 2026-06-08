@@ -877,11 +877,6 @@ function getLayoutKey(
     settings.screenAspectMode,
     settings.postProcessingEnabled,
     settings.postEffectOrder.join(","),
-    settings.postBloomEnabled ? "bloom:on" : "bloom:off",
-    settings.postPixelationEnabled ? "pixelation:on" : "pixelation:off",
-    settings.postFisheyeEnabled ? "fisheye:on" : "fisheye:off",
-    settings.terminalContourEnabled ? "terminal:on" : "terminal:off",
-    settings.postAlphaDecayEnabled ? "alphaDecay:on" : "alphaDecay:off",
     `wander:${wanderEnabled ? "on" : "off"}`,
     getTemplateLayoutKey(templateControls),
   ].join(":");
@@ -1467,6 +1462,49 @@ function clearDropMarkers(root: HTMLElement) {
   });
 }
 
+type ScrollSnapshot = {
+  element: Element;
+  scrollTop: number;
+};
+
+function captureNearestScrollPosition(element: HTMLElement): ScrollSnapshot | null {
+  for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+    const { overflowY } = window.getComputedStyle(parent);
+    if (
+      (overflowY === "auto" || overflowY === "scroll") &&
+      parent.scrollHeight > parent.clientHeight
+    ) {
+      return {
+        element: parent,
+        scrollTop: parent.scrollTop,
+      };
+    }
+  }
+
+  const pageScroller = document.scrollingElement;
+  return pageScroller
+    ? {
+        element: pageScroller,
+        scrollTop: pageScroller.scrollTop,
+      }
+    : null;
+}
+
+function restoreScrollPosition(snapshot: ScrollSnapshot | null) {
+  if (!snapshot) {
+    return;
+  }
+
+  const restore = () => {
+    snapshot.element.scrollTop = snapshot.scrollTop;
+  };
+  restore();
+  window.requestAnimationFrame(() => {
+    restore();
+    window.requestAnimationFrame(restore);
+  });
+}
+
 function createCheckbox({
   ariaLabel,
   checked,
@@ -1484,6 +1522,10 @@ function createCheckbox({
 }) {
   const wrapper = document.createElement("label");
   wrapper.className = ["post-checkbox", className].filter(Boolean).join(" ");
+  let scrollSnapshot: ScrollSnapshot | null = null;
+  wrapper.addEventListener("pointerdown", () => {
+    scrollSnapshot = captureNearestScrollPosition(wrapper);
+  });
   const input = document.createElement("input");
   input.type = "checkbox";
   input.checked = checked;
@@ -1492,7 +1534,10 @@ function createCheckbox({
     input.setAttribute("aria-label", ariaLabel);
   }
   input.addEventListener("change", () => {
+    const snapshot = scrollSnapshot ?? captureNearestScrollPosition(wrapper);
+    scrollSnapshot = null;
     onChange(input.checked);
+    restoreScrollPosition(snapshot);
   });
   wrapper.append(input);
   if (label) {
