@@ -1,7 +1,13 @@
 import WaveSurfer from "wavesurfer.js";
 
 import { decodeAndAnalyzeAudio } from "./analyze";
-import type { AudioAnalysis } from "../types";
+import {
+  coerceAudioOutputState,
+  loadAudioOutputState,
+  saveAudioOutputState,
+  type AudioOutputState,
+} from "./audioOutputState.ts";
+import type { AudioAnalysis, DriveMode } from "../types";
 import type { ShellElements } from "../ui/shellElements";
 import type { ShellFixture } from "../ui/shell";
 
@@ -22,9 +28,12 @@ export type AudioControllerOptions = {
     | "waveform"
   >;
   fixtures: ShellFixture[];
-  canTogglePlayback: () => boolean;
+  getPlaybackMode: () => DriveMode;
+  isManualPlaying: () => boolean;
   onAnalysis: (analysis: AudioAnalysis) => void;
   onInteractionReset: (time: number) => void;
+  onManualTogglePlayback: () => Promise<void> | void;
+  onOutputStateChange: (state: AudioOutputState) => void;
   onPrepareForNewAudio: () => void;
   onSeekReset: (time: number) => void;
   onStatus: (message: string) => void;
@@ -34,7 +43,7 @@ export class AudioController {
   readonly wavesurfer: WaveSurfer;
 
   private readonly disposers: Array<() => void> = [];
-  private lastAudibleVolume = 1;
+  private outputState: AudioOutputState = loadAudioOutputState();
 
   constructor(private readonly options: AudioControllerOptions) {
     this.wavesurfer = WaveSurfer.create({
@@ -62,12 +71,10 @@ export class AudioController {
       }
     });
     this.addEventListener(ui.playButton, "click", () => {
-      if (this.options.canTogglePlayback()) {
-        void this.togglePlayback();
-      }
+      void this.togglePlayback();
     });
     this.addEventListener(ui.volumeButton, "click", () => {
-      this.setMuted(!this.wavesurfer.getMuted());
+      this.setMuted(!this.outputState.muted);
     });
     this.addEventListener(ui.volumeSlider, "input", () => {
       this.setVolume(Number(ui.volumeSlider.value));
@@ -117,13 +124,13 @@ export class AudioController {
         this.options.onStatus("Audio ready");
       }),
       this.wavesurfer.on("play", () => {
-        this.setPlayButton(true);
+        this.syncPlaybackControl();
       }),
       this.wavesurfer.on("pause", () => {
-        this.setPlayButton(false);
+        this.syncPlaybackControl();
       }),
       this.wavesurfer.on("finish", () => {
-        this.setPlayButton(false);
+        this.syncPlaybackControl();
       }),
       this.wavesurfer.on("seeking", (time) => {
         this.options.onSeekReset(time);
@@ -138,6 +145,7 @@ export class AudioController {
       }),
     );
 
+    this.applyOutputState(this.outputState, false);
     this.syncVolumeControl();
   }
 
@@ -202,12 +210,16 @@ export class AudioController {
   }
 
   isPlaying() {
+    if (this.options.getPlaybackMode() === "manual") {
+      return this.options.isManualPlaying();
+    }
+
     return this.wavesurfer.isPlaying();
   }
 
   pause() {
     this.wavesurfer.pause();
-    this.setPlayButton(false);
+    this.syncPlaybackControl();
   }
 
   setPlayButton(isPlaying: boolean) {
@@ -219,33 +231,80 @@ export class AudioController {
     this.options.ui.playButton.title = label;
   }
 
-  togglePlayback() {
-    return this.wavesurfer.playPause().catch((error: unknown) => {
-      this.options.onStatus(
-        error instanceof Error
-          ? error.message
-          : "Playback was blocked by the browser",
-      );
-    });
+  async togglePlayback() {
+    const playbackMode = this.options.getPlaybackMode();
+    if (playbackMode === "audio") {
+      return this.wavesurfer.playPause().catch((error: unknown) => {
+        this.options.onStatus(
+          error instanceof Error
+            ? error.message
+            : "Playback was blocked by the browser",
+        );
+      });
+    }
+
+    if (playbackMode === "manual") {
+      try {
+        const togglePromise = this.options.onManualTogglePlayback();
+        this.syncPlaybackControl();
+        await togglePromise;
+      } catch (error) {
+        this.options.onStatus(
+          error instanceof Error
+            ? error.message
+            : "Manual tone playback was blocked by the browser",
+        );
+      }
+      this.syncPlaybackControl();
+    }
   }
 
   setVolume(volume: number) {
-    const clampedVolume = Math.min(1, Math.max(0, volume));
-    this.wavesurfer.setVolume(clampedVolume);
-    if (clampedVolume > 0) {
-      this.lastAudibleVolume = clampedVolume;
-      this.wavesurfer.setMuted(false);
-    } else {
-      this.wavesurfer.setMuted(true);
-    }
-    this.syncVolumeControl();
+    const clampedVolume = Number.isFinite(volume)
+      ? Math.min(1, Math.max(0, volume))
+      : this.outputState.volume;
+    this.applyOutputState({
+      volume: clampedVolume,
+      muted: clampedVolume <= 0,
+      lastAudibleVolume:
+        clampedVolume > 0
+          ? clampedVolume
+          : this.outputState.lastAudibleVolume,
+    });
   }
 
   setMuted(isMuted: boolean) {
-    if (!isMuted && this.wavesurfer.getVolume() <= 0) {
-      this.wavesurfer.setVolume(this.lastAudibleVolume);
+    let volume = this.outputState.volume;
+    if (!isMuted && volume <= 0) {
+      volume = this.outputState.lastAudibleVolume;
     }
-    this.wavesurfer.setMuted(isMuted);
+
+    this.applyOutputState({
+      ...this.outputState,
+      volume,
+      muted: isMuted || volume <= 0,
+    });
+  }
+
+  syncPlaybackControl() {
+    const playbackMode = this.options.getPlaybackMode();
+    this.setPlayButton(
+      playbackMode === "audio"
+        ? this.wavesurfer.isPlaying()
+        : playbackMode === "manual" && this.options.isManualPlaying(),
+    );
+  }
+
+  private applyOutputState(state: AudioOutputState, shouldPersist = true) {
+    this.outputState = coerceAudioOutputState(state);
+    this.wavesurfer.setVolume(this.outputState.volume);
+    this.wavesurfer.setMuted(
+      this.outputState.muted || this.outputState.volume <= 0,
+    );
+    if (shouldPersist) {
+      saveAudioOutputState(this.outputState);
+    }
+    this.options.onOutputStateChange(this.outputState);
     this.syncVolumeControl();
   }
 
@@ -266,8 +325,8 @@ export class AudioController {
   }
 
   private syncVolumeControl() {
-    const volume = this.wavesurfer.getVolume();
-    const isMuted = this.wavesurfer.getMuted() || volume <= 0;
+    const volume = this.outputState.volume;
+    const isMuted = this.outputState.muted || volume <= 0;
     const effectiveVolume = isMuted ? 0 : volume;
     const icon = isMuted
       ? "ph-speaker-x"

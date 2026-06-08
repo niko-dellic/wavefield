@@ -126,6 +126,21 @@ test("settings transition controller applies direct field model changes immediat
   assert.equal(effective.fieldModelWeights.spiralPhase, 1);
 });
 
+test("settings transition controller syncs pre-mutated color settings", () => {
+  setTestWindow(createLocalStorage());
+
+  const settings: CymaticSettings = {
+    ...DEFAULT_SETTINGS,
+    backgroundColor: "#000000",
+  };
+  const controller = new SettingsTransitionController(settings);
+
+  settings.backgroundColor = "#2fbf3e";
+  controller.resetToCurrentSettings();
+
+  assert.equal(controller.advance(0).settings.backgroundColor, "#2fbf3e");
+});
+
 test("settings transition controller handles pre-mutated field model settings", () => {
   setTestWindow(createLocalStorage());
 

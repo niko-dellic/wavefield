@@ -55,6 +55,8 @@ export const SHARED_FRAGMENT: string = `
   uniform float uSphereInteriorGlow;
   uniform vec4 uFisheyeParams;
   uniform float uFisheyeStrength;
+  uniform vec4 uTerminalParams;
+  uniform float uTerminalStrength;
   varying vec2 vUv;
   varying vec3 vLocalPosition;
   varying vec3 vWorldNormal;

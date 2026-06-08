@@ -5,28 +5,63 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 const TEST_DIR = dirname(fileURLToPath(import.meta.url));
-const TERMINAL_CONTOUR_PATH = resolve(
+const TERMINAL_SHADER_PATH = resolve(
   TEST_DIR,
-  "../src/webgl/TerminalContourEffect.ts",
+  "../src/webgl/shaders/fragmentTerminal.ts",
+);
+const MODAL_FIELD_SHADER_PATH = resolve(
+  TEST_DIR,
+  "../src/webgl/shaders/modalFieldShader.ts",
+);
+const POST_PIPELINE_PATH = resolve(
+  TEST_DIR,
+  "../src/webgl/PostProcessingPipeline.ts",
+);
+const MAIN_SHADER_PATH = resolve(
+  TEST_DIR,
+  "../src/webgl/shaders/fragmentMain.ts",
 );
 
-test("terminal contour effect uses masked local contrast instead of whole-frame tint", () => {
-  const source = readFileSync(TERMINAL_CONTOUR_PATH, "utf8");
+test("terminal contours are shader-native field markup, not a composer pass", () => {
+  const terminalSource = readFileSync(TERMINAL_SHADER_PATH, "utf8");
+  const modalShaderSource = readFileSync(MODAL_FIELD_SHADER_PATH, "utf8");
+  const postPipelineSource = readFileSync(POST_PIPELINE_PATH, "utf8");
 
-  assert.match(source, /float\s+effectMask\s*=\s*clamp\(\s*glyph\s*\*\s*amount/);
-  assert.match(source, /float\s+contourInk\s*=\s*clamp\(\s*mark\s*\*\s*amount/);
-  assert.match(source, /localShadow\s*=\s*inputColor\.rgb\s*\*\s*\(1\.0\s*-\s*0\.28\s*\*\s*contourInk\)/);
-  assert.match(
-    source,
-    /localHighlight\s*=\s*mix\(\s*localShadow/,
+  assert.match(terminalSource, /vec3\s+applyTerminalOverlay\(/);
+  assert.match(terminalSource, /uTerminalParams/);
+  assert.match(terminalSource, /uTerminalStrength/);
+  assert.match(terminalSource, /normalizedField/);
+  assert.match(terminalSource, /fieldGradient/);
+  assert.match(terminalSource, /nodeBand/);
+  assert.match(terminalSource, /broadBand/);
+  assert.match(terminalSource, /density/);
+  assert.match(terminalSource, /visibleInk/);
+
+  assert.match(modalShaderSource, /TERMINAL_FRAGMENT/);
+  assert.doesNotMatch(postPipelineSource, /TerminalContourEffect/);
+  assert.doesNotMatch(postPipelineSource, /case\s+"terminal"/);
+});
+
+test("terminal shader avoids whole-frame luminance compositing", () => {
+  const terminalSource = readFileSync(TERMINAL_SHADER_PATH, "utf8");
+
+  assert.doesNotMatch(terminalSource, /inputBuffer/);
+  assert.doesNotMatch(terminalSource, /mainImage/);
+  assert.doesNotMatch(terminalSource, /inputColor\.rgb\s*\*\s*0\.2/);
+  assert.doesNotMatch(terminalSource, /mix\(\s*inputColor\.rgb/);
+  assert.doesNotMatch(terminalSource, /max\(\s*inputColor\.rgb/);
+});
+
+test("terminal screen overlay is applied after background alpha blending", () => {
+  const mainSource = readFileSync(MAIN_SHADER_PATH, "utf8");
+  const finalMixIndex = mainSource.indexOf(
+    "vec3 finalColor = mix(uBackgroundColor, litColor, alpha);",
   );
-  assert.match(
-    source,
-    /neutralAccent\s*=\s*terminalTint\s*-\s*vec3\(\s*luminance\(terminalTint\)\s*\)/,
+  const terminalOverlayIndex = mainSource.indexOf(
+    "finalColor = applyTerminalOverlay(",
   );
-  assert.match(source, /outputColor\s*=\s*vec4\(\s*color,\s*inputColor\.a\s*\)/);
-  assert.doesNotMatch(source, /inputColor\.rgb\s*\*\s*0\.2/);
-  assert.doesNotMatch(source, /max\(\s*inputColor\.rgb/);
-  assert.doesNotMatch(source, /mix\(\s*inputColor\.rgb\s*,\s*terminalColor/);
-  assert.doesNotMatch(source, /0\.38\s*\+\s*centerLum\s*\*\s*1\.55/);
+
+  assert.notEqual(finalMixIndex, -1);
+  assert.notEqual(terminalOverlayIndex, -1);
+  assert.ok(terminalOverlayIndex > finalMixIndex);
 });

@@ -11,7 +11,7 @@ import type {
   PostEffectId,
 } from "./types.ts";
 
-export type ComposerPostEffectId = Exclude<PostEffectId, "fisheye">;
+export type ComposerPostEffectId = Exclude<PostEffectId, "fisheye" | "terminal">;
 
 export const BOUNDARY_MODES = [
   "freePlate",
@@ -40,7 +40,6 @@ export const COMPOSER_POST_EFFECT_IDS = [
   "bloom",
   "pixelation",
   "alphaDecay",
-  "terminal",
 ] satisfies ComposerPostEffectId[];
 
 export const POST_EFFECT_ENABLED_KEYS = {
@@ -148,8 +147,6 @@ export function getComposerPostEffectRenderAmount(
       return amount * Math.max(0, settings.postPixelSize - 1);
     case "alphaDecay":
       return amount;
-    case "terminal":
-      return amount * Math.max(0, settings.terminalContourStrength);
   }
 }
 
@@ -175,10 +172,10 @@ export function hasActiveComposerPostEffectAmount(
 /**
  * Returns the exact composer-owned post-effect stack that should render this frame.
  *
- * Fisheye is intentionally excluded because it is a shader-native lens warp,
- * not a composer pass. During transitions this may include fading composer
- * effects whose base toggle is off, but disabled effects with zero visual
- * amount are excluded.
+ * Fisheye and terminal contours are intentionally excluded because they are
+ * shader-native effects, not composer passes. During transitions this may
+ * include fading composer effects whose base toggle is off, but disabled
+ * effects with zero visual amount are excluded.
  */
 export function getActiveComposerPostEffectIds(
   settings: CymaticSettings | EffectiveCymaticSettings,

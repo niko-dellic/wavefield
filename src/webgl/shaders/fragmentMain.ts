@@ -107,10 +107,33 @@ export const MAIN_FRAGMENT: string = `  void main() {
       uBrightness;
     vec3 litColor = clamp(color, 0.0, 1.0);
     if (uProjectionMode == 1 && uSphereTransparent > 0.5) {
+      litColor = applyTerminalOverlay(
+        litColor,
+        vUv,
+        normalizedField,
+        field.grad,
+        nodeBand,
+        broadBand,
+        density,
+        visibleInk,
+        nodeWidth
+      );
       float outputAlpha = clamp(alpha * uSurfaceOpacity, 0.02, 1.0);
       gl_FragColor = vec4(clamp(litColor * alpha, 0.0, 1.0), outputAlpha);
       return;
     }
-    gl_FragColor = vec4(mix(uBackgroundColor, litColor, alpha), 1.0);
+    vec3 finalColor = mix(uBackgroundColor, litColor, alpha);
+    finalColor = applyTerminalOverlay(
+      finalColor,
+      vUv,
+      normalizedField,
+      field.grad,
+      nodeBand,
+      broadBand,
+      density,
+      visibleInk,
+      nodeWidth
+    );
+    gl_FragColor = vec4(finalColor, 1.0);
   }
 `;

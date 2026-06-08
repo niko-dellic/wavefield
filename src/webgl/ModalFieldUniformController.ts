@@ -19,6 +19,7 @@ import type {
 import { setColorUniform } from "./colorUniforms";
 import { getFisheyeUniformState } from "./fisheyeUniforms";
 import type { ScreenViewTransform } from "./renderTypes";
+import { getTerminalUniformState } from "./terminalUniforms";
 
 const COLOR_MODE_INDEX: Record<ColorMode, number> = {
   chromesthesia: 0,
@@ -103,6 +104,8 @@ export type ModalFieldShaderUniforms = Record<string, THREE.IUniform> & {
   uSphereInteriorGlow: THREE.IUniform<number>;
   uFisheyeParams: THREE.IUniform<THREE.Vector4>;
   uFisheyeStrength: THREE.IUniform<number>;
+  uTerminalParams: THREE.IUniform<THREE.Vector4>;
+  uTerminalStrength: THREE.IUniform<number>;
 };
 
 /** Inputs required to sync one frame of runtime state into shader uniforms. */
@@ -135,6 +138,7 @@ export class ModalFieldUniformController {
     (): THREE.Vector4 => new THREE.Vector4(),
   );
   private readonly cameraLocal = new THREE.Vector3();
+  private displayPixelRatio = 1;
 
   public readonly uniforms: ModalFieldShaderUniforms =
     this.createShaderUniforms();
@@ -142,6 +146,7 @@ export class ModalFieldUniformController {
   /** Updates the render target size uniform used for screen-space sampling. */
   public setResolution(width: number, height: number): void {
     this.uniforms.uResolution.value.set(width, height);
+    this.displayPixelRatio = getDisplayPixelRatio(width, height);
   }
 
   /** Copies the current modal frame, audio features, settings, and camera state into shader uniforms. */
@@ -248,6 +253,9 @@ export class ModalFieldUniformController {
     const fisheye = getFisheyeUniformState(settings);
     this.uniforms.uFisheyeParams.value.set(...fisheye.params);
     this.uniforms.uFisheyeStrength.value = fisheye.strength;
+    const terminal = getTerminalUniformState(settings, this.displayPixelRatio);
+    this.uniforms.uTerminalParams.value.set(...terminal.params);
+    this.uniforms.uTerminalStrength.value = terminal.strength;
 
     if (settings.projectionMode === "sphere") {
       sphereCamera.updateMatrixWorld();
@@ -352,6 +360,8 @@ export class ModalFieldUniformController {
       uSphereInteriorGlow: { value: 0.35 },
       uFisheyeParams: { value: new THREE.Vector4() },
       uFisheyeStrength: { value: 0 },
+      uTerminalParams: { value: new THREE.Vector4() },
+      uTerminalStrength: { value: 0 },
     };
   }
 }
@@ -394,4 +404,16 @@ function setFieldModelWeightsUniform(
     safeWeights.faradayPulse,
     safeWeights.spiralPhase,
   );
+}
+
+/** Estimates backing-buffer-to-display scale so pixel-sized shader controls stay visually stable. */
+function getDisplayPixelRatio(width: number, height: number): number {
+  if (typeof window === "undefined") {
+    return 1;
+  }
+
+  const widthRatio = width / Math.max(1, window.innerWidth);
+  const heightRatio = height / Math.max(1, window.innerHeight);
+  const ratio = Math.max(widthRatio, heightRatio);
+  return Number.isFinite(ratio) && ratio > 0 ? ratio : 1;
 }

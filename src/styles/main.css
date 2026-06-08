@@ -563,7 +563,7 @@ select {
 .diagnostics-strip {
   position: absolute;
   left: 16px;
-  bottom: 96px;
+  bottom: 103px;
   z-index: 2;
   display: flex;
   align-items: flex-end;
@@ -572,8 +572,12 @@ select {
   pointer-events: none;
 }
 
-#app:not(.is-audio-drive) .diagnostics-strip {
+#app:not(.is-audio-drive):not(.is-manual-drive) .diagnostics-strip {
   bottom: 16px;
+}
+
+#app.is-manual-drive .diagnostics-strip {
+  bottom: 75px;
 }
 
 .drive-pane {
@@ -629,6 +633,11 @@ select {
 
 .drive-pane[open] .drive-pane-caret {
   transform: rotate(180deg);
+}
+
+#app.is-manual-drive .drive-pane {
+  border-bottom-right-radius: 0;
+  border-bottom-left-radius: 0;
 }
 
 .drive-pane-body {
@@ -1108,8 +1117,21 @@ select {
   display: none;
 }
 
+#app.is-manual-drive .transport {
+  right: auto;
+  width: min(340px, calc(100vw - 32px));
+  grid-template-columns: auto auto;
+  justify-content: start;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
 .waveform {
   min-width: 0;
+}
+
+.waveform[hidden] {
+  display: none;
 }
 
 .volume-control {
@@ -1174,17 +1196,25 @@ select {
   }
 
   .diagnostics-strip {
-    bottom: 168px;
+    bottom: 103px;
     align-items: flex-start;
     flex-direction: column;
   }
 
-  #app:not(.is-audio-drive) .diagnostics-strip {
+  #app:not(.is-audio-drive):not(.is-manual-drive) .diagnostics-strip {
     bottom: 16px;
+  }
+
+  #app.is-manual-drive .diagnostics-strip {
+    bottom: 75px;
   }
 
   .transport {
     grid-template-columns: auto auto minmax(0, 1fr);
+  }
+
+  #app.is-manual-drive .transport {
+    grid-template-columns: auto auto;
   }
 }
 
@@ -1311,7 +1341,8 @@ select {
     padding: 3px;
   }
 
-  #app.is-audio-drive .boundary-radio-group {
+  #app.is-audio-drive .boundary-radio-group,
+  #app.is-manual-drive .boundary-radio-group {
     bottom: calc(96px + env(safe-area-inset-bottom));
   }
 
@@ -1335,6 +1366,10 @@ select {
   .drive-pane-summary {
     min-height: 32px;
     font-size: 13px;
+  }
+
+  #app.is-manual-drive .diagnostics-strip {
+    bottom: 73px;
   }
 
   .play-toggle,

@@ -10,7 +10,10 @@ import {
   type RawAudioFeatureFrame,
 } from "../src/audio/featureAnalysis.ts";
 import { FFT_SIZE as ANALYSIS_FFT_SIZE } from "../src/audio/analyze.ts";
-import { createManualFeatureFrame } from "../src/audio/fieldSources.ts";
+import {
+  createManualFeatureFrame,
+  getManualFrequency,
+} from "../src/audio/fieldSources.ts";
 import {
   atlasModeForFrequency,
   nearestModesForFrequency,
@@ -231,6 +234,19 @@ test("manual feature frames synthesize one isolated Chladni source", () => {
   assert.equal(frame.chroma.confidence, 1);
   assert.equal(frame.signals.beat, 0);
   assert.equal(frame.signals.beatConfidence, 0);
+});
+
+test("manual frequency helper follows the configured sweep", () => {
+  const settings = createManualSettings({
+    testFrequency: 220,
+    frequencySweep: true,
+    frequencySweepRate: 0.25,
+    frequencySweepRange: 1,
+  });
+
+  assert.equal(getManualFrequency(settings, 0), 220);
+  assert.equal(getManualFrequency(settings, 1), 440);
+  assert.ok(Math.abs(getManualFrequency(settings, 3) - 110) < 0.000001);
 });
 
 test("manual modal engine updates without audio analysis", () => {

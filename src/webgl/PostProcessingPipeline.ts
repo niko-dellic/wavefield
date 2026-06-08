@@ -15,7 +15,6 @@ import {
 } from "../effectiveSettings";
 import type { EffectiveCymaticSettings } from "../types";
 import { AlphaDecayPass } from "./AlphaDecayPass";
-import { TerminalContourEffect } from "./TerminalContourEffect";
 
 export type PostProcessingRenderStats = {
   activeEffects: ComposerPostEffectId[];
@@ -227,8 +226,6 @@ export class PostProcessingPipeline {
         });
       case "pixelation":
         return new PixelationEffect(6);
-      case "terminal":
-        return new TerminalContourEffect();
     }
   }
 
@@ -247,14 +244,6 @@ export class PostProcessingPipeline {
               1,
               settings.postPixelSize,
               getPostEffectAmount(settings, "pixelation"),
-            );
-          }
-          break;
-        case "terminal":
-          if (controller.effect instanceof TerminalContourEffect) {
-            controller.effect.updateSettings(
-              settings,
-              getPostEffectAmount(settings, "terminal"),
             );
           }
           break;

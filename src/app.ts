@@ -6,7 +6,9 @@ import {
 } from "./audio/ModalField";
 import { getFirstMeaningfulFrameTime } from "./audio/analysisPreview";
 import { AudioController } from "./audio/audioController";
+import { getManualFrequency } from "./audio/fieldSources.ts";
 import { LiveAudioAnalyzer } from "./audio/liveAnalysis";
+import { ManualToneController } from "./audio/manualToneController.ts";
 import { DEFAULT_SETTINGS } from "./config/settings";
 import {
   createRenderProfiler,
@@ -88,6 +90,7 @@ export class WavefieldApp {
   private readonly liveAnalyzer = new LiveAudioAnalyzer();
   private readonly renderer: THREE.WebGLRenderer;
   private readonly modalRenderer = new ModalFieldRenderer();
+  private readonly manualTone = new ManualToneController();
   private readonly profiler: RenderProfiler | null;
   private readonly ui: ShellElements;
   private readonly controls: ControlsManager;
@@ -106,6 +109,7 @@ export class WavefieldApp {
   private analysisPreviewTime = 0;
   private fieldSettingsKey = "";
   private lastSettingsControlsRefreshMilliseconds = 0;
+  private isEditingColorControl = false;
   private readonly monitorState: MonitorState = createInitialMonitorState();
   private lastModalFieldFrame: ModalFieldFrame = EMPTY_MODAL_FIELD_FRAME;
 
@@ -152,9 +156,12 @@ export class WavefieldApp {
       root: this.root,
       ui: this.ui,
       fixtures: FIXTURES,
-      canTogglePlayback: () => this.settings.driveMode === "audio",
+      getPlaybackMode: () => this.settings.driveMode,
+      isManualPlaying: () => this.manualTone.isPlaying(),
       onAnalysis: (analysis) => this.setAnalysis(analysis),
       onInteractionReset: (time) => this.modalEngine.reset(time),
+      onManualTogglePlayback: () => this.toggleManualTone(),
+      onOutputStateChange: (state) => this.manualTone.setVolumeState(state),
       onPrepareForNewAudio: () => this.prepareForNewAudio(),
       onSeekReset: (time) => {
         this.modalEngine.reset(time);
@@ -246,6 +253,7 @@ export class WavefieldApp {
     this.controls.dispose();
     this.manualDriveSettingsPane.dispose();
     this.audio.dispose();
+    this.manualTone.dispose();
     this.liveAnalyzer.stop();
     this.modalRenderer.dispose();
     this.profiler?.dispose();
@@ -290,7 +298,7 @@ export class WavefieldApp {
     this.lastModalFieldFrame = EMPTY_MODAL_FIELD_FRAME;
     this.manualSeconds = 0;
     this.liveSeconds = 0;
-    this.audio.setPlayButton(false);
+    this.audio.syncPlaybackControl();
     this.resetVisualState();
   }
 
@@ -352,6 +360,9 @@ export class WavefieldApp {
 
     if (isManualDrive) {
       this.manualSeconds += deltaSeconds;
+      this.manualTone.setFrequency(
+        getManualFrequency(renderSettings, this.manualSeconds),
+      );
       fieldFrame = this.modalEngine.update(
         this.manualSeconds,
         renderSettings,
@@ -397,6 +408,7 @@ export class WavefieldApp {
     if (this.overlayController.isSettingsOpen) {
       updateMonitorState(this.monitorState, this.settings, fieldFrame);
       if (
+        !this.isEditingColorControl &&
         !isFormControlFocused() &&
         now - this.lastSettingsControlsRefreshMilliseconds >=
           SETTINGS_CONTROLS_REFRESH_INTERVAL_MS
@@ -448,6 +460,14 @@ export class WavefieldApp {
   }
 
   private handleSettingsChange(options: SettingsChangeOptions = {}) {
+    if (options.source === "color") {
+      this.isEditingColorControl = options.editing === true;
+      this.settingsTransitions.resetToCurrentSettings();
+      this.syncBackgroundColor(this.settingsTransitions.effectiveSettings);
+      this.setStatus("Settings updated");
+      return;
+    }
+
     this.settingsTransitions.resetToCurrentSettings();
     if (this.settings.projectionMode !== "screen") {
       this.screenView.endPan();
@@ -489,16 +509,24 @@ export class WavefieldApp {
     this.ui.driveSummaryValue.textContent = formatDriveMode(
       this.settings.driveMode,
     );
-    this.ui.sourcePicker.hidden = this.settings.driveMode !== "audio";
-    this.ui.transport.hidden = this.settings.driveMode !== "audio";
+    const isAudioDrive = this.settings.driveMode === "audio";
+    const isManualDrive = this.settings.driveMode === "manual";
+    this.ui.sourcePicker.hidden = !isAudioDrive;
+    this.ui.transport.hidden = !(isAudioDrive || isManualDrive);
+    this.ui.waveform.hidden = !isAudioDrive;
     this.root.classList.toggle(
       "is-audio-drive",
-      this.settings.driveMode === "audio",
+      isAudioDrive,
+    );
+    this.root.classList.toggle(
+      "is-manual-drive",
+      isManualDrive,
     );
     this.root.classList.toggle(
       "is-live-recording",
       this.settings.driveMode === "live" && this.liveAnalyzer.isActive,
     );
+    this.audio.syncPlaybackControl();
     this.manualDriveSettingsPane.sync(this.settings);
     if (options.refreshControls !== false) {
       this.controls.refresh();
@@ -559,6 +587,9 @@ export class WavefieldApp {
     if (driveMode !== "audio") {
       this.audio.pause();
     }
+    if (driveMode !== "manual") {
+      this.manualTone.pause();
+    }
     if (driveMode !== "live") {
       this.liveAnalyzer.stop();
     }
@@ -594,6 +625,21 @@ export class WavefieldApp {
     if (announce) {
       this.setStatus(`Drive: ${formatDriveMode(driveMode)}`);
     }
+  }
+
+  private async toggleManualTone() {
+    if (this.manualTone.isPlaying()) {
+      this.manualTone.pause();
+      return;
+    }
+
+    this.manualTone.setFrequency(
+      getManualFrequency(
+        this.settingsTransitions.effectiveSettings,
+        this.manualSeconds,
+      ),
+    );
+    await this.manualTone.play();
   }
 
   private addEventListener<K extends keyof HTMLElementEventMap>(

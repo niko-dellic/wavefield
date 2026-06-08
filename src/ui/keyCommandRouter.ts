@@ -42,7 +42,10 @@ export class KeyCommandRouter {
         void this.options.overlayController.toggleFullscreen();
         return;
       case "audio.playback":
-        if (this.options.settings.driveMode === "audio") {
+        if (
+          this.options.settings.driveMode === "audio" ||
+          this.options.settings.driveMode === "manual"
+        ) {
           void this.options.audio.togglePlayback();
         }
         return;

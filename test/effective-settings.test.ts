@@ -122,10 +122,15 @@ test("active composer post-effect stack derives each composer effect independent
   );
 
   assert.deepEqual(
+    getActiveComposerPostEffectIds(createPostSettings(["terminal"])),
+    [],
+  );
+
+  assert.deepEqual(
     getActiveComposerPostEffectIds(
       createPostSettings(["pixelation", "terminal"]),
     ),
-    ["pixelation", "terminal"],
+    ["pixelation"],
   );
 
   assert.deepEqual(getActiveComposerPostEffectIds(createPostSettings([])), []);
