@@ -65,6 +65,9 @@ export type ModalFieldShaderUniforms = Record<string, THREE.IUniform> & {
   uScreenViewOffset: THREE.IUniform<THREE.Vector2>;
   uScreenViewScale: THREE.IUniform<number>;
   uScreenViewRotation: THREE.IUniform<number>;
+  uScreenLoopViewOffset: THREE.IUniform<THREE.Vector2>;
+  uScreenLoopViewScale: THREE.IUniform<number>;
+  uScreenLoopBlend: THREE.IUniform<number>;
   uCameraLocal: THREE.IUniform<THREE.Vector3>;
   uModeSlots: THREE.IUniform<THREE.Vector4[]>;
   uModeMeta: THREE.IUniform<THREE.Vector4[]>;
@@ -182,6 +185,12 @@ export class ModalFieldUniformController {
     );
     this.uniforms.uScreenViewScale.value = screenView.scale;
     this.uniforms.uScreenViewRotation.value = screenView.rotation;
+    this.uniforms.uScreenLoopViewOffset.value.set(
+      screenView.loopOffsetX,
+      screenView.loopOffsetY,
+    );
+    this.uniforms.uScreenLoopViewScale.value = screenView.loopScale;
+    this.uniforms.uScreenLoopBlend.value = screenView.loopBlend;
     this.uniforms.uDensity.value = settings.cymaticDensity;
     this.uniforms.uBrightness.value = settings.cymaticBrightness;
     this.uniforms.uOpacity.value = settings.cymaticOpacity;
@@ -314,6 +323,9 @@ export class ModalFieldUniformController {
       uScreenViewOffset: { value: new THREE.Vector2() },
       uScreenViewScale: { value: 1 },
       uScreenViewRotation: { value: 0 },
+      uScreenLoopViewOffset: { value: new THREE.Vector2() },
+      uScreenLoopViewScale: { value: 1 },
+      uScreenLoopBlend: { value: 0 },
       uCameraLocal: { value: new THREE.Vector3(0, 0, 3.7) },
       uModeSlots: { value: this.modeSlotUniforms },
       uModeMeta: { value: this.modeMetaUniforms },

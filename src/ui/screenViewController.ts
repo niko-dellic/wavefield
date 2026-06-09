@@ -7,9 +7,14 @@ import {
   type WanderConfig,
 } from "../wander";
 import { getScreenWheelGesture } from "./screenWheelGesture";
+import {
+  getScreenZoomLoopFadeBlend,
+  SCREEN_VIEW_MAX_SCALE,
+  SCREEN_VIEW_MIN_SCALE,
+  SCREEN_ZOOM_LOOP_FADE_SECONDS,
+  wrapScreenZoomDelta,
+} from "./screenZoomLoop";
 
-const SCREEN_VIEW_MIN_SCALE = 0.05;
-const SCREEN_VIEW_MAX_SCALE = 16;
 const SCREEN_WHEEL_ZOOM_SPEED = 0.0015;
 const SCREEN_WHEEL_PAN_SPEED = 1;
 const SCREEN_PINCH_WHEEL_ZOOM_MULTIPLIER = 3;
@@ -42,6 +47,10 @@ export class ScreenViewController {
     offsetX: 0,
     offsetY: 0,
     rotation: 0,
+    loopScale: 1,
+    loopOffsetX: 0,
+    loopOffsetY: 0,
+    loopBlend: 0,
   };
 
   private readonly target: ScreenViewTransform = {
@@ -49,6 +58,10 @@ export class ScreenViewController {
     offsetX: 0,
     offsetY: 0,
     rotation: 0,
+    loopScale: 1,
+    loopOffsetX: 0,
+    loopOffsetY: 0,
+    loopBlend: 0,
   };
   private readonly touchPointers = new Map<number, ScreenPointer>();
   private readonly disposers: Array<() => void> = [];
@@ -68,6 +81,7 @@ export class ScreenViewController {
   private zoomVelocity = 0;
   private lastZoomInputTimeStamp: number | null = null;
   private zoomInertiaAnchor: ScreenZoomAnchor | null = null;
+  private zoomLoopTransition: ScreenZoomLoopTransition | null = null;
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -162,6 +176,7 @@ export class ScreenViewController {
       this.view.offsetX = this.target.offsetX;
       this.view.offsetY = this.target.offsetY;
       this.view.rotation = this.target.rotation;
+      this.clearZoomLoopView();
       return;
     }
 
@@ -177,6 +192,7 @@ export class ScreenViewController {
     this.view.offsetY += (this.target.offsetY - this.view.offsetY) * panBlend;
     this.view.rotation +=
       (this.target.rotation - this.view.rotation) * panBlend;
+    this.updateZoomLoopView(safeDeltaSeconds);
   }
 
   private readonly handleWheel = (event: WheelEvent) => {
@@ -212,18 +228,19 @@ export class ScreenViewController {
     const zoomDeltaY =
       gesture.deltaY *
       (gesture.source === "pinch" ? SCREEN_PINCH_WHEEL_ZOOM_MULTIPLIER : 1);
-    const nextScale = clamp(
-      previousScale * Math.exp(-zoomDeltaY * SCREEN_WHEEL_ZOOM_SPEED),
-      SCREEN_VIEW_MIN_SCALE,
-      SCREEN_VIEW_MAX_SCALE,
+    const logScaleDelta = -zoomDeltaY * SCREEN_WHEEL_ZOOM_SPEED;
+    const nextScale = this.applyWrappedZoomAtAnchor(
+      logScaleDelta,
+      event.clientX,
+      event.clientY,
+      anchor,
     );
-    if (nextScale === this.target.scale) {
+    if (nextScale === previousScale && logScaleDelta === 0) {
       return;
     }
 
-    this.setTargetAtAnchor(nextScale, event.clientX, event.clientY, anchor);
     this.recordZoomInput(
-      Math.log(nextScale / previousScale),
+      logScaleDelta,
       event.timeStamp,
       {
         anchor,
@@ -528,15 +545,10 @@ export class ScreenViewController {
     const zoomDecay = Math.exp(-this.wanderConfig.zoomDamping * deltaSeconds);
     if (!this.hasDirectDepthInput() && this.hasZoomInertia()) {
       const anchor = this.zoomInertiaAnchor;
-      const previousScale = this.target.scale;
-      const nextScale = clamp(
-        previousScale * Math.exp(this.zoomVelocity * deltaSeconds),
-        SCREEN_VIEW_MIN_SCALE,
-        SCREEN_VIEW_MAX_SCALE,
-      );
-      if (anchor && nextScale !== previousScale) {
-        this.setTargetAtAnchor(
-          nextScale,
+      const logScaleDelta = this.zoomVelocity * deltaSeconds;
+      if (anchor) {
+        this.applyWrappedZoomAtAnchor(
+          logScaleDelta,
           anchor.clientX,
           anchor.clientY,
           anchor.anchor,
@@ -607,6 +619,62 @@ export class ScreenViewController {
     this.target.scale = scale;
     this.target.offsetX = anchor.x - (rotatedPoint.x / scale + 0.5);
     this.target.offsetY = anchor.y - (rotatedPoint.y / scale + 0.5);
+  }
+
+  private applyWrappedZoomAtAnchor(
+    logScaleDelta: number,
+    clientX: number,
+    clientY: number,
+    anchor: PlatePoint,
+  ) {
+    const zoom = wrapScreenZoomDelta(this.target.scale, logScaleDelta);
+    if (zoom.wrapped) {
+      this.zoomLoopTransition = {
+        scale: this.view.scale,
+        offsetX: this.view.offsetX,
+        offsetY: this.view.offsetY,
+        seconds: 0,
+      };
+    }
+
+    this.setTargetAtAnchor(zoom.scale, clientX, clientY, anchor);
+
+    if (zoom.wrapped) {
+      this.view.scale = this.target.scale;
+      this.view.offsetX = this.target.offsetX;
+      this.view.offsetY = this.target.offsetY;
+    }
+
+    return zoom.scale;
+  }
+
+  private updateZoomLoopView(deltaSeconds: number) {
+    if (this.zoomLoopTransition) {
+      this.zoomLoopTransition.seconds += deltaSeconds;
+      const progress =
+        this.zoomLoopTransition.seconds / SCREEN_ZOOM_LOOP_FADE_SECONDS;
+      this.view.loopScale = this.zoomLoopTransition.scale;
+      this.view.loopOffsetX = this.zoomLoopTransition.offsetX;
+      this.view.loopOffsetY = this.zoomLoopTransition.offsetY;
+      this.view.loopBlend = getScreenZoomLoopFadeBlend(progress);
+      if (progress >= 1) {
+        this.zoomLoopTransition = null;
+      }
+      return;
+    }
+
+    this.view.loopScale = this.view.scale;
+    this.view.loopOffsetX = this.view.offsetX;
+    this.view.loopOffsetY = this.view.offsetY;
+    this.view.loopBlend = 0;
+  }
+
+  private clearZoomLoopView() {
+    this.zoomLoopTransition = null;
+    this.view.loopScale = this.view.scale;
+    this.view.loopOffsetX = this.view.offsetX;
+    this.view.loopOffsetY = this.view.offsetY;
+    this.view.loopBlend = 0;
   }
 
   private panTarget(
@@ -757,7 +825,6 @@ export class ScreenViewController {
 
     this.pinchGesture = {
       distance: pinch.distance,
-      scale: this.target.scale,
       anchor: this.getTransformedPlatePoint(pinch.midpointX, pinch.midpointY),
     };
   }
@@ -774,22 +841,19 @@ export class ScreenViewController {
     }
 
     const pinchRatio = pinch.distance / this.pinchGesture.distance;
-    const nextScale = clamp(
-      this.pinchGesture.scale *
-        Math.pow(pinchRatio, SCREEN_TOUCH_PINCH_ZOOM_EXPONENT),
-      SCREEN_VIEW_MIN_SCALE,
-      SCREEN_VIEW_MAX_SCALE,
-    );
+    const logScaleDelta =
+      Math.log(pinchRatio) * SCREEN_TOUCH_PINCH_ZOOM_EXPONENT;
     const previousScale = this.target.scale;
-    this.setTargetAtAnchor(
-      nextScale,
+    const nextScale = this.applyWrappedZoomAtAnchor(
+      logScaleDelta,
       pinch.midpointX,
       pinch.midpointY,
       this.pinchGesture.anchor,
     );
+    this.pinchGesture.distance = pinch.distance;
     if (nextScale !== previousScale) {
       this.recordZoomInput(
-        Math.log(nextScale / previousScale),
+        logScaleDelta,
         timeStamp,
         {
           anchor: this.pinchGesture.anchor,
@@ -898,7 +962,6 @@ type ScreenPointer = {
 
 type ScreenPinchGesture = {
   distance: number;
-  scale: number;
   anchor: PlatePoint;
 };
 
@@ -912,4 +975,11 @@ type ScreenZoomAnchor = {
   anchor: PlatePoint;
   clientX: number;
   clientY: number;
+};
+
+type ScreenZoomLoopTransition = {
+  scale: number;
+  offsetX: number;
+  offsetY: number;
+  seconds: number;
 };

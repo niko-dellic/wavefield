@@ -8,6 +8,19 @@ import {
 } from "../src/wander.ts";
 import type { ScreenViewTransform } from "../src/webgl/renderTypes.ts";
 
+function createTarget(): ScreenViewTransform {
+  return {
+    scale: 1,
+    offsetX: 0,
+    offsetY: 0,
+    rotation: 0,
+    loopScale: 1,
+    loopOffsetX: 0,
+    loopOffsetY: 0,
+    loopBlend: 0,
+  };
+}
+
 test("wander config defaults to pan and depth wander enabled", () => {
   assert.deepEqual(coerceWanderConfig({}), DEFAULT_WANDER_CONFIG);
   assert.deepEqual(coerceWanderConfig(null), DEFAULT_WANDER_CONFIG);
@@ -86,12 +99,7 @@ test("wander config clamps numeric controls and keeps depth bounds ordered", () 
 });
 
 test("pan wander moves the target offset without changing scale", () => {
-  const target: ScreenViewTransform = {
-    scale: 1,
-    offsetX: 0,
-    offsetY: 0,
-    rotation: 0,
-  };
+  const target = createTarget();
 
   stepWanderTarget(
     target,
@@ -114,12 +122,7 @@ test("pan wander moves the target offset without changing scale", () => {
 });
 
 test("depth wander changes scale within supplied clamps", () => {
-  const target: ScreenViewTransform = {
-    scale: 1,
-    offsetX: 0,
-    offsetY: 0,
-    rotation: 0,
-  };
+  const target = createTarget();
 
   stepWanderTarget(
     target,
@@ -146,12 +149,7 @@ test("depth wander changes scale within supplied clamps", () => {
 });
 
 test("rotate wander changes rotation without panning or changing scale", () => {
-  const target: ScreenViewTransform = {
-    scale: 1,
-    offsetX: 0,
-    offsetY: 0,
-    rotation: 0,
-  };
+  const target = createTarget();
 
   stepWanderTarget(
     target,
@@ -174,12 +172,7 @@ test("rotate wander changes rotation without panning or changing scale", () => {
 });
 
 test("disabled wander master leaves enabled axes idle", () => {
-  const target: ScreenViewTransform = {
-    scale: 1,
-    offsetX: 0,
-    offsetY: 0,
-    rotation: 0,
-  };
+  const target = createTarget();
 
   stepWanderTarget(
     target,
@@ -200,5 +193,9 @@ test("disabled wander master leaves enabled axes idle", () => {
     offsetX: 0,
     offsetY: 0,
     rotation: 0,
+    loopScale: 1,
+    loopOffsetX: 0,
+    loopOffsetY: 0,
+    loopBlend: 0,
   });
 });

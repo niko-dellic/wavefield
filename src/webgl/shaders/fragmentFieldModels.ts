@@ -29,7 +29,7 @@ export const FIELD_MODEL_FRAGMENT: string = `  vec2 plateUvFromScreen(vec2 uv) {
     return clamp(centered * scale + 0.5, vec2(0.0), vec2(1.0));
   }
 
-  vec2 screenFieldUv(vec2 uv) {
+  vec2 screenFieldUvForView(vec2 uv, vec2 viewOffset, float viewScale) {
     vec2 p = plateUvFromScreen(fisheyeUv(uv));
     vec2 centered = p - 0.5;
     float c = cos(uScreenViewRotation);
@@ -38,7 +38,27 @@ export const FIELD_MODEL_FRAGMENT: string = `  vec2 plateUvFromScreen(vec2 uv) {
       c * centered.x + s * centered.y,
       -s * centered.x + c * centered.y
     );
-    return rotated / max(0.0001, uScreenViewScale) + 0.5 + uScreenViewOffset;
+    return rotated / max(0.0001, viewScale) + 0.5 + viewOffset;
+  }
+
+  vec2 screenPrimaryFieldUv(vec2 uv) {
+    return screenFieldUvForView(uv, uScreenViewOffset, uScreenViewScale);
+  }
+
+  vec2 screenLoopFieldUv(vec2 uv) {
+    return screenFieldUvForView(
+      uv,
+      uScreenLoopViewOffset,
+      uScreenLoopViewScale
+    );
+  }
+
+  vec2 screenFieldUv(vec2 uv) {
+    return mix(
+      screenPrimaryFieldUv(uv),
+      screenLoopFieldUv(uv),
+      clamp(uScreenLoopBlend, 0.0, 1.0)
+    );
   }
 
   float freeChladniValue(float m, float n, vec2 p) {
@@ -556,7 +576,7 @@ export const FIELD_MODEL_FRAGMENT: string = `  vec2 plateUvFromScreen(vec2 uv) {
     return fieldSample;
   }
 
-  FieldSample evaluateChladniField(vec2 uv) {
+  FieldSample evaluateChladniFieldAt(vec2 p) {
     FieldSample fieldSample;
     fieldSample.field = 0.0;
     fieldSample.grad = 0.0;
@@ -572,7 +592,6 @@ export const FIELD_MODEL_FRAGMENT: string = `  vec2 plateUvFromScreen(vec2 uv) {
       0.0,
       3.0
     );
-    vec2 p = uProjectionMode == 0 ? screenFieldUv(uv) : plateUvFromScreen(uv);
     // Domain warp is opt-in: skip the (expensive) fbm pair entirely when uWarp is 0.
     if (uWarp > 0.0) {
       vec2 drift = vec2(
@@ -661,6 +680,31 @@ export const FIELD_MODEL_FRAGMENT: string = `  vec2 plateUvFromScreen(vec2 uv) {
     }
 
     return fieldSample;
+  }
+
+  FieldSample mixFieldSamples(FieldSample a, FieldSample b, float amount) {
+    FieldSample mixed;
+    mixed.field = mix(a.field, b.field, amount);
+    mixed.grad = mix(a.grad, b.grad, amount);
+    mixed.energy = mix(a.energy, b.energy, amount);
+    mixed.color = mix(a.color, b.color, amount);
+    mixed.colorWeight = mix(a.colorWeight, b.colorWeight, amount);
+    return mixed;
+  }
+
+  FieldSample evaluateChladniField(vec2 uv) {
+    if (uProjectionMode == 0) {
+      FieldSample primary = evaluateChladniFieldAt(screenPrimaryFieldUv(uv));
+      float loopBlend = clamp(uScreenLoopBlend, 0.0, 1.0);
+      if (loopBlend <= 0.0001) {
+        return primary;
+      }
+
+      FieldSample loop = evaluateChladniFieldAt(screenLoopFieldUv(uv));
+      return mixFieldSamples(primary, loop, loopBlend);
+    }
+
+    return evaluateChladniFieldAt(plateUvFromScreen(uv));
   }
 
   FieldSample sampleProjectedField() {

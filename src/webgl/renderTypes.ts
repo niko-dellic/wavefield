@@ -4,4 +4,8 @@ export type ScreenViewTransform = {
   offsetX: number;
   offsetY: number;
   rotation: number;
+  loopScale: number;
+  loopOffsetX: number;
+  loopOffsetY: number;
+  loopBlend: number;
 };

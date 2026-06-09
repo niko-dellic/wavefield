@@ -17,6 +17,9 @@ export const SHARED_FRAGMENT: string = `
   uniform vec2 uScreenViewOffset;
   uniform float uScreenViewScale;
   uniform float uScreenViewRotation;
+  uniform vec2 uScreenLoopViewOffset;
+  uniform float uScreenLoopViewScale;
+  uniform float uScreenLoopBlend;
   uniform vec3 uCameraLocal;
   uniform vec4 uModeSlots[MAX_MODAL_MODES];
   uniform vec4 uModeMeta[MAX_MODAL_MODES];
