@@ -127,6 +127,7 @@ export class WavefieldApp {
   private analysisPreviewTime = 0;
   private fieldSettingsKey = "";
   private lastSettingsControlsRefreshMilliseconds = 0;
+  private lastBackgroundColor = "";
   private isEditingColorControl = false;
   private readonly monitorState: MonitorState = createInitialMonitorState();
   private lastModalFieldFrame: ModalFieldFrame = EMPTY_MODAL_FIELD_FRAME;
@@ -553,6 +554,11 @@ export class WavefieldApp {
 
   private syncBackgroundColor(settings: CymaticSettings = this.settings) {
     const backgroundColor = normalizeHexColor(settings.backgroundColor);
+    if (backgroundColor === this.lastBackgroundColor) {
+      return;
+    }
+
+    this.lastBackgroundColor = backgroundColor;
     this.root.style.setProperty("--wavefield-background", backgroundColor);
     document.documentElement.style.setProperty(
       "--wavefield-background",
